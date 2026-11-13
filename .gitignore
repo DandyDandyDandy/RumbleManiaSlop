@@ -1,0 +1,24 @@
+# Only the port's own source is tracked. Game dumps, keys, everything extracted or converted from them, and build
+# outputs stay out of the repository.
+
+# the user's own files (keys and game dumps)
+/input/*
+!/input/README.txt
+*.xci
+*.nsp
+*.nsz
+*.xcz
+*.nca
+*.tik
+*.keys
+
+# everything made on the way: extracted game, lifted C, objects, converted assets, downloaded tools
+/build/
+
+# the finished game (contains the game: never commit or share it)
+/game/
+
+# caches and logs
+__pycache__/
+*.pyc
+*.log

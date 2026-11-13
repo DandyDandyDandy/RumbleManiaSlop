@@ -1,0 +1,9 @@
+# Python packages the setup and the build use (installed into build\venv by setup.cmd).
+UnityPy==1.25.4
+numpy==2.5.4
+Pillow==13.0.0
+etcpak==0.9.15
+texture2ddecoder==1.0.6
+lz4==4.4.5
+pycryptodome==4.4.0
+zstandard==0.25.0

@@ -1,0 +1,240 @@
+name	returns	parameters	noreturn
+il2cpp_init	r, n, p) DO_API(r,n,p) #endif DO_API(int	const char* domain_name	1
+il2cpp_init_utf16	int	const Il2CppChar * domain_name	0
+il2cpp_shutdown	void		0
+il2cpp_set_config_dir	void	const char *config_path	0
+il2cpp_set_data_dir	void	const char *data_path	0
+il2cpp_set_temp_dir	void	const char *temp_path	0
+il2cpp_set_commandline_arguments	void	int argc, const char* const argv[], const char* basedir	0
+il2cpp_set_commandline_arguments_utf16	void	int argc, const Il2CppChar * const argv[], const char* basedir	0
+il2cpp_set_config_utf16	void	const Il2CppChar * executablePath	0
+il2cpp_set_config	void	const char* executablePath	0
+il2cpp_set_memory_callbacks	void	Il2CppMemoryCallbacks * callbacks	0
+il2cpp_get_corlib	const Il2CppImage*		0
+il2cpp_add_internal_call	void	const char* name, Il2CppMethodPointer method	0
+il2cpp_resolve_icall	Il2CppMethodPointer	const char* name	0
+il2cpp_alloc	void*	size_t size	0
+il2cpp_free	void	void* ptr	0
+il2cpp_array_class_get	Il2CppClass*	Il2CppClass * element_class, uint32_t rank	0
+il2cpp_array_length	uint32_t	Il2CppArray * array	0
+il2cpp_array_get_byte_length	uint32_t	Il2CppArray * array	0
+il2cpp_array_new	Il2CppArray*	Il2CppClass * elementTypeInfo, il2cpp_array_size_t length	0
+il2cpp_array_new_specific	Il2CppArray*	Il2CppClass * arrayTypeInfo, il2cpp_array_size_t length	0
+il2cpp_array_new_full	Il2CppArray*	Il2CppClass * array_class, il2cpp_array_size_t * lengths, il2cpp_array_size_t * lower_bounds	0
+il2cpp_bounded_array_class_get	Il2CppClass*	Il2CppClass * element_class, uint32_t rank, bool bounded	0
+il2cpp_array_element_size	int	const Il2CppClass * array_class	0
+il2cpp_assembly_get_image	const Il2CppImage*	const Il2CppAssembly * assembly	0
+il2cpp_class_for_each	void	void(*klassReportFunc)(Il2CppClass* klass, void* userData), void* userData	0
+il2cpp_class_enum_basetype	const Il2CppType*	Il2CppClass * klass	0
+il2cpp_class_is_inited	bool	const Il2CppClass * klass	0
+il2cpp_class_is_generic	bool	const Il2CppClass * klass	0
+il2cpp_class_is_inflated	bool	const Il2CppClass * klass	0
+il2cpp_class_is_assignable_from	bool	Il2CppClass * klass, Il2CppClass * oklass	0
+il2cpp_class_is_subclass_of	bool	Il2CppClass * klass, Il2CppClass * klassc, bool check_interfaces	0
+il2cpp_class_has_parent	bool	Il2CppClass * klass, Il2CppClass * klassc	0
+il2cpp_class_from_il2cpp_type	Il2CppClass*	const Il2CppType * type	0
+il2cpp_class_from_name	Il2CppClass*	const Il2CppImage * image, const char* namespaze, const char *name	0
+il2cpp_class_from_system_type	Il2CppClass*	Il2CppReflectionType * type	0
+il2cpp_class_get_element_class	Il2CppClass*	Il2CppClass * klass	0
+il2cpp_class_get_events	const EventInfo*	Il2CppClass * klass, void* *iter	0
+il2cpp_class_get_fields	FieldInfo*	Il2CppClass * klass, void* *iter	0
+il2cpp_class_get_nested_types	Il2CppClass*	Il2CppClass * klass, void* *iter	0
+il2cpp_class_get_interfaces	Il2CppClass*	Il2CppClass * klass, void* *iter	0
+il2cpp_class_get_properties	const PropertyInfo*	Il2CppClass * klass, void* *iter	0
+il2cpp_class_get_property_from_name	const PropertyInfo*	Il2CppClass * klass, const char *name	0
+il2cpp_class_get_field_from_name	FieldInfo*	Il2CppClass * klass, const char *name	0
+il2cpp_class_get_methods	const MethodInfo*	Il2CppClass * klass, void* *iter	0
+il2cpp_class_get_method_from_name	const MethodInfo*	Il2CppClass * klass, const char* name, int argsCount	0
+il2cpp_class_get_name	const char*	Il2CppClass * klass	0
+il2cpp_type_get_name_chunked	void	const Il2CppType * type, void(*chunkReportFunc)(void* data, void* userData), void* userData	0
+il2cpp_class_get_namespace	const char*	Il2CppClass * klass	0
+il2cpp_class_get_parent	Il2CppClass*	Il2CppClass * klass	0
+il2cpp_class_get_declaring_type	Il2CppClass*	Il2CppClass * klass	0
+il2cpp_class_instance_size	int32_t	Il2CppClass * klass	0
+il2cpp_class_num_fields	size_t	const Il2CppClass * enumKlass	0
+il2cpp_class_is_valuetype	bool	const Il2CppClass * klass	0
+il2cpp_class_value_size	int32_t	Il2CppClass * klass, uint32_t * align	0
+il2cpp_class_is_blittable	bool	const Il2CppClass * klass	0
+il2cpp_class_get_flags	int	const Il2CppClass * klass	0
+il2cpp_class_is_abstract	bool	const Il2CppClass * klass	0
+il2cpp_class_is_interface	bool	const Il2CppClass * klass	0
+il2cpp_class_array_element_size	int	const Il2CppClass * klass	0
+il2cpp_class_from_type	Il2CppClass*	const Il2CppType * type	0
+il2cpp_class_get_type	const Il2CppType*	Il2CppClass * klass	0
+il2cpp_class_get_type_token	uint32_t	Il2CppClass * klass	0
+il2cpp_class_has_attribute	bool	Il2CppClass * klass, Il2CppClass * attr_class	0
+il2cpp_class_has_references	bool	Il2CppClass * klass	0
+il2cpp_class_is_enum	bool	const Il2CppClass * klass	0
+il2cpp_class_get_image	const Il2CppImage*	Il2CppClass * klass	0
+il2cpp_class_get_assemblyname	const char*	const Il2CppClass * klass	0
+il2cpp_class_get_rank	int	const Il2CppClass * klass	0
+il2cpp_class_get_data_size	uint32_t	const Il2CppClass * klass	0
+il2cpp_class_get_static_field_data	void*	const Il2CppClass * klass	0
+il2cpp_class_get_bitmap_size	size_t	const Il2CppClass * klass	0
+il2cpp_class_get_bitmap	void	Il2CppClass * klass, size_t * bitmap	0
+il2cpp_stats_dump_to_file	bool	const char *path	0
+il2cpp_stats_get_value	uint64_t	Il2CppStat stat	0
+il2cpp_domain_get	Il2CppDomain*		0
+il2cpp_domain_assembly_open	const Il2CppAssembly*	Il2CppDomain * domain, const char* name	0
+il2cpp_domain_get_assemblies	const Il2CppAssembly**	const Il2CppDomain * domain, size_t * size	0
+il2cpp_raise_exception	void	Il2CppException*	1
+il2cpp_exception_from_name_msg	Il2CppException*	const Il2CppImage * image, const char *name_space, const char *name, const char *msg	0
+il2cpp_get_exception_argument_null	Il2CppException*	const char *arg	0
+il2cpp_format_exception	void	const Il2CppException * ex, char* message, int message_size	0
+il2cpp_format_stack_trace	void	const Il2CppException * ex, char* output, int output_size	0
+il2cpp_unhandled_exception	void	Il2CppException*	0
+il2cpp_native_stack_trace	void	const Il2CppException * ex, uintptr_t** addresses, int* numFrames, char** imageUUID, char** imageName	0
+il2cpp_field_get_flags	int	FieldInfo * field	0
+il2cpp_field_get_name	const char*	FieldInfo * field	0
+il2cpp_field_get_parent	Il2CppClass*	FieldInfo * field	0
+il2cpp_field_get_offset	size_t	FieldInfo * field	0
+il2cpp_field_get_type	const Il2CppType*	FieldInfo * field	0
+il2cpp_field_get_value	void	Il2CppObject * obj, FieldInfo * field, void *value	0
+il2cpp_field_get_value_object	Il2CppObject*	FieldInfo * field, Il2CppObject * obj	0
+il2cpp_field_has_attribute	bool	FieldInfo * field, Il2CppClass * attr_class	0
+il2cpp_field_set_value	void	Il2CppObject * obj, FieldInfo * field, void *value	0
+il2cpp_field_static_get_value	void	FieldInfo * field, void *value	0
+il2cpp_field_static_set_value	void	FieldInfo * field, void *value	0
+il2cpp_field_set_value_object	void	Il2CppObject * instance, FieldInfo * field, Il2CppObject * value	0
+il2cpp_field_is_literal	bool	FieldInfo * field	0
+il2cpp_gc_collect	void	int maxGenerations	0
+il2cpp_gc_collect_a_little	int32_t		0
+il2cpp_gc_start_incremental_collection	void		0
+il2cpp_gc_disable	void		0
+il2cpp_gc_enable	void		0
+il2cpp_gc_is_disabled	bool		0
+il2cpp_gc_set_mode	void	Il2CppGCMode mode	0
+il2cpp_gc_get_max_time_slice_ns	int64_t		0
+il2cpp_gc_set_max_time_slice_ns	void	int64_t maxTimeSlice	0
+il2cpp_gc_is_incremental	bool		0
+il2cpp_gc_get_used_size	int64_t		0
+il2cpp_gc_get_heap_size	int64_t		0
+il2cpp_gc_wbarrier_set_field	void	Il2CppObject * obj, void **targetAddress, void *object	0
+il2cpp_gc_has_strict_wbarriers	bool		0
+il2cpp_gc_set_external_allocation_tracker	void	void(*func)(void*, size_t, int)	0
+il2cpp_gc_set_external_wbarrier_tracker	void	void(*func)(void**)	0
+il2cpp_gc_foreach_heap	void	void(*func)(void* data, void* userData), void* userData	0
+il2cpp_stop_gc_world	void		0
+il2cpp_start_gc_world	void		0
+il2cpp_gc_alloc_fixed	void*	size_t size	0
+il2cpp_gc_free_fixed	void	void* address	0
+il2cpp_gchandle_new	uint32_t	Il2CppObject * obj, bool pinned	0
+il2cpp_gchandle_new_weakref	uint32_t	Il2CppObject * obj, bool track_resurrection	0
+il2cpp_gchandle_get_target	Il2CppObject*	uint32_t gchandle	0
+il2cpp_gchandle_free	void	uint32_t gchandle	0
+il2cpp_gchandle_foreach_get_target	void	void(*func)(void* data, void* userData), void* userData	0
+il2cpp_object_header_size	uint32_t		0
+il2cpp_array_object_header_size	uint32_t		0
+il2cpp_offset_of_array_length_in_array_object_header	uint32_t		0
+il2cpp_offset_of_array_bounds_in_array_object_header	uint32_t		0
+il2cpp_allocation_granularity	uint32_t		0
+il2cpp_unity_liveness_allocate_struct	void*	Il2CppClass * filter, int max_object_count, il2cpp_register_object_callback callback, void* userdata, il2cpp_liveness_reallocate_callback reallocate	0
+il2cpp_unity_liveness_calculation_from_root	void	Il2CppObject * root, void* state	0
+il2cpp_unity_liveness_calculation_from_statics	void	void* state	0
+il2cpp_unity_liveness_finalize	void	void* state	0
+il2cpp_unity_liveness_free_struct	void	void* state	0
+il2cpp_method_get_return_type	const Il2CppType*	const MethodInfo * method	0
+il2cpp_method_get_declaring_type	Il2CppClass*	const MethodInfo * method	0
+il2cpp_method_get_name	const char*	const MethodInfo * method	0
+il2cpp_method_get_from_reflection	const MethodInfo*	const Il2CppReflectionMethod * method	0
+il2cpp_method_get_object	Il2CppReflectionMethod*	const MethodInfo * method, Il2CppClass * refclass	0
+il2cpp_method_is_generic	bool	const MethodInfo * method	0
+il2cpp_method_is_inflated	bool	const MethodInfo * method	0
+il2cpp_method_is_instance	bool	const MethodInfo * method	0
+il2cpp_method_get_param_count	uint32_t	const MethodInfo * method	0
+il2cpp_method_get_param	const Il2CppType*	const MethodInfo * method, uint32_t index	0
+il2cpp_method_get_class	Il2CppClass*	const MethodInfo * method	0
+il2cpp_method_has_attribute	bool	const MethodInfo * method, Il2CppClass * attr_class	0
+il2cpp_method_get_flags	uint32_t	const MethodInfo * method, uint32_t * iflags	0
+il2cpp_method_get_token	uint32_t	const MethodInfo * method	0
+il2cpp_method_get_param_name	const char*	const MethodInfo * method, uint32_t index	0
+il2cpp_profiler_install	void	Il2CppProfiler * prof, Il2CppProfileFunc shutdown_callback	0
+il2cpp_profiler_set_events	void	Il2CppProfileFlags events	0
+il2cpp_profiler_install_enter_leave	void	Il2CppProfileMethodFunc enter, Il2CppProfileMethodFunc fleave	0
+il2cpp_profiler_install_allocation	void	Il2CppProfileAllocFunc callback	0
+il2cpp_profiler_install_gc	void	Il2CppProfileGCFunc callback, Il2CppProfileGCResizeFunc heap_resize_callback	0
+il2cpp_profiler_install_fileio	void	Il2CppProfileFileIOFunc callback	0
+il2cpp_profiler_install_thread	void	Il2CppProfileThreadFunc start, Il2CppProfileThreadFunc end	0
+il2cpp_property_get_flags	uint32_t	PropertyInfo * prop	0
+il2cpp_property_get_get_method	const MethodInfo*	PropertyInfo * prop	0
+il2cpp_property_get_set_method	const MethodInfo*	PropertyInfo * prop	0
+il2cpp_property_get_name	const char*	PropertyInfo * prop	0
+il2cpp_property_get_parent	Il2CppClass*	PropertyInfo * prop	0
+il2cpp_object_get_class	Il2CppClass*	Il2CppObject * obj	0
+il2cpp_object_get_size	uint32_t	Il2CppObject * obj	0
+il2cpp_object_get_virtual_method	const MethodInfo*	Il2CppObject * obj, const MethodInfo * method	0
+il2cpp_object_new	Il2CppObject*	const Il2CppClass * klass	0
+il2cpp_object_unbox	void*	Il2CppObject * obj	0
+il2cpp_value_box	Il2CppObject*	Il2CppClass * klass, void* data	0
+il2cpp_monitor_enter	void	Il2CppObject * obj	0
+il2cpp_monitor_try_enter	bool	Il2CppObject * obj, uint32_t timeout	0
+il2cpp_monitor_exit	void	Il2CppObject * obj	0
+il2cpp_monitor_pulse	void	Il2CppObject * obj	0
+il2cpp_monitor_pulse_all	void	Il2CppObject * obj	0
+il2cpp_monitor_wait	void	Il2CppObject * obj	0
+il2cpp_monitor_try_wait	bool	Il2CppObject * obj, uint32_t timeout	0
+il2cpp_runtime_invoke	Il2CppObject*	const MethodInfo * method, void *obj, void **params, Il2CppException **exc	0
+il2cpp_runtime_invoke_convert_args	Il2CppObject*	const MethodInfo * method, void *obj, Il2CppObject **params, int paramCount, Il2CppException **exc	0
+il2cpp_runtime_class_init	void	Il2CppClass * klass	0
+il2cpp_runtime_object_init	void	Il2CppObject * obj	0
+il2cpp_runtime_object_init_exception	void	Il2CppObject * obj, Il2CppException** exc	0
+il2cpp_runtime_unhandled_exception_policy_set	void	Il2CppRuntimeUnhandledExceptionPolicy value	0
+il2cpp_string_length	int32_t	Il2CppString * str	0
+il2cpp_string_chars	Il2CppChar*	Il2CppString * str	0
+il2cpp_string_new	Il2CppString*	const char* str	0
+il2cpp_string_new_len	Il2CppString*	const char* str, uint32_t length	0
+il2cpp_string_new_utf16	Il2CppString*	const Il2CppChar * text, int32_t len	0
+il2cpp_string_new_wrapper	Il2CppString*	const char* str	0
+il2cpp_string_intern	Il2CppString*	Il2CppString * str	0
+il2cpp_string_is_interned	Il2CppString*	Il2CppString * str	0
+il2cpp_thread_current	Il2CppThread*		0
+il2cpp_thread_attach	Il2CppThread*	Il2CppDomain * domain	0
+il2cpp_thread_detach	void	Il2CppThread * thread	0
+il2cpp_thread_get_all_attached_threads	Il2CppThread**	size_t * size	0
+il2cpp_is_vm_thread	bool	Il2CppThread * thread	0
+il2cpp_current_thread_walk_frame_stack	void	Il2CppFrameWalkFunc func, void* user_data	0
+il2cpp_thread_walk_frame_stack	void	Il2CppThread * thread, Il2CppFrameWalkFunc func, void* user_data	0
+il2cpp_current_thread_get_top_frame	bool	Il2CppStackFrameInfo * frame	0
+il2cpp_thread_get_top_frame	bool	Il2CppThread * thread, Il2CppStackFrameInfo * frame	0
+il2cpp_current_thread_get_frame_at	bool	int32_t offset, Il2CppStackFrameInfo * frame	0
+il2cpp_thread_get_frame_at	bool	Il2CppThread * thread, int32_t offset, Il2CppStackFrameInfo * frame	0
+il2cpp_current_thread_get_stack_depth	int32_t		0
+il2cpp_thread_get_stack_depth	int32_t	Il2CppThread * thread	0
+il2cpp_override_stack_backtrace	void	Il2CppBacktraceFunc stackBacktraceFunc	0
+il2cpp_type_get_object	Il2CppObject*	const Il2CppType * type	0
+il2cpp_type_get_type	int	const Il2CppType * type	0
+il2cpp_type_get_class_or_element_class	Il2CppClass*	const Il2CppType * type	0
+il2cpp_type_get_name	char*	const Il2CppType * type	0
+il2cpp_type_is_byref	bool	const Il2CppType * type	0
+il2cpp_type_get_attrs	uint32_t	const Il2CppType * type	0
+il2cpp_type_equals	bool	const Il2CppType * type, const Il2CppType * otherType	0
+il2cpp_type_get_assembly_qualified_name	char*	const Il2CppType * type	0
+il2cpp_type_get_reflection_name	char*	const Il2CppType * type	0
+il2cpp_type_is_static	bool	const Il2CppType * type	0
+il2cpp_type_is_pointer_type	bool	const Il2CppType * type	0
+il2cpp_image_get_assembly	const Il2CppAssembly*	const Il2CppImage * image	0
+il2cpp_image_get_name	const char*	const Il2CppImage * image	0
+il2cpp_image_get_filename	const char*	const Il2CppImage * image	0
+il2cpp_image_get_entry_point	const MethodInfo*	const Il2CppImage * image	0
+il2cpp_image_get_class_count	size_t	const Il2CppImage * image	0
+il2cpp_image_get_class	const Il2CppClass*	const Il2CppImage * image, size_t index	0
+il2cpp_capture_memory_snapshot	Il2CppManagedMemorySnapshot*		0
+il2cpp_free_captured_memory_snapshot	void	Il2CppManagedMemorySnapshot * snapshot	0
+il2cpp_set_find_plugin_callback	void	Il2CppSetFindPlugInCallback method	0
+il2cpp_register_log_callback	void	Il2CppLogCallback method	0
+il2cpp_debugger_set_agent_options	void	const char* options	0
+il2cpp_is_debugger_attached	bool		0
+il2cpp_register_debugger_agent_transport	void	Il2CppDebuggerTransport * debuggerTransport	0
+il2cpp_debug_get_method_info	bool	const MethodInfo*, Il2CppMethodDebugInfo * methodDebugInfo	0
+il2cpp_unity_install_unitytls_interface	void	const void* unitytlsInterfaceStruct	0
+il2cpp_custom_attrs_from_class	Il2CppCustomAttrInfo*	Il2CppClass * klass	0
+il2cpp_custom_attrs_from_method	Il2CppCustomAttrInfo*	const MethodInfo * method	0
+il2cpp_custom_attrs_from_field	Il2CppCustomAttrInfo*	const FieldInfo * field	0
+il2cpp_custom_attrs_get_attr	Il2CppObject*	Il2CppCustomAttrInfo * ainfo, Il2CppClass * attr_klass	0
+il2cpp_custom_attrs_has_attr	bool	Il2CppCustomAttrInfo * ainfo, Il2CppClass * attr_klass	0
+il2cpp_custom_attrs_construct	Il2CppArray*	Il2CppCustomAttrInfo * cinfo	0
+il2cpp_custom_attrs_free	void	Il2CppCustomAttrInfo * ainfo	0
+il2cpp_class_set_userdata	void	Il2CppClass * klass, void* userdata	0
+il2cpp_class_get_userdata_offset	int		0
+il2cpp_set_default_thread_affinity	void	int64_t affinity_mask	0
+il2cpp_unity_set_android_network_up_state_func	void	Il2CppAndroidUpStateFunc func	0
