@@ -12,7 +12,8 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\Switch\\...                        changed copies of the game's table bundles (dbtable.py)
     mania\\catalog.json                      the game's Addressables catalog plus the new scenes
     mania\\mania_courses.txt                 per imported course: its stage list id, first row and length in the real list, and
-                                            its course id; then "own <id> <previous id>" for the game's Adventure worlds
+                                            its course id; "bonus <stage row>" per bonus stage; "own <id> <previous id>"
+                                            for the game's Adventure worlds
                                             (read by port\\runtime\\mania.c)
     mania\\mania_stages.txt                  course number, stage number, Mania stage, course name, stage name
     mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are)
@@ -93,7 +94,7 @@ def bundle_rel(stage_id):
 
 
 def _convert(job):
-    mania_dir, aa_switch, bundle, out, identity = job
+    mania_dir, aa_switch, bundle, out, identity, bonus = job
     from stage import Converter
     global _CONV
     try:
@@ -101,7 +102,7 @@ def _convert(job):
     except NameError:
         conv = _CONV = Converter(mania_dir, aa_switch)
     try:
-        return bundle, conv.convert(bundle, out, identity), None
+        return bundle, conv.convert(bundle, out, identity, bonus=bonus), None
     except Exception as e:                      # one broken stage must not stop the import
         import traceback
         return bundle, None, f'{type(e).__name__}: {e} | {traceback.format_exc(limit=3).splitlines()[-2].strip()}'
@@ -163,7 +164,8 @@ def main():
         jobs = []
         for sid in stage_ids:
             ident = (f'mania_scene_{scene_id(sid)}', f'Assets/Mania/{scene_id(sid)}.unity', 'CAB-' + md5(f'mania scene {sid}'))
-            jobs.append((a.mania, aa_switch, mania.bundles[sid], os.path.join(out, bundle_rel(sid).replace('/', os.sep)), ident))
+            jobs.append((a.mania, aa_switch, mania.bundles[sid], os.path.join(out, bundle_rel(sid).replace('/', os.sep)), ident,
+                         mania.stages[sid]['kind'] == 'Bonus'))
         done = 0
         with ProcessPoolExecutor(a.jobs) as pool:
             for bundle, stats, err in pool.map(_convert, jobs, chunksize=2):
@@ -296,6 +298,10 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
                        MovieIDEpilogue=0)
     if courses and last_vanilla is not None:
         last_vanilla['NextCourseID'] = first_course
+    # bonus stages (cleared by taking every banana, by falling out or by the clock: mania.c)
+    for sid in stage_ids:
+        if mania.stages[sid]['kind'] == 'Bonus' and sid in row_of:
+            lines.append(f'bonus {row_of[sid]}')
     # the game's own Adventure worlds in display order with the world each one follows: the port works out the
     # "highest unlocked world" from these when the game's own answer is an imported course (mania.c)
     for r in own:

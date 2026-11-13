@@ -562,11 +562,12 @@ class Converter:
         self.template = os.path.join(aa_switch, f'scene_{TEMPLATE_STAGE}_scenes_all.bundle')
         self.materials = MaterialModels(aa_switch)
 
-    def convert(self, stage_bundle, out_path, identity=None, log=None):
+    def convert(self, stage_bundle, out_path, identity=None, log=None, bonus=False):
         """Convert Mania's `stage_bundle` and write the Rumble bundle to out_path.
 
         identity: None to keep the template's names (the result replaces World 1 Stage 1: a test aid), or
-        (bundle name, scene path, internal file name) for a new stage. Returns a dict of facts about the stage."""
+        (bundle name, scene path, internal file name) for a new stage. bonus: a bonus stage, which keeps a goal
+        out of sight when it has none of its own. Returns a dict of facts about the stage."""
         say = log or (lambda *a: None)
         m = ManiaStage(self.mania_dir, stage_bundle)
         sc = Scene(self.template)
@@ -963,7 +964,17 @@ class Converter:
             g = goal0 if i == 0 else sc.clone(goal0, root)
             sc.set_transform(g, n.pos, qmul(n.rot, Y180), parent)
             goal_colis.append(pptr(sc.component(g, 'MonoBehaviour', 'MgGoalColi')))
-        if not goals:
+        if not goals and bonus:
+            # A bonus stage without a goal is ended by the port (all bananas, everyone out, time up: mania.c), but
+            # the game's multiplayer code looks up "the nearest goal" when a player finishes and has no test for
+            # there being none. One goal stays: far to the side and below, with its model switched off.
+            sc.set_transform(goal0, (float(hi[0]) + 400.0 if np.isfinite(hi).all() else 400.0,
+                                     (float(lo[1]) if np.isfinite(lo).all() else 0.0) - 300.0, 0.0))
+            for c in sc.children(goal0):
+                s.get(c)['m_IsActive'] = False
+            goal_colis.append(pptr(sc.component(goal0, 'MonoBehaviour', 'MgGoalColi')))
+            stats['hidden_goal'] = 1
+        elif not goals:
             sc.delete(goal0)
 
         # ---- what the Animator moves, seesaws and conveyors get the tag "StgMot", with everything under them. Rumble's collision shapes look

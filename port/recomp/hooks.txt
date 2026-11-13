@@ -30,6 +30,8 @@
 426a180   Wonder.MainGameBg::calcBgCue
 45605b0   Wonder.UI.Choices.UIChoicesItemData_Factory::getUnlockedCourseList
 43c37d0   Wonder.SaveUserParam+AdventureParam::GetAdvModeHighestUnlockID
+42ab070   Wonder.MainGameSequence::setState   (bonus stages)
+42aff20   Wonder.MainGameSequence::updateHurryUp   (bonus stages)
 4308520   Wonder.MgStageSwitchController::Request(eState, int, int, bool, float)   (BR_MANIA_LOG)
 430b0a0   Wonder.MgSwitch::OnTriggerEnterPlayer(PhysicsBall)   (BR_MANIA_LOG)
 4305d30   Wonder.MgSeesaw::OnPostCollide(GameObject)   (BR_MANIA_LOG)
