@@ -9,6 +9,8 @@
 //   Frame Rate Limit  30 / 60 / 120 / 144 / Unlimited
 //   VSync             Off / On   (the game has a VSync option object but does not list it on this page; with
 //                     VSync on, Unity ignores the frame rate limit and follows the display)
+//   Imported Stage Music   Banana Mania / Classic Soundtrack   (RumbleManiaSlop, only when the import has both:
+//                     which music the imported stages play, mania.c; it takes effect with the next stage)
 // A change applies at once, as the game's own rows do.
 //
 // Steam Deck: detected at start-up (is_steam_deck). There the game starts borderless at the display's own size
@@ -33,7 +35,9 @@
 #include <string.h>
 #include "rt.h"
 
-enum { MODE_VALUE_WINDOW = 1, MAX_RES = 16, ROLE_MODE = 0, ROLE_RES = 1, ROLE_FPS = 2, ROLE_VSYNC = 3 };
+enum { MODE_VALUE_WINDOW = 1, MAX_RES = 16, ROLE_MODE = 0, ROLE_RES = 1, ROLE_FPS = 2, ROLE_VSYNC = 3, ROLE_MUSIC = 4 };
+extern int mania_has_classic_music(void), mania_classic_music(void);      // mania.c
+extern void mania_set_classic_music(int on);
 enum { M_WINDOWED, M_BORDERLESS, M_FULLSCREEN, M_COUNT };
 #define FN(off) (GUEST_BASE + (off))
 #define F_GET_VALUE_STR 0x4545080ull
@@ -169,8 +173,11 @@ static int game_index(uint64_t item, int want_window) {
         if (((int32_t)LD32(items + 0x20 + 4ull * i) == MODE_VALUE_WINDOW) == !!want_window) return i;
     return want_window ? 1 : 0;
 }
-static int role_index(int role) { return role == ROLE_RES ? g_k : role == ROLE_FPS ? g_fps : role == ROLE_VSYNC ? g_vsync : g_mode < 0 ? M_BORDERLESS : g_mode; }
-static int role_count(int role) { return role == ROLE_RES ? g_nres : role == ROLE_FPS ? NFPS : role == ROLE_VSYNC ? 2 : M_COUNT; }
+static int role_index(int role) {
+    return role == ROLE_RES ? g_k : role == ROLE_FPS ? g_fps : role == ROLE_VSYNC ? g_vsync : role == ROLE_MUSIC ? mania_classic_music()
+         : g_mode < 0 ? M_BORDERLESS : g_mode;
+}
+static int role_count(int role) { return role == ROLE_RES ? g_nres : role == ROLE_FPS ? NFPS : role == ROLE_VSYNC || role == ROLE_MUSIC ? 2 : M_COUNT; }
 static void set_indices(uint64_t item, int idx) { ST32(item + 0x20, idx); ST32(item + 0x28, idx); ST32(item + 0x50, idx); }
 
 // UnityEngine.Screen::set_fullScreenMode(FullScreenMode value): the game's saved value decides windowed or not.
@@ -246,6 +253,7 @@ int rt_hook_4544f30(Cpu *c) {
     if (role == ROLE_RES) { g_k = g_def_k; save_cfg(); apply_display(c); ST32(item + 0x50, g_k); return 1; }
     if (role == ROLE_FPS) { g_fps = 1; save_cfg(); apply_fps(c); ST32(item + 0x50, g_fps); return 1; }
     if (role == ROLE_VSYNC) { g_vsync = 1; save_cfg(); apply_vsync(c); ST32(item + 0x50, g_vsync); return 1; }
+    if (role == ROLE_MUSIC) { mania_set_classic_music(0); ST32(item + 0x50, 0); return 1; }
     t_in_init = 1; call_orig(c, F_SET_INIT_INDEX); t_in_init = 0;
     if (c->eh_unwinding) return 1;
     if (g_deck) {      // the port's setting decides; make the game's saved value agree, so the row's own text does
@@ -279,6 +287,7 @@ int rt_hook_45451e0(Cpu *c) {
     if (role == ROLE_RES) { g_k = idx; save_cfg(); apply_display(c); return 1; }
     if (role == ROLE_FPS) { g_fps = idx; save_cfg(); apply_fps(c); return 1; }
     if (role == ROLE_VSYNC) { g_vsync = idx; save_cfg(); apply_vsync(c); return 1; }
+    if (role == ROLE_MUSIC) { mania_set_classic_music(idx); return 1; }
     g_mode = idx;
     save_cfg();
     // the game's own handler stores its value and ends in set_fullScreenMode, which applies the new mode
@@ -303,6 +312,8 @@ int rt_hook_4545080(Cpu *c) {
         c->x[0] = new_str(c, s);
     } else if (role == ROLE_VSYNC) {
         c->x[0] = new_str(c, g_vsync ? "On" : "Off");
+    } else if (role == ROLE_MUSIC) {
+        c->x[0] = new_str(c, mania_classic_music() ? "Classic Soundtrack" : "Banana Mania");
     } else if (g_mode == M_BORDERLESS) {
         c->x[0] = new_str(c, "Borderless");
     } else {      // the game's localized "Windowed" / "Full Screen"
@@ -316,8 +327,8 @@ int rt_hook_4503980(Cpu *c) {
     uint64_t item = c->x[0];
     if (!item || !g_sm_klass || LD64(item) != g_sm_klass) return 0;
     int role = role_of(item);
-    if (role != ROLE_RES && role != ROLE_FPS && role != ROLE_VSYNC) return 0;
-    c->x[0] = new_str(c, role == ROLE_RES ? "Resolution" : role == ROLE_FPS ? "Frame Rate Limit" : "VSync");
+    if (role != ROLE_RES && role != ROLE_FPS && role != ROLE_VSYNC && role != ROLE_MUSIC) return 0;
+    c->x[0] = new_str(c, role == ROLE_RES ? "Resolution" : role == ROLE_FPS ? "Frame Rate Limit" : role == ROLE_VSYNC ? "VSync" : "Imported Stage Music");
     return 1;
 }
 
@@ -342,9 +353,10 @@ int rt_hook_452bab0(Cpu *c) {
     rt_call(c, FN(F_GC_DISABLE), 0);
     uint64_t cls = LD64(LD64(FN(LIST_OBJECT_CLASS_SLOT)));
     uint64_t add_mi = LD64(LD64(LD64(cls + 0x20) + 0xc0) + 0x70);
-    static const int roles[] = {ROLE_RES, ROLE_FPS, ROLE_VSYNC};
+    static const int roles[] = {ROLE_RES, ROLE_FPS, ROLE_VSYNC, ROLE_MUSIC};
     int added = 0;
     for (size_t r = 0; r < sizeof roles / sizeof *roles; r++) {
+        if (roles[r] == ROLE_MUSIC && !mania_has_classic_music()) continue;
         uint64_t obj = rt_call(c, FN(F_OBJECT_NEW), 1, g_sm_klass);
         if (!obj || c->eh_unwinding) break;
         memcpy((void *)(uintptr_t)(obj + 0x10), (const void *)(uintptr_t)(real + 0x10), 0x44);
