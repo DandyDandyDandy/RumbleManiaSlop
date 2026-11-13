@@ -250,16 +250,13 @@ def main():
 
     # what each stage has and what was left out, for whoever looks into a stage that plays wrong
     skipped = {}
-    with open(os.path.join(out, 'import_report.txt'), 'w', encoding='utf-8', newline='
-') as f:
+    with open(os.path.join(out, 'import_report.txt'), 'w', encoding='utf-8') as f:
         for bundle, st in sorted(reports.items()):
-            f.write(f'{bundle}	{st}
-')
-            for k, n in st.get('skipped', {}).items():
+            print(bundle, st, sep='\t', file=f)
+            for k in st.get('skipped', {}):
                 skipped[k] = skipped.get(k, 0) + 1
         for bundle, e in sorted(failed.items()):
-            f.write(f'{bundle}	FAILED {e}
-')
+            print(bundle, 'FAILED ' + e, sep='\t', file=f)
     if skipped:
         print('not converted (stages that have it): ' + ', '.join(f'{k} {n}' for k, n in sorted(skipped.items(), key=lambda x: -x[1])))
     print(f'imported {len(stage_ids)} stages in {len(courses)} courses ({len(failed)} stages failed), {len(written)} tables, '
