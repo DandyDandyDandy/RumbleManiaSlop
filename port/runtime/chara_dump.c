@@ -87,6 +87,8 @@ static void dump(Cpu *c, Entry *e) {
 }
 
 int rt_hook_4831da0(Cpu *c) {   // CharaComponentReference::Awake
+    extern void classic_track(uint64_t chara_component_reference);
+    classic_track(c->x[0]);   // classic.c keeps Rumble's own parts hidden under a classic outfit
     if (!g_want) { g_want = getenv("BR_CHARA_DUMP"); if (!g_want) g_want = ""; }
     if (*g_want)
         for (int i = 0; i < 64; i++)

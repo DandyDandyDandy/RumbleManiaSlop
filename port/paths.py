@@ -16,7 +16,7 @@ import os
 import shutil
 from pathlib import Path
 
-NAME = 'RumbleSlop'                     # the game's executable is <NAME>.exe, its data folder <NAME>_Data
+NAME = 'RumbleManiaSlop'                   # the game's executable is <NAME>.exe, its data folder <NAME>_Data
 UNITY_VERSION = '2022.3.30f1'
 GAME_VERSION = '2.0.0'                  # the version of the Switch game the tables and hooks are made for
 MAIN_BUILD_ID = '14c0c0290937ae3fac04c6b47b5a083f'      # first 16 bytes of main's build id, version 2.0.0

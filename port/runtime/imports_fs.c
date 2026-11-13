@@ -66,6 +66,10 @@ void rt_fs_path(const char *g, wchar_t *out, size_t cap) {
         if (!tmp[0]) snprintf(tmp, sizeof tmp, "?:\\unmounted\\%s", g);   // never exists
     } else snprintf(tmp, sizeof tmp, "%s", g);
     for (char *p = tmp; *p; p++) if (*p == '/') *p = '\\';
+    {   // the Addressables catalog may be replaced by the one in the mania\ override folder (classic.c)
+        extern void classic_fs_override(char *path, size_t cap);
+        classic_fs_override(tmp, sizeof tmp);
+    }
     MultiByteToWideChar(CP_UTF8, 0, tmp, -1, out, (int)cap);
     if (rt_trace & 8) rt_log("fs: path %s -> %s", g, tmp);
 }

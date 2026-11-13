@@ -17,6 +17,13 @@
 437bfb0   Wonder.DlcImpl_Switch::IsInstalled
 # port/runtime/chara_dump.c: BR_CHARA_DUMP diagnostic
 4831da0   Wonder.CharaComponentReference::Awake
+# port/runtime/classic.c: the mania\ override folder and the classic-style monkeys
+3e75c40   UnityEngine.AssetBundle::LoadFromFileAsync_Internal
+4831f40   Wonder.CharaCustomizeAssetAssign::Set
+3e75ca0   UnityEngine.AssetBundle::LoadFromFileAsync(string, uint)
+3e75d00   UnityEngine.AssetBundle::LoadFromFileAsync(string, uint, ulong)
+48322d0   Wonder.CharaCustomizeAssetAssign::Revert
+4832480   Wonder.CharaCustomizeAssetAssign::RevertAll
 # port/runtime/ultrawide.c: screens wider than 16:9
 414b3d0   UnityEngine.UI.CanvasScaler::Handle
 44fe8a0   Wonder.UI.UISystemViewManager::SetActiveOutOfRangeBlackView
