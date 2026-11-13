@@ -129,7 +129,8 @@ LIGHT_BAKE_OF_BG = {}       # per background name: a number or (r, g, b) that re
 LIGHT_BAKE_NDOTL = 0.5      # 'lights': the part of each `Bg` light that reaches a surface (the mean of N.L)
 LIGHT_BAKE_AMBIENT = 1.0    # 'lights': the part of Mania's ambient light that is added
 LIGHT_BAKE_GAIN = 1.0       # 'lights': multiplies the result
-LIGHT_BAKE_MAX = 1.5        # 'lights': upper limit per channel (an unlit colour far above one blooms)
+LIGHT_BAKE_MAX = 1.0        # 'lights': the brightest channel is brought down to this, the hue kept (Mania's tone curve
+#                             folds light above one back; here an unlit colour above one just clips and blooms)
 FOG_ON_MATERIALS = True     # True: `_FogOn` 1 on the materials Mania fogs (not TextureVa, not FOG_OFF). False: 0 on all
 ADDITIVE_FOG = False        # `_FogOn` of additive materials: URP's fog blends towards the fog colour, which on an
 #                             additive layer adds a haze instead of fading it out
@@ -152,6 +153,11 @@ LIGHT_SCALE_CHARA = 1.0     # ... on the character light (Chara_MainLight <- Cha
 LIGHT_SCALE_FAR = 1.0       # ... on Far_MainLight, in the templates that have one (<- Mania's Bg lights; the far
 #                             materials are unlit, so it only matters if they are ever made lit)
 LIGHT_INTENSITY_MAX = 1.5   # upper limit of any converted intensity
+SUN_IS_KEY_LIGHT = True     # RenderSettings.m_Sun = the key light. URP's main light (the only directional light with
+#                             shadows) is the sun, or without one the brightest directional light - and Mania's fill
+#                             light is the brighter one in four backgrounds (jungle, bonus, lava, electric)
+LIGHT_OTHERS_BELOW_KEY = 0.95   # ... and for the case that the sun is not honoured: no other light of the scene is
+#                                 brighter than this times the key light. None = leave Mania's ratios alone
 SHADOW_STRENGTH = 'mania'   # the key light's shadow strength: 'mania' (0.75 everywhere: a quarter of the key light
 #                             reaches shadowed ground), 'template' (1.0), or a number
 AMBIENT = 'mania'           # 'mania': trilight colours from Mania (copied where Mania uses three colours, read off its
@@ -469,8 +475,11 @@ def edited_mesh(tree, ops):
                 c[:, 3] *= alpha
             col[verts] = c
         if uv is not None and uv.shape[1] >= 2:
-            w = uv[verts, 3:4] if uv.shape[1] >= 4 else 1.0
-            uv[verts, :2] = uv[verts, :2] * np.array(scale) + np.array(offset) + w * np.array(wfac)
+            if uv.shape[1] >= 4:
+                shift = uv[verts, 3:4] * np.array(wfac)
+            else:                                   # a constant: whole tiles of it are left out (half-float UVs)
+                shift = np.mod(np.array(wfac), 1.0)
+            uv[verts, :2] = uv[verts, :2] * np.array(scale) + np.array(offset) + shift
     if col is not None:
         write_channel(data, layout, CHANNEL_COLOR, col)
     if uv is not None:
@@ -784,7 +793,7 @@ class BackgroundConverter:
         sky, equator, ground = ambient_colors(rs)
         direct = sum((light_energy(x, opt) for x in lights['bg']), np.zeros(3))
         f = opt.light_bake_gain * (opt.light_bake_ambient * (sky + 2 * equator + ground) / 4 + opt.light_bake_ndotl * direct)
-        return np.minimum(f, opt.light_bake_max)
+        return f * min(1.0, opt.light_bake_max / max(float(f.max()), 1e-9))
 
     # ---- far scenery
     def _far(self, m, rs, lights, info, out_dir, opt):
@@ -967,8 +976,10 @@ class BackgroundConverter:
                 queue = 3000 if blended else 2450 if kind == 'cutout' else -1
             new['m_CustomRenderQueue'] = queue
             count('queues', queue)
-            # a material that does not write depth must not write it in a depth pre-pass either
-            new['disabledShaderPasses'] = ['DepthOnly', 'SHADOWCASTER'] if blended or not d['zwrite'] else []
+            # A material that does not write depth must not write it in a depth pre-pass either (the game's own
+            # blended materials switch DepthOnly off). One that does - Mania's domes and colour spheres blend with
+            # ZWrite on in the opaque queues - keeps the pass, so the depth texture has it like any solid thing.
+            new['disabledShaderPasses'] = [] if d['zwrite'] else ['DepthOnly', 'DepthNormalsOnly', 'SHADOWCASTER']
             tex = texture(d['sf'], d['env']['m_Texture']) if d['env'] else None
             baked = opt.bake_uvs
             new['m_SavedProperties']['m_TexEnvs'] = [
@@ -1077,11 +1088,16 @@ class BackgroundConverter:
 
         drawn = {}
 
+        def draws(n):
+            """Has this node a mesh to draw? (two backgrounds carry a renderer with an empty mesh)"""
+            mf, mr = n.component('MeshFilter'), n.component('MeshRenderer')
+            got = m.get(m.main, mf[2]['m_Mesh']) if mf and mr else None
+            return bool(got and got[1]['m_VertexData']['m_VertexCount'])
+
         def has_drawn(n):
             """Is there anything to draw at or below this node?"""
             if n.id not in drawn:
-                mf, mr = n.component('MeshFilter'), n.component('MeshRenderer')
-                drawn[n.id] = bool(mf and mr and mf[2]['m_Mesh']['m_PathID']) or any([has_drawn(c) for c in n.children])
+                drawn[n.id] = draws(n) or any([has_drawn(c) for c in n.children])
             return drawn[n.id]
 
         animators = []
@@ -1090,7 +1106,9 @@ class BackgroundConverter:
             go = sc.new_object(n.name, parent, n.pos, n.rot, n.scale, n.active)
             stats['nodes'] += 1
             mf, mr = n.component('MeshFilter'), n.component('MeshRenderer')
-            if mf and mr and mf[2]['m_Mesh']['m_PathID']:
+            if mr and not draws(n):
+                count('skipped', 'MeshRenderer without a mesh')
+            if draws(n):
                 slots = [describe(m.main, x) for x in mr[2]['m_Materials']]
                 mesh_id, in_vertex = mesh(m.main, mf[2]['m_Mesh'], slots)
                 sc.add_component(go, 'MeshFilter', {'m_Mesh': sc.shared_ref(mesh_id)})
@@ -1108,7 +1126,7 @@ class BackgroundConverter:
             if anim:
                 animators.append((n, go, anim[2]['m_Controller']))
             for kind in {c[0] for c in n.components} - {'Transform', 'MeshFilter', 'MeshRenderer', 'Animator'}:
-                count('skipped', kind)
+                count('skipped', kind)                  # particle systems, MgBgOptimizer
             for c in n.children:
                 if has_drawn(c):
                     copy_node(c, go)
@@ -1191,9 +1209,23 @@ class BackgroundConverter:
             stats['lights'][role] = {'from': [x['name'] for x in src], 'color': [round(float(x), 3) for x in col], 'intensity': round(t['m_Intensity'], 3),
                                      'dir': [round(float(x), 3) for x in qrot(rot, (0.0, 0.0, 1.0))], 'mask': hex(t['m_CullingMask']['m_Bits'])}
         stats['lights']['not converted'] = [x['name'] for x in lights['chara'][1:]]
+        # the key light must stay URP's main light: it is the one that casts the shadows
+        key = slots.get('key')
+        if key and opt.light_others_below_key is not None:
+            limit = key[1]['m_Intensity'] * opt.light_others_below_key
+            for o in s.objects('Light'):
+                t = s.get(o.path_id)
+                if t is not key[1] and t['m_Type'] == 1 and t['m_Intensity'] > limit:
+                    stats['lights'].setdefault('held below the key light', {})[sc.name(t['m_GameObject']['m_PathID'])] = round(t['m_Intensity'], 3)
+                    t['m_Intensity'] = float(limit)
+        for role, (go, t) in slots.items():
+            if isinstance(stats['lights'].get(role), dict):
+                stats['lights'][role]['intensity'] = round(t['m_Intensity'], 3)
 
         # ---- RenderSettings: ambient light, fog, the sky
         r = next(s.get(o.path_id) for o in s.objects('RenderSettings'))
+        if key and opt.sun_is_key_light:
+            r['m_Sun'] = pptr(sc.component(key[0], 'Light'))
         if opt.ambient == 'mania':
             cols = [np.minimum(linear_to_srgb(c * opt.light_exposure * opt.ambient_gain), 1.0) for c in ambient_colors(rs)]
             r['m_AmbientMode'] = 1
