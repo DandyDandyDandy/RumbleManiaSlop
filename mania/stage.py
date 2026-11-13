@@ -346,6 +346,14 @@ class Scene:
                 t['m_Name'] = t['m_AssetBundleName'] = bundle_name
                 t['m_Container'] = [[scene_path, t['m_Container'][0][1]]]
                 t['m_SceneHashes'] = [[scene_path, cab]]
+        if cab:
+            # data that stays in the bundle's resource file (the goal's meshes and textures) is found by path
+            for o in self.shared.objects():
+                if o.type.name in ('Mesh', 'Texture2D'):
+                    t = self.shared.get(o.path_id)
+                    sd = t.get('m_StreamData')
+                    if sd and self.scene_name in sd.get('path', ''):
+                        sd['path'] = sd['path'].replace(self.scene_name, cab)
         self.scene.commit()
         self.shared.commit()
         if cab:

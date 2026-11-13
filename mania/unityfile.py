@@ -183,8 +183,8 @@ def rename_cabs(env, mapping):
             continue
         changed = False
         for ext in f.externals:
-            for old, new in full.items():
-                if ext.path.endswith('/' + old):
+            for old, new in mapping.items():          # archive:/<main file>/<file>: both parts carry the name
+                if old in ext.path:
                     ext.path = ext.path.replace(old, new)
                     changed = True
         if changed:

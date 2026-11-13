@@ -24,6 +24,9 @@
 3e75d00   UnityEngine.AssetBundle::LoadFromFileAsync(string, uint, ulong)
 48322d0   Wonder.CharaCustomizeAssetAssign::Revert
 4832480   Wonder.CharaCustomizeAssetAssign::RevertAll
+# port/runtime/mania.c: Banana Mania stages as extra Adventure courses
+2e6be10   Framework.EnumRuntimeHelper<Int32Enum>::GetValue(string, T)
+43287d0   Wonder.StageList::Setup
 # port/runtime/ultrawide.c: screens wider than 16:9
 414b3d0   UnityEngine.UI.CanvasScaler::Handle
 44fe8a0   Wonder.UI.UISystemViewManager::SetActiveOutOfRangeBlackView
