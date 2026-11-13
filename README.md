@@ -54,9 +54,8 @@ too: the imported stages are in `game\mania`. Deleting that folder turns the gam
 
 Those of RumbleSlop, and for the imported stages:
 
-- **Switches do nothing.** Parts a switch would start stay where they are; parts that move by themselves move.
-  Some stages of Super Monkey Ball 2 cannot be finished because of it.
-- Seesaws do not swing, conveyors do not carry, wormholes do not teleport, the wave stage does not wave.
+- Wormholes do not teleport (17 stages), the two stages with sliding blocks ("jamabars") have them standing
+  still, and the wave bonus stage does not wave. Switches, bumpers, seesaws, conveyors and moving parts work.
 - Every goal is Rumble's goal and ends the stage; green and red warp goals do not skip stages.
 - Stages borrow the scenery, lighting and sky of a Rumble world, not Banana Mania's backgrounds, and are drawn
   with Rumble's stage shaders: colours and materials differ from the original, vertex colouring is lost.

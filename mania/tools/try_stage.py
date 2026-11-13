@@ -1,6 +1,7 @@
 """Start the built game, walk the menus into one imported stage and take pictures of it (a test aid).
 
     python try_stage.py <course number> <stage number> [--out DIR] [--hold MS] [--shots S,S,...] [--input "LINE;LINE"]
+    python try_stage.py st<Mania stage number> ...
 
 Course and stage numbers count from 0 in import order (game\\mania\\mania_courses.txt). The run uses the save
 profile "T" (game\\saveT, a copy of game\\save made on first use), so the real save is not touched. Buttons are
@@ -28,8 +29,8 @@ WORLDS_BEFORE = 2       # entries above the first imported course in Select Worl
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('course', type=int)
-    ap.add_argument('stage', type=int)
+    ap.add_argument('course', help='course number, or st<Mania stage number> (then no stage number)')
+    ap.add_argument('stage', type=int, nargs='?')
     ap.add_argument('--out', default=str(paths.BUILD / 'try'))
     ap.add_argument('--hold', type=int, default=6000)
     ap.add_argument('--shots', default='18,26,34')
@@ -37,6 +38,18 @@ def main():
     ap.add_argument('--input', help='live input lines sent once the stage has loaded, separated by ;')
     a = ap.parse_args()
     game = str(paths.GAME)
+    if a.course.startswith('st'):                        # looked up in the import's stage list
+        for line in open(os.path.join(game, 'mania', 'mania_stages.txt'), encoding='utf-8'):
+            f = line.rstrip('\n').split('\t')
+            if f[2] == a.course:
+                print(f'{a.course}: course {f[0]} ({f[3]}), stage {f[1]} ({f[4]})')
+                a.course, a.stage = f[0], int(f[1])
+                break
+        else:
+            sys.exit(f'{a.course} is not in mania_stages.txt')
+    a.course = int(a.course)
+    if a.stage is None:
+        sys.exit('stage number missing')
     exe = os.path.join(game, paths.NAME + '.exe')
     os.makedirs(a.out, exist_ok=True)
     if not os.path.isdir(os.path.join(game, 'saveT')) and os.path.isdir(os.path.join(game, 'save')):
@@ -114,7 +127,7 @@ def main():
     print(f'course {a.course} stage {a.stage}: menus {"ok" if ok else "NOT reached"}, the game was {"still running" if alive else "NOT running"} at the end')
     try:
         for line in open(log, encoding='utf-8', errors='replace'):
-            if any(k in line for k in ('FATAL', 'mania/scene', 'mania: switch', 'exception', 'Exception')):
+            if any(k in line for k in ('FATAL', 'mania/scene', 'mania: ', 'mania\\Sound', 'exception', 'Exception')):
                 print('   ' + line.rstrip()[:240])
     except OSError:
         print('   no port.log')

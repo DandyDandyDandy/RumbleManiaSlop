@@ -82,6 +82,9 @@ int rt_hook_426a180(Cpu *c) {
     c->x[30] = lr;
     for (int i = 0; i < g_nmusic; i++)
         if (g_music[i].stage == stage) {
+            static uint32_t said;
+            if (said != stage && getenv("BR_MANIA_LOG")) rt_log("mania: stage row %u gets BGM cue row %u", stage, g_music[i].cue);
+            said = stage;
             c->x[0] = g_music[i].cue;           // no overlay cue
             return 1;
         }
@@ -175,6 +178,20 @@ int rt_hook_430b0a0(Cpu *c) {
     static int on = -1;
     if (on < 0) on = getenv("BR_MANIA_LOG") != NULL;
     if (on && c->x[0]) rt_log("mania: switch pressed: type %d, class %d, serial %d", (int)LD32(c->x[0] + 0x20), (int)LD32(c->x[0] + 0x24), (int)LD32(c->x[0] + 0x28));
+    return 0;
+}
+
+// Wonder.MgSeesaw.OnPostCollide(GameObject sphereGO): a ball touches a seesaw's collision part (BR_MANIA_LOG)
+int rt_hook_4305d30(Cpu *c) {
+    static int on = -1, calls;
+    if (on < 0) on = getenv("BR_MANIA_LOG") != NULL;
+    if (on && c->x[0] && calls++ % 15 == 0) {
+        float angle, speed;
+        uint32_t a = LD32(c->x[0] + 0x30), s = LD32(c->x[0] + 0x2c);
+        memcpy(&angle, &a, 4);
+        memcpy(&speed, &s, 4);
+        rt_log("mania: seesaw touched (call %d): angle %.3f, angular speed %.4f", calls, angle, speed);
+    }
     return 0;
 }
 

@@ -12,6 +12,7 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\Switch\\...                        changed copies of the game's table bundles (dbtable.py)
     mania\\catalog.json                      the game's Addressables catalog plus the new scenes
     mania\\mania_courses.txt                 the stage range of each imported course (read by port\\runtime\\mania.c)
+    mania\\mania_stages.txt                  course number, stage number, Mania stage, course name, stage name
     mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are)
     mania\\mania_music.txt                   the BGM cue of each imported stage
 
@@ -185,6 +186,10 @@ def main():
         f.write(''.join(x + '\n' for x in lines))
     with open(os.path.join(out, 'mania_music.txt'), 'w', newline='\n') as f:
         f.write(''.join(x + '\n' for x in music_lines))
+    with open(os.path.join(out, 'mania_stages.txt'), 'w', encoding='utf-8', newline='\n') as f:     # for people and try_stage.py
+        for ci, (_, _, title, ids) in enumerate(courses):
+            for si, i in enumerate(ids):
+                f.write(f'{ci}\t{si}\tst{i}\t{title}\t{mania.stage_name(i)}\n')
 
     # ---- classic characters
     if not a.no_classic:

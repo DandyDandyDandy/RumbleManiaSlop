@@ -42,7 +42,8 @@ MATERIAL_MODELS = {'opaque': 'bg_stg_w01_island02', 'cutout': 'bg_stg_w01_plants
 # Script classes the template stage does not use are taken from a stage of the game that does (its type entry with
 # the type tree, and its MonoScript object): class -> stage scene
 SCRIPT_DONORS = {'CollisionBumper': 'bg_stg_w01_102', 'MgBumper': 'bg_stg_w01_102',
-                 'MgStageSwitchController': 'bg_stg_w03_001', 'MgSwitch': 'bg_stg_w03_001', 'CollisionSwitchUpper': 'bg_stg_w03_001'}
+                 'MgStageSwitchController': 'bg_stg_w03_001', 'MgSwitch': 'bg_stg_w03_001', 'CollisionSwitchUpper': 'bg_stg_w03_001',
+                 'MgSeesaw': 'bg_stg_w06_218', 'MgConveyer': 'bg_stg_w02_006'}
 SWITCH_CLIPS = ('bg_stg_w03_001', 'obj_com_switch_on', 'obj_com_switch_off')   # the clips Rumble's switch names
 
 
@@ -463,6 +464,44 @@ class MaterialModels:
             raise ValueError(f'template materials not found in {MATERIAL_CACHE}: {sorted(missing)}')
 
 
+def merged_part(pieces):
+    """One Mania collision part out of several: pieces is [(part, 4x4 matrix that takes the part into the common
+    frame)]. The triangles are carried into the frame, the edge ids of each further part are moved past those of
+    the parts before it, and the grid is a single cell that lists every triangle (which is what Mania itself
+    stores for small parts)."""
+    tris, base = [], 0
+    lo, hi = np.full(3, np.inf), np.full(3, -np.inf)
+    for part, mat in pieces:
+        top = -1
+        for t in part['triangle']:
+            top = max([top] + list(t['edgeIndices']))
+            p = np.array([t['pos']['x'], t['pos']['y'], t['pos']['z']], dtype=np.float64)
+            rot = (t['rot']['x'], t['rot']['y'], t['rot']['z'], t['rot']['w'])
+            a = p + qrot(rot, (t['lpos'][0]['x'], t['lpos'][0]['y'], 0.0))
+            b = p + qrot(rot, (t['lpos'][1]['x'], t['lpos'][1]['y'], 0.0))
+            p, a, b = [(mat @ np.append(v, 1.0))[:3] for v in (p, a, b)]
+            e1, e2 = a - p, b - p
+            n = np.cross(e1, e2)
+            ln, l1 = np.linalg.norm(n), np.linalg.norm(e1)
+            if ln < 1e-12 or l1 < 1e-9:
+                continue
+            n, x = n / ln, e1 / l1
+            y = np.cross(n, x)
+            new = copy.deepcopy(t)
+            new['pos'], new['rot'] = v3(p), q4(quat_from_axes(x, y, n))
+            new['lpos'] = [v2((float(l1), 0.0)), v2((float(np.dot(e2, x)), float(np.dot(e2, y))))]
+            new['edgeIndices'] = [e if e < 0 else e + base for e in t['edgeIndices']]
+            tris.append(new)
+            lo, hi = np.minimum(lo, np.minimum(np.minimum(p, a), b)), np.maximum(hi, np.maximum(np.maximum(p, a), b))
+        base += top + 1
+    if not tris:
+        lo = hi = np.zeros(3)
+    size = np.maximum(hi - lo, 1e-3)
+    return {'triangle': tris, 'gridTriangleList': {'X': [{'Y': [{'Z': [{'indexList': list(range(len(tris)))}]}]}]},
+            'gridMin': v3(lo), 'intervalX': float(size[0]), 'intervalY': float(size[1]), 'intervalZ': float(size[2]),
+            'gridSizeX': 1, 'gridSizeY': 1, 'gridSizeZ': 1}
+
+
 def collision_part(part, proto):
     """Rumble's CollisionStageData.part from Mania's.
 
@@ -687,6 +726,29 @@ class Converter:
                     for r in level.get('renderers', []):
                         far_levels.add(r['renderer']['m_PathID'])
         bumpers, go_of = [], {}
+        seesaws, seesaw_parts, conveyors = [], {}, []
+        has_part, moving_roots = set(), set()
+
+        def add_part(go, n, data, flags):
+            """Rumble's CollisionStagePart on go, from the Mania part data `data` (in node n's frame)."""
+            nonlocal lo, hi
+            conv, plo, phi = collision_part(data, sh.template('MonoBehaviour', 'CollisionStageData')['part'])
+            d = sh.template('MonoBehaviour', 'CollisionStageData')
+            d['m_Name'], d['part'] = 'mania_' + n.name, conv
+            did = sh.add('MonoBehaviour', d, 'CollisionStageData')
+            p = s.template('MonoBehaviour', 'CollisionStagePart')
+            p.update(isPhysical=1, isTrigger=int(bool(flags.get('isTrigger', 0))), isDynamic=int(bool(flags.get('isDynamic', 0))),
+                     priority=0, layerMask=10, isDebugSelected=0, isItem=0, m_CollisionStage=sc.shared_ref(did), m_CullingScale=1.0)
+            sc.add_component(go, 'MonoBehaviour', p, 'CollisionStagePart')
+            has_part.add(go)
+            stats['collision_parts'] += 1
+            stats['triangles'] += len(conv['triangle'])
+            w = world_matrix(n, m.root)
+            for cx in (plo[0], phi[0]):
+                for cy in (plo[1], phi[1]):
+                    for cz in (plo[2], phi[2]):
+                        p3 = (w @ np.array([cx, cy, cz, 1.0]))[:3]
+                        lo, hi = np.minimum(lo, p3), np.maximum(hi, p3)
 
         def copy_node(n, parent, visual):
             nonlocal lo, hi, start_node
@@ -714,33 +776,25 @@ class Converter:
                 sc.add_component(go, 'MeshRenderer', r)
                 stats['renderers'] += 1
             part = n.component('CollisionStagePart')
-            if part and not visual:
+            above = n.parent
+            if part and not visual and above is not None and above.component('MgSeesaw') and not above.component('CollisionStagePart'):
+                seesaw_parts.setdefault(above.id, []).append(n)     # becomes one part on the seesaw itself (below)
+            elif part and not visual:
                 data = m.get(m.main, part[2]['m_CollisionStage'])
                 if data is not None and data[1]['part']['triangle']:
-                    conv, plo, phi = collision_part(data[1]['part'], sh.template('MonoBehaviour', 'CollisionStageData')['part'])
-                    d = sh.template('MonoBehaviour', 'CollisionStageData')
-                    d['m_Name'], d['part'] = 'mania_' + n.name, conv
-                    did = sh.add('MonoBehaviour', d, 'CollisionStageData')
-                    p = s.template('MonoBehaviour', 'CollisionStagePart')
-                    p.update(isPhysical=1, isTrigger=int(bool(part[2].get('isTrigger', 0))), isDynamic=int(bool(part[2].get('isDynamic', 0))),
-                             priority=0, layerMask=10, isDebugSelected=0, isItem=0, m_CollisionStage=sc.shared_ref(did), m_CullingScale=1.0)
-                    sc.add_component(go, 'MonoBehaviour', p, 'CollisionStagePart')
-                    stats['collision_parts'] += 1
-                    stats['triangles'] += len(conv['triangle'])
-                    w = world_matrix(n, m.root)
-                    for cx in (plo[0], phi[0]):
-                        for cy in (plo[1], phi[1]):
-                            for cz in (plo[2], phi[2]):
-                                p3 = (w @ np.array([cx, cy, cz, 1.0]))[:3]
-                                lo, hi = np.minimum(lo, p3), np.maximum(hi, p3)
+                    add_part(go, n, data[1]['part'], part[2])
             if not visual and n.component('CollisionBumper'):
                 bumpers.append((n, go))
+            if not visual and n.component('MgSeesaw'):
+                seesaws.append((n, go))
+            if not visual and n.component('MgConveyer'):
+                conveyors.append((n, go))
             banana = n.component('BananaPos')
             if banana and not visual:
                 bananas.append((go, banana[2]['m_Kind']))
             for kind in kinds - {'Transform', 'MeshFilter', 'MeshRenderer', 'CollisionStagePart', 'BananaPos', 'Animator', 'GravityTilt',
                                  'MonoBehaviour', 'CollisionBumper', 'Bumper', 'LODGroup', 'MgStageSwitch', 'CollisionSwitchUpper',
-                                 'MgTRSSync', 'StageMovObjManager', 'MgStageSwitchManager', 'MainGameStage'}:
+                                 'MgTRSSync', 'StageMovObjManager', 'MgStageSwitchManager', 'MainGameStage', 'MgSeesaw', 'MgConveyer'}:
                 skip(kind)
             for c in n.children:
                 copy_node(c, go, visual)
@@ -772,6 +826,55 @@ class Converter:
                 tr['m_RecordProperties']['m_AnimatorProperty'] = {'m_Animator': dict(NULL), 'm_isSelfUpdate': 0}
                 sc.add_component(go, 'MonoBehaviour', tr, 'ReplayTracker')
             stats['bumpers'] = len(bumpers)
+
+        def tracker(go):                                         # Rumble's gimmicks carry a ReplayTracker
+            tr = s.template('MonoBehaviour', 'ReplayTracker')
+            tr['m_RecordProperties']['m_AnimatorProperty'] = {'m_Animator': dict(NULL), 'm_isSelfUpdate': 0}
+            sc.add_component(go, 'MonoBehaviour', tr, 'ReplayTracker')
+
+        # ---- seesaws. Rumble's MgSeesaw turns its own object and is told about a hit by the collision part of
+        # that same object (MgSeesaw.OnPostCollide looks for hits whose shape is on its GameObject). Mania's seesaw
+        # is an empty node over two parts (the plank and the axle), so the two are made one part on the node.
+        made = 0
+        for n, go in seesaws:
+            inv = np.linalg.inv(world_matrix(n, m.root))
+            pieces = []
+            for ch in seesaw_parts.get(n.id, []):
+                data = m.get(m.main, ch.component('CollisionStagePart')[2]['m_CollisionStage'])
+                if data is not None and data[1]['part']['triangle']:
+                    pieces.append((data[1]['part'], inv @ world_matrix(ch, m.root)))
+            if pieces:
+                add_part(go, n, merged_part(pieces), {})
+            if go not in has_part:
+                skip('MgSeesaw')
+                continue
+            if not made:
+                sc.import_script(self.aa, 'MgSeesaw')
+            src = n.component('MgSeesaw')[2]
+            ms = s.template('MonoBehaviour', 'MgSeesaw')
+            ms.update(momentFactor=src['momentFactor'], frictionFactor=src['frictionFactor'], restoreFactor=src['restoreFactor'])
+            sc.add_component(go, 'MonoBehaviour', ms, 'MgSeesaw')
+            tracker(go)
+            moving_roots.add(go)
+            made += 1
+        if seesaws:
+            stats['seesaws'] = made
+
+        # ---- conveyors: MgConveyer next to its collision part, the same speed vector
+        made = 0
+        for n, go in conveyors:
+            if go not in has_part:
+                skip('MgConveyer')
+                continue
+            if not made:
+                sc.import_script(self.aa, 'MgConveyer')
+            mc = s.template('MonoBehaviour', 'MgConveyer')
+            mc['m_StaticSpeed'] = copy.deepcopy(n.component('MgConveyer')[2]['m_StaticSpeed'])
+            sc.add_component(go, 'MonoBehaviour', mc, 'MgConveyer')
+            moving_roots.add(go)
+            made += 1
+        if conveyors:
+            stats['conveyors'] = made
 
         # ---- moving parts. Mania animates the Collision tree only and copies each moving node's transform to other
         # objects every frame: to its drawn twin (StageMovObjManager.m_info: animationTRS -> meshTRS) and to things
@@ -863,14 +966,15 @@ class Converter:
         if not goals:
             sc.delete(goal0)
 
-        # ---- what the Animator moves gets the tag "StgMot", with everything under it. Rumble's collision shapes look
+        # ---- what the Animator moves, seesaws and conveyors get the tag "StgMot", with everything under them. Rumble's collision shapes look
         # for that tag on their parents when they wake (CollisionShapeBase.Awake); without it a shape is taken for
         # a still one and keeps colliding where it stood when the stage was loaded.
         tagged = 0
-        if animators and collision_go:
+        if collision_go and (animators or moving_roots):
             def tag(go, path, moving):
                 nonlocal tagged
-                moving = moving or (zlib.crc32(path.encode('utf-8')) & 0xffffffff) in animated_paths
+                moving = (moving or go in moving_roots
+                          or bool(animators) and (zlib.crc32(path.encode('utf-8')) & 0xffffffff) in animated_paths)
                 if moving:
                     s.get(go)['m_Tag'] = TAG_STGMOT
                     tagged += 1

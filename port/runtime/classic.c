@@ -62,7 +62,14 @@ void classic_fs_override(char *path, size_t cap) {
         if (!_strnicmp(p, sound, sizeof sound - 1)) {
             char cand[700];
             snprintf(cand, sizeof cand, "%smania\\Sound\\%s", rt_exe_dir(), p + sizeof sound - 1);
-            if (is_file(cand)) snprintf(path, cap, "%s", cand);
+            if (is_file(cand)) {
+                static char last[96];                   // one log line per file, not per open
+                if (_stricmp(last, p + sizeof sound - 1)) {
+                    snprintf(last, sizeof last, "%s", p + sizeof sound - 1);
+                    rt_log("classic: opens mania\\Sound\\%s", last);
+                }
+                snprintf(path, cap, "%s", cand);
+            }
             return;
         }
 }

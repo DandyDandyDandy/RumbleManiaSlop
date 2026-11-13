@@ -31,6 +31,7 @@
 45605b0   Wonder.UI.Choices.UIChoicesItemData_Factory::getUnlockedCourseList
 4308520   Wonder.MgStageSwitchController::Request(eState, int, int, bool, float)   (BR_MANIA_LOG)
 430b0a0   Wonder.MgSwitch::OnTriggerEnterPlayer(PhysicsBall)   (BR_MANIA_LOG)
+4305d30   Wonder.MgSeesaw::OnPostCollide(GameObject)   (BR_MANIA_LOG)
 # port/runtime/ultrawide.c: screens wider than 16:9
 414b3d0   UnityEngine.UI.CanvasScaler::Handle
 44fe8a0   Wonder.UI.UISystemViewManager::SetActiveOutOfRangeBlackView

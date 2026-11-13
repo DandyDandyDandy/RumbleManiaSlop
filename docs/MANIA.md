@@ -255,6 +255,8 @@ What is built:
 | nothing (Mania moves every collision part it finds under an animated node) | the tag `StgMot` on every object the clips move and on everything below it (below) |
 | `CollisionBumper` (+ the model under the root's `bumpers`) | Rumble's `CollisionBumper` (same sphere, same push) and `MgBumper` |
 | `MgStageSwitchManager`, `MgStageSwitch`, `CollisionSwitchUpper` | `MgStageSwitchController` on the `Collision` copy, `MgSwitch` and `CollisionSwitchUpper` on each switch (below) |
+| `MgSeesaw {momentFactor, frictionFactor, restoreFactor, seeSawModel}` on a node above the seesaw's collision parts | `MgSeesaw` (same three factors), one merged `CollisionStagePart` and a `ReplayTracker` on that node (below) |
+| `MgConveyer {m_StaticSpeed}` next to a `CollisionStagePart` | `MgConveyer` with the same speed vector next to the converted part |
 | `LODGroup` | only the nearest detail level is drawn |
 | fall-out height and box | `m_RingoutY`, `m_FalloutBounds` |
 
@@ -267,7 +269,25 @@ place where the part was. `isDynamic` on the shape has the same effect and is wh
 converter hashes every object path under the `Collision` copy (CRC-32 of the path, as clip bindings store it),
 and tags the objects the carried-over clips are bound to, with their subtrees (`moving_objects` in the report).
 
-**Script classes the template does not have.** World 1 Stage 1 has no bumper or switch. A script class is made
+**Seesaws.** Rumble's `MgSeesaw` turns its own object (`Move`, 0x4306810) and learns about a ball from
+`OnPostCollide(GameObject)` (0x4305d30), which goes through the ball's hit list and takes only hits whose
+shape sits on the seesaw's **own** GameObject; `Awake` also wants a `ReplayTracker` there. The game's seesaws
+are therefore one object with a mesh, a `CollisionStagePart`, the `MgSeesaw` and a tracker. Mania's seesaw is
+an empty node with the script and two children that carry the collision (the plank and the axle), each in a
+frame of its own. `merged_part` carries the children's triangles into the node's frame, renumbers the edge ids
+of the second part past those of the first, and stores a grid of one cell that lists every triangle (which is
+what Mania itself stores for parts this small); the children keep no part. The drawn plank already hangs under
+its collision twin, so it turns with the node. A seesaw script on a node with no collision under it (three
+stages have one inside another seesaw) is left out. With `BR_MANIA_LOG` the port logs every fifteenth touch
+with the seesaw's angle.
+
+**Conveyors.** `MgConveyer.Awake` takes the `CollisionShapeBase` of its own object, and `FixedUpdate`
+(0x4300070) gives that shape a fake displacement of `m_StaticSpeed * kGimmickSkipFrame * kFpsMultiplier / 60`
+per step in the part's frame, so the ball is carried as if the floor had moved. Both games use the same unit
+(Rumble's own belts run at 3 to 20, Mania's at 3, 16 and 100). The conveyor object needs the `StgMot` tag like
+any moving part. The belt's texture does not scroll (Mania's `MgConveyManager` is not converted).
+
+**Script classes the template does not have.** World 1 Stage 1 has no bumper, switch, seesaw or conveyor. A script class is made
 usable in the new scene by copying two things from a stage of the game that uses it (`SCRIPT_DONORS`): the
 class's `MonoScript` object into the shared file, and its type entry (with the type tree) into the scene file,
 pointing at a new entry of the file's script list. `Scene.import_script` does that; new objects of the class are
@@ -341,10 +361,11 @@ of the window. It uses the save profile `T`, not the real save.
 
 ## What is not converted
 
-* Seesaws (13 stages), conveyors (5), jamabars (2), the wave floor (1), wormholes (17): the objects are drawn and
-  their collision is solid, but they do not act. Rumble has classes for all of them (`MgSeesaw`, `MgConveyer`,
-  `CollisionJamabar`, `MgWormhole` / `CollisionWormholeGate`), so the way taken for bumpers and switches should
-  carry over.
+* Wormholes (17 stages), jamabars (2: st1024, st1035), the wave floor (1: st1092): the objects are drawn and
+  their collision is solid, but they do not act. Rumble has classes for wormholes and jamabars (`MgWormhole` /
+  `CollisionWormholeGate`, `MgJamabar`); a wormhole there is a prefab of its own with a cubemap camera, particle
+  renderers and a text, so it wants a whole object tree brought over from one of the game's stages, not just
+  a script.
 * Goal colours: every goal is Rumble's arch and ends the stage.
 * Mania's backgrounds and lighting (`bg_*` bundles, the `Light_*` prefabs): a stage uses the scenery scenes of the
   Rumble world named in `WORLD_OF_BG`.
