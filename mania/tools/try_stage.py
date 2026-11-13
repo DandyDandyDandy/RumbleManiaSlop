@@ -35,6 +35,7 @@ def main():
     ap.add_argument('--hold', type=int, default=6000)
     ap.add_argument('--shots', default='18,26,34')
     ap.add_argument('--before', type=int, default=WORLDS_BEFORE)
+    ap.add_argument('--profile', default='T', help='save profile: the folder save<profile> in the game folder')
     ap.add_argument('--input', help='live input lines sent once the stage has loaded, separated by ;')
     a = ap.parse_args()
     game = str(paths.GAME)
@@ -63,7 +64,7 @@ def main():
             os.remove(os.path.join(game, f))
         except OSError:
             pass
-    env = dict(os.environ, BR_PROFILE='T', BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_NO_REAL_INPUT='1', BR_MANIA_LOG='1')
+    env = dict(os.environ, BR_PROFILE=a.profile, BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_NO_REAL_INPUT='1', BR_MANIA_LOG='1')
     p = subprocess.Popen([exe, '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720', '-logFile', 'player.log'],
                          cwd=game, env=env)
 

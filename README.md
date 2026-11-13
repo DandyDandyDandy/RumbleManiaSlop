@@ -76,3 +76,6 @@ Those of RumbleSlop, and for the imported stages:
 As RumbleSlop: MIT for this repository's own code ([LICENSE](LICENSE)), third-party parts in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Super Monkey Ball Banana Rumble and Banana Mania are (c) SEGA;
 nothing of either is in this repository.
+That the characters which can no longer be bought or earned only need
+their unlock rule changed was found by iswimfly ([Delisted Character Fix](https://gamebanana.com/mods/690229));
+the port gives them to every save in its own way and includes nothing of that mod.
