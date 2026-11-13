@@ -55,8 +55,34 @@ static int g_ncourses = -1;
 #define F_CURRENT_STAGE 0x4329320ull        // Wonder.StageList.GetCurrentStage() -> Stage.eID
 #define SELECTOR_STAGELIST 0x28             // SelectorParam.m_StageList
 #define MAX_MUSIC 1024
-static struct { uint32_t stage, cue; } g_music[MAX_MUSIC];
-static int g_nmusic = -1;
+static struct { uint32_t stage, cue, classic; } g_music[MAX_MUSIC];   // classic: the Classic Soundtrack's cue row, 0 = none
+static int g_nmusic = -1, g_have_classic;
+
+// Which music the imported stages play when the import has both: Banana Mania's own (the default) or the original
+// games' (its Classic Soundtrack add-on). The choice is kept in <exe dir>\port_mania.txt as "music=remake" or
+// "music=classic"; mania_set_classic_music is for an option row.
+static int g_classic = -1;
+static void settings_path(char *path, size_t cap) { snprintf(path, cap, "%sport_mania.txt", rt_exe_dir()); }
+int mania_classic_music(void) {
+    if (g_classic < 0) {
+        char path[700], line[64];
+        g_classic = 0;
+        settings_path(path, sizeof path);
+        FILE *f = fopen(path, "r");
+        while (f && fgets(line, sizeof line, f))
+            if (!strncmp(line, "music=", 6)) g_classic = !strncmp(line + 6, "classic", 7);
+        if (f) fclose(f);
+    }
+    return g_classic;
+}
+void mania_set_classic_music(int on) {
+    char path[700];
+    g_classic = on != 0;
+    settings_path(path, sizeof path);
+    FILE *f = fopen(path, "w");
+    if (f) { fprintf(f, "music=%s\n", g_classic ? "classic" : "remake"); fclose(f); }
+}
+int mania_has_classic_music(void);
 
 static void load_music(void) {
     char path[700], line[128];
@@ -66,13 +92,22 @@ static void load_music(void) {
     if (!f) return;
     while (fgets(line, sizeof line, f) && g_nmusic < MAX_MUSIC) {
         unsigned stage, cue;
-        if (sscanf(line, "%u %u", &stage, &cue) == 2) { g_music[g_nmusic].stage = stage; g_music[g_nmusic].cue = cue; g_nmusic++; }
+        unsigned classic = 0;
+        if (sscanf(line, "%u %u %u", &stage, &cue, &classic) >= 2) {
+            g_music[g_nmusic].stage = stage; g_music[g_nmusic].cue = cue; g_music[g_nmusic].classic = classic; g_nmusic++;
+            if (classic) g_have_classic = 1;
+        }
     }
     fclose(f);
     rt_log("mania: imported music for %d stages", g_nmusic);
 }
 
 // Wonder.MainGameBg.calcBgCue() -> ValueTuple<Sound.Cue.eID, Sound.Cue.eID> (the BGM cue and its overlay cue, in x0)
+int mania_has_classic_music(void) {
+    if (g_nmusic < 0) load_music();
+    return g_have_classic;
+}
+
 int rt_hook_426a180(Cpu *c) {
     if (g_nmusic < 0) load_music();
     if (!g_nmusic) return 0;
@@ -83,9 +118,11 @@ int rt_hook_426a180(Cpu *c) {
     for (int i = 0; i < g_nmusic; i++)
         if (g_music[i].stage == stage) {
             static uint32_t said;
-            if (said != stage && getenv("BR_MANIA_LOG")) rt_log("mania: stage row %u gets BGM cue row %u", stage, g_music[i].cue);
+            if (said != stage && getenv("BR_MANIA_LOG"))
+                rt_log("mania: stage row %u gets BGM cue row %u%s", stage, mania_classic_music() && g_music[i].classic ? g_music[i].classic : g_music[i].cue,
+                       mania_classic_music() && g_music[i].classic ? " (Classic Soundtrack)" : "");
             said = stage;
-            c->x[0] = g_music[i].cue;           // no overlay cue
+            c->x[0] = mania_classic_music() && g_music[i].classic ? g_music[i].classic : g_music[i].cue;           // no overlay cue
             return 1;
         }
     c->x[0] = self;

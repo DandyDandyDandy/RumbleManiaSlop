@@ -15,6 +15,7 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
                                             its course id; "bonus <stage row>" per bonus stage; "own <id> <previous id>"
                                             for the game's Adventure worlds
                                             (read by port\\runtime\\mania.c)
+    mania\\mania_music.txt                   per stage row: its BGM cue row, and the Classic Soundtrack's cue row (0: none)
     mania\\mania_stages.txt                  course number, stage number, Mania stage, course name, stage name
     mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are)
     mania\\mania_music.txt                   the BGM cue of each imported stage
@@ -312,8 +313,12 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
     music_lines = []
     if not a.no_music:
         sound = os.path.join(a.mania, 'smbbm_Data', 'StreamingAssets', 'Sound')
+        # The Classic Soundtrack add-on (the original games' music), when the install has it: for every cue sheet
+        # <sheet> a sheet <sheet>_dx with the same cue names. Mania pairs them in code (Sound.GetDeluxeCue, the
+        # option BGMMode Remake / Original); here every stage gets a second cue and the port's option chooses.
+        classic = os.path.join(a.mania, 'smbbm_Data', 'StreamingAssets', 'DlcRoot', 'DlcDxOriginalBgm', 'Sound')
         sheet_t, cue_t = db.table('Sound_CueSheet'), db.table('Sound_Cue')
-        sheets, cues = {}, {}
+        sheets, cues, classic_cues = {}, {}, {}
         os.makedirs(os.path.join(out, 'Sound'), exist_ok=True)
         for sid in stage_ids:
             name = mania.bgm_cue(sid)
@@ -334,8 +339,21 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
                 cues[name] = len(cue_t.rows)
                 cue_t.use(cues[name], cueSheet=sheets[sheet], innerCueName=name[len(sheet) + 1:], title=0, displayOrderInGallery=0,
                           innerCueId=0, ThumbnailSpriteID=0, IsEnabledTrial=False)
+                dx = sheet + '_dx'
+                if os.path.exists(os.path.join(classic, dx + '.acb')):
+                    if dx not in sheets:
+                        awb = os.path.exists(os.path.join(classic, dx + '.awb'))
+                        for ext in ('.acb', '.awb') if awb else ('.acb',):
+                            shutil.copyfile(os.path.join(classic, dx + ext), os.path.join(out, 'Sound', dx + ext))
+                        sheets[dx] = len(sheet_t.rows)
+                        sheet_t.use(sheets[dx], acbPath=f'Sound/{dx}.acb', awbPath=f'Sound/{dx}.awb' if awb else '', cueSheetName=dx)
+                    classic_cues[name] = len(cue_t.rows)
+                    cue_t.use(classic_cues[name], cueSheet=sheets[dx], innerCueName=name[len(sheet) + 1:], title=0,
+                              displayOrderInGallery=0, innerCueId=0, ThumbnailSpriteID=0, IsEnabledTrial=False)
             if cues[name] is not None:
-                music_lines.append(f'{row_of[sid]} {cues[name]}')
+                music_lines.append(f'{row_of[sid]} {cues[name]} {classic_cues.get(name, 0)}')
+        if classic_cues:
+            print(f'Classic Soundtrack: {sum(1 for s in sheets if s.endswith("_dx"))} cue sheets, the original music is on offer')
     written = db.save(out_switch)
     return written, music_lines, lines
 
