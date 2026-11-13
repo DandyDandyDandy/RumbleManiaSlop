@@ -156,7 +156,9 @@ class Scene:
                 s._donors[('MeshRenderer', None)] = (o, copy.deepcopy(s.get(o.path_id)))
                 break
         s.donor('MonoBehaviour', 'CollisionStagePart')
-        for cls in ('Mesh', 'Material', 'Texture2D'):
+        s.donor('MonoBehaviour', 'ReplayTracker')
+        s.donor('Animator')
+        for cls in ('Mesh', 'Material', 'Texture2D', 'AnimationClip', 'AnimatorController'):
             self.shared.donor(cls)
         self.shared.donor('MonoBehaviour', 'CollisionStageData')
 
@@ -559,6 +561,40 @@ class Converter:
                 mesh_ids[key] = sh.add('Mesh', new)
             return pptr(mesh_ids[key])
 
+        clip_ids = {}
+
+        def clip(sf, ref):
+            got = m.get(sf, ref)
+            if got is None:
+                return dict(NULL), 0
+            key, t, _, _ = got
+            if key not in clip_ids:
+                clip_ids[key] = sh.add('AnimationClip', overlay(sh.template('AnimationClip'), t))
+            return pptr(clip_ids[key]), len(t['m_ClipBindingConstant']['genericBindings'])
+
+        def controller(sf, ref):
+            """The stage's AnimatorController (one layer and one state per clip, each state's speed a float
+            parameter named like the state) with its clips; (path id, number of animated bindings)."""
+            got = m.get(sf, ref)
+            if got is None:
+                return 0, 0
+            _, t, csf, _ = got
+            new = overlay(sh.template('AnimatorController'), t)
+            clips = [clip(csf, c) for c in t['m_AnimationClips']]
+            new['m_AnimationClips'] = [c[0] for c in clips]
+            bound = sum(c[1] for c in clips)
+            return (sh.add('AnimatorController', new) if bound else 0), bound
+
+        def animator(go, ctrl):
+            a = s.template('Animator')
+            a.update(m_Enabled=1, m_Avatar=dict(NULL), m_Controller=sc.shared_ref(ctrl), m_CullingMode=0, m_UpdateMode=1,
+                     m_ApplyRootMotion=False)
+            aid = sc.add_component(go, 'Animator', a)
+            tracker = s.template('MonoBehaviour', 'ReplayTracker')
+            tracker['m_RecordProperties']['m_AnimatorProperty'] = {'m_Animator': pptr(aid), 'm_isSelfUpdate': 0}
+            sc.add_component(go, 'MonoBehaviour', tracker, 'ReplayTracker')
+            return aid
+
         # ---- the Mania hierarchy
         holder = sc.new_object('mania', root)
         lo, hi = np.full(3, np.inf), np.full(3, -np.inf)
@@ -620,11 +656,22 @@ class Converter:
                 skip(kind)
             for c in n.children:
                 copy_node(c, go, visual)
+            return go
 
-        if m.behavior is not None:
-            copy_node(m.behavior, holder, True)
-        if m.collision is not None:
-            copy_node(m.collision, holder, False)
+        behavior_go = copy_node(m.behavior, holder, True) if m.behavior is not None else None
+        collision_go = copy_node(m.collision, holder, False) if m.collision is not None else None
+
+        # ---- moving parts: Mania animates the Collision tree and copies the motion to the drawn twin of each node
+        # (the node at the same path under Behavior). Here both trees get an Animator with the same controller.
+        animators = []
+        man = m.collision.component('Animator') if m.collision is not None else None
+        if man and collision_go:
+            ctrl, bound = controller(m.main, man[2]['m_Controller'])
+            if ctrl:
+                animators.append(animator(collision_go, ctrl))
+                if behavior_go:
+                    animators.append(animator(behavior_go, ctrl))
+            stats['animated_bindings'] = bound
         if not np.isfinite(lo).all():
             lo, hi = np.zeros(3), np.zeros(3)
 
@@ -646,6 +693,7 @@ class Converter:
         # ---- MainGameStage
         centre, extent = (lo + hi) / 2, (hi - lo) / 2
         mgs['m_GoalColiList'] = goal_colis
+        mgs['m_StageAnimators'] = [pptr(a) for a in animators]
         mgs['m_BananaTransformList'] = [{'transform': pptr(sc.tr_of_go[g]), 'kind': int(k), 'isBotIgnore': 0, 'isNoShadow': 0}
                                         for g, k in bananas if k in (0, 1)]
         mgs['m_MeshBounds'] = {'m_Center': v3(centre), 'm_Extent': v3(extent)}

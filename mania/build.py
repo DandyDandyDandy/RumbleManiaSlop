@@ -144,7 +144,7 @@ def main():
     print(f'{len(courses)} courses, {len(stage_ids)} stages', flush=True)
 
     # ---- stage scenes
-    failed = {}
+    failed, reports = {}, {}
     if not a.no_stages:
         jobs = []
         for sid in stage_ids:
@@ -157,6 +157,8 @@ def main():
                 if err:
                     failed[bundle] = err
                     print(f'  FAILED {bundle}: {err}', flush=True)
+                else:
+                    reports[bundle] = stats
                 if done % 25 == 0 or done == len(jobs):
                     print(f'  {done}/{len(jobs)} stages converted', flush=True)
     stage_ids = [i for i in stage_ids if os.path.exists(os.path.join(out, bundle_rel(i).replace('/', os.sep)))]
@@ -246,6 +248,20 @@ def main():
         cat.add_entry(f'Assets/Mania/{name}.unity', tmpl['prov'], depkey, -1, name, tmpl['rt'], [name])
     cat.save(os.path.join(out, 'catalog.json'))
 
+    # what each stage has and what was left out, for whoever looks into a stage that plays wrong
+    skipped = {}
+    with open(os.path.join(out, 'import_report.txt'), 'w', encoding='utf-8', newline='
+') as f:
+        for bundle, st in sorted(reports.items()):
+            f.write(f'{bundle}	{st}
+')
+            for k, n in st.get('skipped', {}).items():
+                skipped[k] = skipped.get(k, 0) + 1
+        for bundle, e in sorted(failed.items()):
+            f.write(f'{bundle}	FAILED {e}
+')
+    if skipped:
+        print('not converted (stages that have it): ' + ', '.join(f'{k} {n}' for k, n in sorted(skipped.items(), key=lambda x: -x[1])))
     print(f'imported {len(stage_ids)} stages in {len(courses)} courses ({len(failed)} stages failed), {len(written)} tables, '
           f'{int(time.time() - t0)} s -> {out}')
     for b, e in failed.items():
