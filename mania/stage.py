@@ -1000,7 +1000,10 @@ class Converter:
         ring = float(m.info.get('m_ringoutY', lo[1] - 10.0))
         if ring < -1e5:                              # some stages have no fall-out height (-FLT_MAX): below the lowest floor
             ring = float(lo[1] - 15.0)
-        if fb and max(fb['m_Extent'].values()) > 0:
+        # Five stages (Steps among them) have no fall-out box: Mania stores one of FLT_MAX / 2 on each side. Rumble takes such a box
+        # literally and its arithmetic overflows (the ball is "outside" at once: Fall Out on the first frame), so
+        # those get a box around the stage like the stages that have none at all.
+        if fb and 0 < max(fb['m_Extent'].values()) < 1e5 and max(abs(v) for v in fb['m_Center'].values()) < 1e5:
             mgs['m_FalloutBounds'] = {'m_Center': copy.deepcopy(fb['m_Center']), 'm_Extent': copy.deepcopy(fb['m_Extent'])}
         else:
             mgs['m_FalloutBounds'] = {'m_Center': v3(centre + np.array([0, 100.0, 0])), 'm_Extent': v3(extent + np.array([80.0, 150.0, 80.0]))}

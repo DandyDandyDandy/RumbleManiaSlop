@@ -11,7 +11,9 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\Switch\\mania\\scene_<n>.bundle     one converted stage scene each (stage.py)
     mania\\Switch\\...                        changed copies of the game's table bundles (dbtable.py)
     mania\\catalog.json                      the game's Addressables catalog plus the new scenes
-    mania\\mania_courses.txt                 the stage range of each imported course (read by port\\runtime\\mania.c)
+    mania\\mania_courses.txt                 per imported course: its stage list id, first row and length in the real list, and
+                                            its course id; then "own <id> <previous id>" for the game's Adventure worlds
+                                            (read by port\\runtime\\mania.c)
     mania\\mania_stages.txt                  course number, stage number, Mania stage, course name, stage name
     mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are)
     mania\\mania_music.txt                   the BGM cue of each imported stage
@@ -259,7 +261,17 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
     ctext_t = {lang: db.table(f'Course_Text_{lang}') for lang in LANGS}
     prog_t = db.table('MainGame_Story_Progress')
     first_course = len(course_t.rows)
-    last_vanilla = max((r for r in course_t.rows if not r['_empty']), key=lambda r: r['_order'])
+    # The world picker of co-op and online rooms walks Course.NextCourseID from the first Adventure world
+    # (Util.Stage.GetAdvFirstStageID: first in display order, category 1, 4 or 6, enabled for category 1, no
+    # previous course) to the end; the imported courses are hung on the end of that chain (the last Ultimate EX
+    # world), not on the last row of the table, which is the No Miss Challenge and belongs to no chain.
+    own = sorted((r for r in course_t.rows if not r['_empty']), key=lambda r: r['_order'])
+    by_id = {r['_id']: r for r in own}
+    last_vanilla = next((r for r in own if r['CategoryID'] in (1, 4, 6) and r['IsEnabledCategory'][1] and not r['PrevCourseID']), None)
+    seen = set()
+    while last_vanilla is not None and last_vanilla['NextCourseID'] in by_id and last_vanilla['_id'] not in seen:
+        seen.add(last_vanilla['_id'])
+        last_vanilla = by_id[last_vanilla['NextCourseID']]
     lines = []
     for k, (name, prefix, title, ids) in enumerate(courses):
         cid = first_course + k
@@ -268,7 +280,7 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
             i = len(group.rows)
             group.rows.append({'_id': i, 'StageID': row_of[sid], 'NextStage': [0, 0], 'StageListID': 0, 'OverrideCourseID': 0,
                                '_empty': 0, '_order': i})
-        lines.append(f'{LIST_BASE + k} {first} {len(ids)}')
+        lines.append(f'{LIST_BASE + k} {first} {len(ids)} {cid}')
         world = WORLD_OF_BG.get(mania.stages[ids[0]]['bg'], 1)
         look = course_t.row(world)
         course_t.use(cid, Name=cid, StageListID=LIST_BASE + k, CategoryID=COURSE_CATEGORY,
@@ -282,8 +294,13 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
         for i in range(len(ids)):
             prog_t.use(len(prog_t.rows), CourseID=cid, IsDefaultOpen=True, UnlockProgress=[0, 0], StageIndex=i, MovieIDPrologue=0,
                        MovieIDEpilogue=0)
-    if courses:
+    if courses and last_vanilla is not None:
         last_vanilla['NextCourseID'] = first_course
+    # the game's own Adventure worlds in display order with the world each one follows: the port works out the
+    # "highest unlocked world" from these when the game's own answer is an imported course (mania.c)
+    for r in own:
+        if r['CategoryID'] in (1, 4, 6) and r['IsEnabledCategory'][1] and r['_id'] < first_course:
+            lines.append(f"own {r['_id']} {r['PrevCourseID']}")
 
     # ---- music: Mania names a stage's BGM '<cue sheet>_<cue>'; the cue sheet is a pair of files in its Sound folder
     music_lines = []

@@ -92,19 +92,27 @@ int rt_hook_426a180(Cpu *c) {
     return 0;
 }
 
+#define MAX_OWN 64
+static struct { uint32_t id, prev; } g_own[MAX_OWN];      // the game's Adventure worlds in display order
+static int g_nown;
+static uint32_t g_first_id;                               // the lowest course id of the import
+
 static void load_courses(void) {
     char path[700], line[128];
     g_ncourses = 0;
     snprintf(path, sizeof path, "%smania\\mania_courses.txt", rt_exe_dir());
     FILE *f = fopen(path, "r");
     if (!f) return;
-    while (fgets(line, sizeof line, f) && g_ncourses < MAX_COURSES) {
-        unsigned list;
+    while (fgets(line, sizeof line, f)) {
+        unsigned list, id = 0, prev = 0;
         int first, count;
-        if (sscanf(line, "%u %d %d", &list, &first, &count) == 3 && count > 0 && first >= 0) {
+        if (sscanf(line, "own %u %u", &id, &prev) == 2) {
+            if (g_nown < MAX_OWN) { g_own[g_nown].id = id; g_own[g_nown].prev = prev; g_nown++; }
+        } else if (g_ncourses < MAX_COURSES && sscanf(line, "%u %d %d %u", &list, &first, &count, &id) >= 3 && count > 0 && first >= 0) {
             g_courses[g_ncourses].list = list;
             g_courses[g_ncourses].first = first;
             g_courses[g_ncourses].count = count;
+            if (id && (!g_first_id || id < g_first_id)) g_first_id = id;
             g_ncourses++;
         }
     }
@@ -124,6 +132,30 @@ static void load_courses(void) {
 // because it sets the content tag of online play
 void mania_tick(void) {
     if (g_ncourses < 0) load_courses();
+}
+
+// Wonder.SaveUserParam.AdventureParam.GetAdvModeHighestUnlockID(): the last world, in display order, whose previous
+// world is cleared. An imported course has no previous world, which counts as cleared, so with an import the answer
+// was always the last imported course; the world pickers and the value sent to other players in a room then
+// treated every one of the game's worlds as open. The answer is worked out over the game's own worlds instead.
+#define F_IS_COURSE_CLEARED 0x43c3530ull    // AdventureParam.IsCourseCleared(Course.eID)
+int rt_hook_43c37d0(Cpu *c) {
+    static __thread int inside;
+    if (inside) return 0;
+    if (g_ncourses < 0) load_courses();
+    if (!g_ncourses || !g_first_id || !g_nown) return 0;
+    uint64_t lr = c->x[30], self = c->x[0], x1 = c->x[1];
+    inside = 1;
+    uint32_t best = (uint32_t)rt_call(c, FN(0x43c37d0ull), 2, self, x1);
+    inside = 0;
+    if (best >= g_first_id) {
+        best = g_own[0].id;
+        for (int i = 0; i < g_nown; i++)
+            if (!g_own[i].prev || (rt_call(c, FN(F_IS_COURSE_CLEARED), 3, self, (uint64_t)g_own[i].prev, 0ull) & 1)) best = g_own[i].id;
+    }
+    c->x[0] = best;
+    c->x[30] = lr;
+    return 1;
 }
 
 // The world picker of local co-op and of online rooms lists the chain of worlds (Course.NextCourseID) from the
@@ -164,8 +196,14 @@ int rt_hook_45605b0(Cpu *c) {
     for (int i = kept; i < n; i++) ST64(items + ARR_DATA + 8 * (uint64_t)i, 0);
     ST32(all + LIST_SIZE, (uint32_t)kept);
     ST32(all + LIST_VERSION, LD32(all + LIST_VERSION) + 1);
-    static int said;
-    if (!said && getenv("BR_MANIA_LOG")) { said = 1; rt_log("mania: world picker: %d of the game's worlds, %d in all", own_n, kept); }
+    if (getenv("BR_MANIA_LOG")) {
+        char ids[400];
+        int len = 0;
+        ids[0] = 0;
+        for (int i = 0; i < kept && len < 380; i++)
+            len += snprintf(ids + len, sizeof ids - (size_t)len, " %u", LD32(LD64(items + ARR_DATA + 8 * (uint64_t)i) + 0x18));
+        rt_log("mania: world picker: highest %u, the game lists %d, the chain has %d, kept %d:%s", (uint32_t)highest, own_n, n, kept, ids);
+    }
     c->x[0] = all;
     c->x[30] = lr;
     return 1;
@@ -219,6 +257,7 @@ int rt_hook_2e6be10(Cpu *c) {
     return 1;
 }
 
+#define ITEM_NEXT 0x20                      // StageListItem.m_NextStage -> StageListNextArray {+0x10 Stage.eID[]}
 // Wonder.StageList.Setup(Stage.List.eID stageListID, Course.eID courseID, bool isForce)
 int rt_hook_43287d0(Cpu *c) {
     static __thread int inside;
@@ -244,6 +283,15 @@ int rt_hook_43287d0(Cpu *c) {
         if (item) { ST32(item + ITEM_STAGE_INDEX, (uint32_t)i); ST32(item + ITEM_INDEX_IN_LIST, (uint32_t)i); }
     }
     for (int i = count; i < n; i++) ST64(items + ARR_DATA + 8 * (uint64_t)i, 0);
+    // Each item carries the stage that follows it (StageListItem.m_NextStage, read by StageList.GetNextStage when a
+    // stage is cleared). In the one real list the last stage of a course is followed by the first stage of the
+    // next course; here it is the end of the world, as on the last stage of one of the game's own lists.
+    if (count > 0) {
+        uint64_t last = LD64(items + ARR_DATA + 8 * (uint64_t)(count - 1));
+        uint64_t next = last ? LD64(last + ITEM_NEXT) : 0, arr = next ? LD64(next + 0x10) : 0;
+        int len = arr ? (int)LD32(arr + 0x18) : 0;
+        for (int i = 0; i < len && i < 8; i++) ST32(arr + 0x20 + 4 * (uint64_t)i, 0);
+    }
     if (lst) { ST32(lst + LIST_SIZE, (uint32_t)count); ST32(lst + LIST_VERSION, LD32(lst + LIST_VERSION) + 1); }
     ST32(self + STAGELIST_ID, list);
     ST32(self + STAGELIST_INDEX, 0);

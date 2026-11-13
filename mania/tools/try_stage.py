@@ -63,7 +63,7 @@ def main():
             os.remove(os.path.join(game, f))
         except OSError:
             pass
-    env = dict(os.environ, BR_PROFILE='T', BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_MANIA_LOG='1')
+    env = dict(os.environ, BR_PROFILE='T', BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_NO_REAL_INPUT='1', BR_MANIA_LOG='1')
     p = subprocess.Popen([exe, '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720', '-logFile', 'player.log'],
                          cwd=game, env=env)
 
