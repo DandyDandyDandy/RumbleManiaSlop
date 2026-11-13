@@ -426,12 +426,14 @@ def classic_image(cfg, mat):
 # environment terms), so a classic monkey is lit like the Rumble one beside it and a decal is lit like the skin
 # under it. The Rumble materials being reused each have their own settings (the costume's are tinted for denim, the
 # face's for eyes), which is why they are not kept as they are. Normal and specular maps are dropped: they belong
-# to Rumble's texture layout.
+# to Rumble's texture layout. A missing specular map reads as white, full shine on every pixel, so the specular
+# term is switched off with it: under the strong front light of the online lobbies it bleached the whole monkey.
 def shading_of(envd):
     for o in envd.objects:
         if o.type.name == 'Material' and o.peek_name().endswith('_body_mat'):
             sp = o.read_typetree()['m_SavedProperties']
             fl = dict(sp['m_Floats']); fl['_NormalStrength'] = 0.0
+            fl['_SpecularStrength'] = 0.0       # no specular map means "shiny everywhere" (the shader's default is white)
             return fl, dict(sp['m_Colors'])
     raise SystemExit('no body material in the design bundle')
 

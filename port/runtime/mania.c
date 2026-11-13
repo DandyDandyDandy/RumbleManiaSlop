@@ -126,12 +126,13 @@ void mania_tick(void) {
     if (g_ncourses < 0) load_courses();
 }
 
-#define F_UNLOCKED_COURSES 0x45605b0ull     // UIChoicesItemData_Factory.getUnlockedCourseList(...) -> List<Course.Record>
+// The world picker of local co-op and of online rooms lists the chain of worlds (Course.NextCourseID) from the
+// first one up to the "highest unlocked" one: UIChoicesItemData_Factory.getUnlockedCourseList(this, highest).
+// Online, `highest` is the lowest of the players' own values. Imported courses hang at the end of the chain and are
+// never anyone's highest (GetAdvModeHighestUnlockID wants the course before it cleared, and they have none), so
+// the picker never reached them. The hook lets the game answer as before and adds the imported courses.
+#define F_UNLOCKED_COURSES 0x45605b0ull     // UIChoicesItemData_Factory.getUnlockedCourseList(this, Course.eID highest) -> List<Course.Record>
 #define F_COURSE_STAGELIST 0x4797890ull     // Course.Record.StageListID()
-#define F_IS_COURSE_UNLOCKED 0x43c3770ull   // SaveUserParam.AdventureParam.IsCourseUnlocked(Course.eID)
-#define F_USER_PARAM 0x43d4e30ull           // SaveDataContainer.UserParam.entity (static) -> SaveUserParam
-#define USER_ADVENTURE 0x38                 // SaveUserParam -> AdventureParam
-#define RECORD_ID 0x18                      // IDRecord.id
 #define LIST_BASE 1000                      // virtual stage list ids start here (mania\build.py)
 
 int rt_hook_45605b0(Cpu *c) {
@@ -139,26 +140,33 @@ int rt_hook_45605b0(Cpu *c) {
     if (inside) return 0;
     if (g_ncourses < 0) load_courses();
     if (!g_ncourses) return 0;
-    uint64_t lr = c->x[30];
+    uint64_t lr = c->x[30], self = c->x[0], highest = c->x[1], x2 = c->x[2], x3 = c->x[3];
     inside = 1;
-    uint64_t lst = rt_call(c, FN(F_UNLOCKED_COURSES), 4, c->x[0], c->x[1], c->x[2], c->x[3]);
+    // the game's answer (the chain of worlds from the first one to `highest`), and the whole chain: an id that is
+    // never met makes the walk run to the end, where the imported courses hang
+    uint64_t own = rt_call(c, FN(F_UNLOCKED_COURSES), 4, self, highest, x2, x3);
+    uint64_t all = rt_call(c, FN(F_UNLOCKED_COURSES), 4, self, 0x7fffffffull, x2, x3);
     inside = 0;
-    uint64_t items = lst ? LD64(lst + LIST_ITEMS) : 0, user = rt_call(c, FN(F_USER_PARAM), 1, 0ull);
-    uint64_t adv = user ? LD64(user + USER_ADVENTURE) : 0;
-    int n = lst ? (int)LD32(lst + LIST_SIZE) : 0, kept = 0;
-    for (int i = 0; items && adv && i < n; i++) {
+    uint64_t own_items = own ? LD64(own + LIST_ITEMS) : 0, items = all ? LD64(all + LIST_ITEMS) : 0;
+    int own_n = own ? (int)LD32(own + LIST_SIZE) : 0, n = all ? (int)LD32(all + LIST_SIZE) : 0, kept = 0;
+    if (!items) {
+        c->x[0] = own;
+        c->x[30] = lr;
+        return 1;
+    }
+    for (int i = 0; i < n; i++) {
         uint64_t rec = LD64(items + ARR_DATA + 8 * (uint64_t)i);
-        int keep = 1;
-        if (rec && (uint32_t)rt_call(c, FN(F_COURSE_STAGELIST), 2, rec, 0ull) < LIST_BASE)       // one of the game's own
-            keep = (int)(rt_call(c, FN(F_IS_COURSE_UNLOCKED), 3, adv, (uint64_t)LD32(rec + RECORD_ID), 0ull) & 1);
+        if (!rec) continue;
+        int keep = (uint32_t)rt_call(c, FN(F_COURSE_STAGELIST), 2, rec, 0ull) >= LIST_BASE;     // an imported course
+        for (int k = 0; !keep && own_items && k < own_n; k++) keep = LD64(own_items + ARR_DATA + 8 * (uint64_t)k) == rec;
         if (keep) ST64(items + ARR_DATA + 8 * (uint64_t)kept++, rec);
     }
-    if (items && adv && kept != n) {
-        for (int i = kept; i < n; i++) ST64(items + ARR_DATA + 8 * (uint64_t)i, 0);
-        ST32(lst + LIST_SIZE, (uint32_t)kept);
-        ST32(lst + LIST_VERSION, LD32(lst + LIST_VERSION) + 1);
-    }
-    c->x[0] = lst;
+    for (int i = kept; i < n; i++) ST64(items + ARR_DATA + 8 * (uint64_t)i, 0);
+    ST32(all + LIST_SIZE, (uint32_t)kept);
+    ST32(all + LIST_VERSION, LD32(all + LIST_VERSION) + 1);
+    static int said;
+    if (!said && getenv("BR_MANIA_LOG")) { said = 1; rt_log("mania: world picker: %d of the game's worlds, %d in all", own_n, kept); }
+    c->x[0] = all;
     c->x[30] = lr;
     return 1;
 }
