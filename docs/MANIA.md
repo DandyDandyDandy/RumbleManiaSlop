@@ -331,33 +331,107 @@ Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9
 | `Switch\mania\scene_<n>.bundle` | one per stage |
 | `Stage`, `Stage_Text_<lang>`, `Stage_DoleDisposition` | a new row per stage (ids from 705): scene name, name, 60 or 30 seconds, and the scenery, sky, lighting and effect scenes of the Rumble world that stands in for the Mania background (`WORLD_OF_BG`) |
 | `Stage_List_Group_wld97_wldtst` | every imported course's stages, one after the other |
-| `Course`, `Course_Text_<lang>` | a row per course (ids from 27), category 6, always unlocked, no missions, chained after the game's last course |
+| `Course`, `Course_Text_<lang>` | a row per course (ids from 27), category 6, always unlocked, no missions, hung on the end of the game's chain of Adventure worlds (below) |
 | `MainGame_Story_Progress` | a row per stage that opens it |
-| `Sound_CueSheet`, `Sound_Cue`, `Sound\*.acb`, `*.awb` | Mania's cue sheets, copied unchanged, and a cue row per BGM |
+| `Sound_CueSheet`, `Sound_Cue`, `Sound\*.acb`, `*.awb` | Mania's cue sheets, copied unchanged, and a cue row per BGM; with the Classic Soundtrack add-on also its sheets (`<sheet>_dx`, same cue names) and a second cue row per BGM |
 | `catalog.json` | the game's catalog plus, per stage, the bundle and the scene (key = the scene number), depending on the bundles the template stage's scene depends on |
-| `mania_courses.txt`, `mania_music.txt` | for `port\runtime\mania.c` |
+| `mania_courses.txt`, `mania_music.txt` | for `port\runtime\mania.c`: course ranges and ids, bonus stage rows, the game's own worlds; per stage row its cue row and its Classic Soundtrack cue row |
+| `mania_stages.txt` | course number, stage number, Mania stage, course name, stage name (for people and `try_stage.py`) |
 | `import_report.txt` | per stage: counts, and the Mania components that were not converted |
 
 29 courses are made (`COURSES`): Super Monkey Ball 1 Beginner, Advanced, Expert with their Extra floors and
 Master; the ten worlds of Super Monkey Ball 2's story; its eight challenge difficulties; Deluxe; Original Stage
 Mode; Reverse Mode; and "More Stages" with every stage that is in none of them, so all 410 are reachable.
 
+**The chain of worlds.** `Course.NextCourseID` links the Adventure worlds: 1 .. 10, the EX worlds 12 .. 21, the
+two Ultimate EX worlds 25 and 26. World Tour, World Tour EX and the No Miss Challenge are on no chain. The world
+picker of local co-op and of online rooms (`UIChoicesItemData_Factory.getUnlockedCourseList`, 0x45605b0) walks
+that chain from the first world to the "highest unlocked" one, so the imported courses are hung on its end
+(course 26); linking them after the table's last row, as the first version did, put them on no chain and the
+picker never offered them.
+
+**The highest unlocked world.** `SaveUserParam.AdventureParam.GetAdvModeHighestUnlockID` (0x43c37d0) answers
+with the last course in display order whose previous course is cleared. An imported course has no previous
+course, which counts as cleared, so with an import the answer was always the last imported course: every world
+of the game was offered in the pickers and reported to the other players of a room as open. The port answers
+from the game's own worlds (`own <id> <previous id>` lines of `mania_courses.txt`) when the game's answer is an
+imported course, and adds the imported courses to the picker's list itself.
+
+**The end of an imported world.** All imported stages are rows of one real stage list, and each list item
+carries the stage that follows it (`StageListItem.m_NextStage`, read by `StageList.GetNextStage` after a
+clear). The last stage of a course was therefore followed by the first stage of the next course, and the
+game went on into it with the wrong course's list. The virtual list built for a course ends with "no next
+stage", like the last stage of one of the game's own worlds: after it the game returns to the menu.
+
+**Bonus stages.** 18 of Mania's stages are bonus stages (stage kind `Bonus`): bananas, and for five of them no
+goal. In Rumble a stage is cleared when its result screen comes up (`FlowMaingameResultBase.calcClearCondition`
+reads nothing else), and the result screen follows the sequence state GOAL. On an imported bonus stage
+(`bonus <stage row>` lines):
+
+* when every banana is taken, the players are marked as having finished: `MgPlayer.isGoal` (+0x20), goal index
+  -1 (+0x24) and the goal time (+0xc8), which is what the pause menu's hidden "clear this stage" does. Done once
+  a frame in a hook on `MainGameSequence.updateHurryUp` (0x42aff20), which both the single player sequence and
+  the multiplayer one (`BrAdvSequence`, split screen and online) call while a stage is played. In multiplayer
+  each client marks its own players; the game's Goal event tells the others;
+* when everyone has fallen out or the clock has run out, the sequence would go to FALLOUT (5) or TIMEUP (9) and
+  retry; a hook on `MainGameSequence.setState` (0x42ab070) sends it to GOAL (6). Every client decides that by
+  itself from state the game already shares, so nothing is sent;
+* a bonus stage without a goal keeps one of Rumble's goals far to the side and below, its model switched off:
+  the multiplayer code looks up the nearest goal when a player finishes (`BrAdvPlayerExtension.OnGoal`,
+  0x418f850) and has no test for there being none.
+
+`MgPlayer.SetGoal` (0x42cda00) is not used: it needs a goal square and computes the time from the ball's
+position relative to it. `MainGame.eEvent.GoalByPauseMenu` is dead code (`MainGame.processEvent` skips events 1
+to 3). Checked in the game: single player by falling out and by the banana rule; online with two players by
+the banana rule. Not exercised: split screen, and falling out or running out of time online.
+
+**Fall-out boxes.** Five stages (Steps among them) have no fall-out box in Mania: `m_FalloutBounds` holds
+FLT_MAX / 2 on each side. Rumble takes the box literally and its arithmetic overflows: Fall Out on the first
+frame. Such a box is replaced by one around the stage, as for stages that have none.
+
+**The intro fly-over.** Before a stage the camera flies between two points of a box (`BeginningBounds`:
+`m_Bounds`, a begin and an end point given as a pivot on the box and a target, and one of three generic
+timeline assets, `MainGame_Beginning`). The points are children of the box object, so they follow its
+rotation. Rumble's stages run towards +Z and Mania's towards -Z; the import keeps the template's points, sets
+the box to the stage's size and turns it half round, without which the fly-over looked away from the stage.
+It is still one generic camera move for every stage (see `docs\ROADMAP.md`).
+
 ### Runtime (`port\runtime\mania.c`, `classic.c`)
 
 * the override folder: bundles under `aa\Switch\` are taken from `mania\Switch\` when they exist there, the
   catalog from `mania\catalog.json`, sound files from `mania\Sound\`;
 * numeric scene names and virtual stage lists (above);
-* `MainGameBg.calcBgCue` answers with the imported cue for an imported stage (`mania_music.txt`);
+* `MainGameBg.calcBgCue` answers with the imported cue for an imported stage (`mania_music.txt`): Banana Mania's
+  own music, or the Classic Soundtrack's when the import has it and the player chose it (Options > Display >
+  Imported Stage Music, a row added in `display_opt.c`; kept in `port_mania.txt`);
 * the list of worlds offered in co-op and online rooms keeps the imported courses (they are not "unlocked"
   in the save's sense) and the online protocol number carries a tag made from the imported course ranges, so
   games with different imports do not meet;
-* `BR_MANIA_LOG`: log lines for switch presses.
+* the hooks described above for the highest unlocked world, the end of an imported world and bonus stages;
+* `BR_MANIA_LOG`: log lines for switch presses, seesaw touches, the BGM cue of a stage, the world picker's
+  list and bonus stage decisions.
 
 ## Testing
 
-`python mania\tools\try_stage.py <course> <stage>` starts the built game, walks the menus into that stage (it
-reads the UI state lines of `port.log` to know where the menus are), holds the stick forward, and saves pictures
-of the window. It uses the save profile `T`, not the real save.
+`python mania\tools\try_stage.py <course> <stage>` (or `st<Mania stage number>`) starts the built game, walks
+the menus into that stage (it reads the UI state lines of `port.log` to know where the menus are), holds the stick
+forward, sends further input lines (`--input "WAIT 2000;GOAL;A"`) and saves pictures of the window. It uses the
+save profile `T` (`--profile`), not the real save, and ignores the real keyboard, mouse and controllers
+(`BR_NO_REAL_INPUT`), so the PC can be used meanwhile; dragging the game's window still stalls it.
+
+Live input commands that make checks possible without playing a stage (`port\runtime\test_aids.c`, see
+`docs\TECHNICAL.md`): `GOAL` (the local player's ball enters the goal: results, progress, what follows the last
+stage of a world), `BANANAS` (a bonus stage is told every banana was taken), `WHEEL`, `HOLD` / `MOVE` / `RELEASE`.
+
+What was checked in the running game (2.00, one PC):
+
+* stages: SMB1 Beginner 1 played to the goal; Diamond, Wide Bridge, Steps, Blocks (moving parts), Switches (both
+  switches, the bridge is crossed), Conveyers (the belt pushes the ball), Linear Seesaws (the plank tilts), Bonus
+  Basic; a 12-stage sample across courses loaded without a crash. Most of the 410 stages have never been started;
+* the last stage of an imported world returns to the stage select of the next world;
+* online, two instances: the imported worlds are in the host's world picker, a locked Rumble world is not;
+  SMB1 Beginner stages 1 to 4 cleared in sequence by both players, then the bonus stage by the banana rule;
+* music: the right cue sheet and stream are opened for a stage, with either soundtrack (heard by nobody).
 
 ## What is not converted
 
