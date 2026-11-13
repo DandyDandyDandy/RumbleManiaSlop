@@ -6,7 +6,8 @@ Course and stage numbers count from 0 in import order (game\\mania\\mania_course
 profile "T" (game\\saveT, a copy of game\\save made on first use), so the real save is not touched. Buttons are
 sent through the port's live input file (BR_INPUT_LIVE); how far the menus are is read from the UI state lines of
 port.log (BR_STATE_LOG), because the number of presses the title needs depends on what the save has already seen.
-In the stage the stick is held forward for --hold ms. Pictures of the game window are written as
+In the stage the stick is held forward for --hold ms, then the --input lines are sent one after the other, each
+when the one before has run out ("WAIT <ms>" just waits). Pictures of the game window are written as
 <out>\\c<course>_s<stage>_<n>.png (--shots: seconds after the stage was chosen), and the lines of port.log that
 matter are printed. The exit code is 1 when the game was gone at the end.
 """
@@ -15,6 +16,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,7 +32,7 @@ def main():
     ap.add_argument('stage', type=int)
     ap.add_argument('--out', default=str(paths.BUILD / 'try'))
     ap.add_argument('--hold', type=int, default=6000)
-    ap.add_argument('--shots', default='16,22,28')
+    ap.add_argument('--shots', default='18,26,34')
     ap.add_argument('--before', type=int, default=WORLDS_BEFORE)
     ap.add_argument('--input', help='live input lines sent once the stage has loaded, separated by ;')
     a = ap.parse_args()
@@ -48,7 +50,7 @@ def main():
             os.remove(os.path.join(game, f))
         except OSError:
             pass
-    env = dict(os.environ, BR_PROFILE='T', BR_INPUT_LIVE=live, BR_STATE_LOG='1')
+    env = dict(os.environ, BR_PROFILE='T', BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_MANIA_LOG='1')
     p = subprocess.Popen([exe, '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720', '-logFile', 'player.log'],
                          cwd=game, env=env)
 
@@ -89,16 +91,20 @@ def main():
         press(*['DOWN'] * a.stage)
         press('A')
         tsel = time.time()
-        sent = False
-        for i, s in enumerate(sorted(int(x) for x in a.shots.split(','))):
+
+        def play():
+            time.sleep(max(0.0, tsel + 21 - time.time()))
+            for line in [f'LSU {a.hold}'] + [x.strip() for x in (a.input or '').split(';') if x.strip()]:
+                word = line.split()
+                ms = int(word[1]) if len(word) > 1 and word[1].isdigit() else 100
+                if word[0] != 'WAIT':
+                    press(line, gap=0)
+                time.sleep(ms / 1000 + 0.2)
+
+        threading.Thread(target=play, daemon=True).start()
+        for i, s in enumerate(sorted(float(x) for x in a.shots.split(','))):
             while time.time() - tsel < s:
-                if not sent and time.time() - tsel > 17:
-                    press(f'LSU {a.hold}', gap=0)
-                    for line in (a.input or '').split(';'):
-                        if line.strip():
-                            press(line.strip(), gap=0.1)
-                    sent = True
-                time.sleep(0.2)
+                time.sleep(0.1)
             shot(f'c{a.course}_s{a.stage}_{i}')
     time.sleep(2)
     alive = p.poll() is None
@@ -108,7 +114,7 @@ def main():
     print(f'course {a.course} stage {a.stage}: menus {"ok" if ok else "NOT reached"}, the game was {"still running" if alive else "NOT running"} at the end')
     try:
         for line in open(log, encoding='utf-8', errors='replace'):
-            if any(k in line for k in ('FATAL', 'mania/scene', 'exception', 'Exception')):
+            if any(k in line for k in ('FATAL', 'mania/scene', 'mania: switch', 'exception', 'Exception')):
                 print('   ' + line.rstrip()[:240])
     except OSError:
         print('   no port.log')

@@ -1,93 +1,79 @@
-# RumbleSlop
+# RumbleManiaSlop
 
-Super Monkey Ball Banana Rumble as a native Windows game, built on your PC from your own Switch copy.
+Super Monkey Ball Banana Rumble as a native Windows game, built on your PC from your own Switch copy, with the
+stages, music and classic characters of Super Monkey Ball Banana Mania imported from your own Steam copy.
 
-It is called RumbleSlop because it is vibecoded slop: the whole port was written by an AI coding agent. It works
-surprisingly well. Expect rough edges anyway.
+This is a fork of RumbleSlop, which is the PC port on its own. It is called Slop because it is vibecoded slop: the
+port and the importer were written by an AI coding agent. Expect rough edges.
 
-> **No game files are in this repository, and none may be added.** You need your own copy of the game, dumped from
-> your own console: the base game and the 2.0.0 update. How to dump is not explained here. The setup builds the
-> game on your machine from your files, so the result contains the game. It is for your own use. Do not share it.
+> **No game files are in this repository, and none may be added.** You need your own copy of Banana Rumble,
+> dumped from your own console (the base game and the 2.0.0 update), and, for the import, your own Steam install of
+> Banana Mania. The setup builds the game on your machine from your files, so the result contains both games'
+> content. It is for your own use. Do not share it.
 >
-> Not affiliated with or endorsed by SEGA, Nintendo, Unity or CRI Middleware.
+> Not affiliated with or endorsed by SEGA, Nintendo, Valve, Unity or CRI Middleware.
 
-## What you get
+## What the fork adds
 
-A real PC version, not an emulator: the game's own code is recompiled to x64 and runs inside Unity's Windows player
-of the same engine version.
+Everything RumbleSlop does (display options, wide screens, keyboard and mouse, controller glyphs, online play by
+room code), plus, when Banana Mania is installed:
 
-- Windowed, borderless and full screen at any resolution, frame rate limit and VSync, in the game's own Options menu
-- Wide screens (21:9, 32:9) and 16:10, Steam Deck detection
-- Keyboard and mouse with the game's own PC key layout, rebinding in Options > Key Configuration, mouse on every menu
-- Xbox, DualSense and DualShock 4 controllers, up to four for split screen; button pictures follow the device in use
-- Online play between PCs running this port: friend rooms joined by a room code, no server
-- Add-on content you own
-- The intro tutorial can be skipped on a new save
+- **All 410 Banana Mania stages in Adventure mode**, as 29 extra worlds after Rumble's own in *Select World*:
+  Super Monkey Ball 1 (Beginner, Advanced, Expert, their Extra floors, Master), the ten story worlds of Super
+  Monkey Ball 2, its challenge difficulties, Deluxe, Original Stage Mode, Reverse Mode and the remaining special
+  stages. They are played with Rumble's ball, physics, goal, camera and rules; every stage is open from the start.
+- **Banana Mania's stage music** on those stages.
+- **The classic monkeys** of the Classic Character Pack as the "Classic Outfit" in *Style > Outfit*, for AiAi,
+  MeeMee, Baby, GonGon, YanYan and Doctor (needs that pack in your Banana Mania).
+- Co-op with the imported worlds. Online, a room only accepts players whose game has the same imported worlds:
+  everyone needs RumbleManiaSlop with the import. A RumbleManiaSlop without imported stages plays with RumbleSlop.
+
+Each part can be left out (see `input\README.txt`), and without Banana Mania the fork builds the same game as
+RumbleSlop.
 
 ## What you need
 
-- Windows 10 or 11, 64-bit, a CPU with AVX2 (anything from the last ten years), a GPU with Vulkan
-- [Python](https://www.python.org/downloads/windows/) 3.10 or newer (tick "Add python.exe to PATH" in its installer)
-- About 25 GB free while the setup runs (6 GB afterwards) and an internet connection for the tools it downloads
-  (about 300 MB: the llvm-mingw compiler, Ninja, Unity's Windows player, SPIRV-Tools)
-- Your own files:
-  - `prod.keys` of your console
-  - the base game as `.xci` or `.nsp`
-  - the 2.0.0 update as `.nsp`
-  - optional: add-on content `.nsp` files
-
-Only version 2.0.0 of the game is supported. The base game without that update, or with another update, stops the
-setup with a message.
+- Everything RumbleSlop needs: Windows 10 or 11 (64-bit), a CPU with AVX2, a GPU with Vulkan,
+  [Python](https://www.python.org/downloads/windows/) 3.10 or newer, about 25 GB free while the setup runs, and
+  your own `prod.keys`, base game (`.xci` or `.nsp`) and 2.0.0 update (`.nsp`).
+- Super Monkey Ball Banana Mania installed through Steam (about 1 GB more disk space for the import). The setup
+  finds it by itself; if it does not, name its folder in `input\mania.txt`.
 
 ## Setup (once)
 
 1. Download or clone this repository.
-2. Put your files into the `input` folder. The file names do not matter.
-3. Double-click `setup.cmd`.
+2. Put your Banana Rumble files into the `input` folder.
+3. Double-click `setup.cmd`. It builds the game (30 to 60 minutes) and then imports Banana Mania (a few minutes).
+4. Start `game\RumbleManiaSlop.exe`.
 
-The setup takes 30 to 60 minutes, most of it converting shaders. It can be closed and started again; finished steps
-are not repeated. When it says it is finished:
-
-4. Start `game\RumbleSlop.exe`. Windows Firewall asks once whether the game may use the network (needed only for
-   online play).
-
-Afterwards the `build` folder and the files in `input` are not needed any more: `setup.cmd --clean` deletes
-`build`. The `game` folder is self-contained and can be moved anywhere.
-
-Saves are in `game\save`. Settings the port adds are small text files next to the exe (`port_display.txt`,
-`port_keys.txt`, `port_name.txt`, `port_net.txt`).
-
-## Playing
-
-Keyboard defaults are the game's own: W A S D tilt, arrow keys camera, Space spin dash, Enter confirm, Esc cancel
-and pause, Q / E tabs. Everything can be rebound in Options > Key Configuration.
-
-Online: **Online Play > Battle (or Adventure) > Host** creates a room and shows a room code; the other players
-choose **Join** and type it. The host must be reachable on UDP port 23711: the port asks the router for that through
-UPnP; without UPnP it works on the same network or VPN, or with the port forwarded by hand (`port_net.txt`, see
-[docs/TECHNICAL.md](docs/TECHNICAL.md)). Random matchmaking, rankings and play with Switch consoles do not exist.
+Afterwards `build` and the files in `input` are not needed (`setup.cmd --clean`). Banana Mania can be uninstalled
+too: the imported stages are in `game\mania`. Deleting that folder turns the game back into plain Banana Rumble;
+`setup.cmd --only mania` makes it again.
 
 ## Known problems
 
-- Tested: title, menus, options, early Adventure stages, online Battle and Adventure between two copies on one PC,
-  split-screen Adventure. Later stages and other modes have had little or no testing.
-- Online play has not been tested over the internet.
-- The opening movie cannot be skipped.
-- The option rows the port adds are English in every language.
-- A frame rate limit above 60 draws repeated pictures: the game moves everything at 60 Hz.
+Those of RumbleSlop, and for the imported stages:
 
-If the game does not start, look at `game\port.log` and `game\player.log`.
+- **Switches do nothing.** Parts a switch would start stay where they are; parts that move by themselves move.
+  Some stages of Super Monkey Ball 2 cannot be finished because of it.
+- Seesaws do not swing, conveyors do not carry, wormholes do not teleport, the wave stage does not wave.
+- Every goal is Rumble's goal and ends the stage; green and red warp goals do not skip stages.
+- Stages borrow the scenery, lighting and sky of a Rumble world, not Banana Mania's backgrounds, and are drawn
+  with Rumble's stage shaders: colours and materials differ from the original, vertex colouring is lost.
+- No stage pictures in *Select Stage*, no missions, no rankings for the imported worlds.
+- Only a sample of the 410 stages has been started in the game; see `docs\MANIA.md` for what was checked.
+- The Classic Outfit's face does not blink, and other body items do not show while it is worn.
 
 ## For developers
 
-[docs/TECHNICAL.md](docs/TECHNICAL.md) explains how the port works, how to rebuild parts of it, the diagnostics, and
-everything that was learned on the way. `setup.cmd --list`, `--redo <step>` and `--only <step>` run single steps.
+- [docs/TECHNICAL.md](docs/TECHNICAL.md): how the port works (shared with RumbleSlop).
+- [docs/MANIA.md](docs/MANIA.md): both games' stage data, the conversion, the hooks, the test tool.
+- [docs/COSTUMES.md](docs/COSTUMES.md): characters and costumes, the Classic Outfit.
+
+`upstream` in this clone is RumbleSlop; port fixes belong there and are merged here.
 
 ## Credits and licences
 
-RumbleSlop's own code is under the [MIT licence](LICENSE). It builds on other people's work, listed with licences
-in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): above all [XC2 Recomp](https://github.com/AksharDP/xc2-recomp)
-and the projects it descends from (TotK Recomp, LAS Recomp, MacNativeGames), whose ARM64-to-C lifter and shader
-translator do the heavy lifting, [Ryujinx](https://github.com/Ryujinx/Ryujinx) for the shader translator's core,
-[UnityPy](https://github.com/K0lb3/UnityPy), [Kenney](https://kenney.nl) for the button icons (CC0), and
-[Switchbrew](https://switchbrew.org) for the file format documentation.
+As RumbleSlop: MIT for this repository's own code ([LICENSE](LICENSE)), third-party parts in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Super Monkey Ball Banana Rumble and Banana Mania are (c) SEGA;
+nothing of either is in this repository.

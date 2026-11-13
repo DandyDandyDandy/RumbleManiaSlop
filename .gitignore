@@ -22,3 +22,6 @@
 __pycache__/
 *.pyc
 *.log
+
+# generated tool that embeds character mesh data (mania\classic\make_hand_poser.py rebuilds it)
+/mania/classic/hand_poser.html

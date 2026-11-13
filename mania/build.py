@@ -1,6 +1,10 @@
 """Import Banana Mania into the built game: makes the override folder game\\mania\\.
 
-    python build.py <Banana Mania folder> [--only COURSE[,COURSE...]] [--jobs N] [--no-stages]
+    python build.py <Banana Mania folder> [--no-levels] [--no-classic] [--no-music]
+                    [--only COURSE[,COURSE...]] [--jobs N] [--no-stages]
+
+Two things are imported, each optional: the stages with their music (as extra Adventure courses) and the
+classic-style monkeys of the Classic Character Pack (as the "Classic Outfit" in the Style menu; classic\\).
 
 What it writes (the game's own files are never changed; deleting game\\mania\\ undoes everything):
 
@@ -131,6 +135,8 @@ def main():
     ap.add_argument('--only', help='import only these Mania courses (comma separated; for testing)')
     ap.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4) - 2))
     ap.add_argument('--no-stages', action='store_true', help='keep the stage bundles that are already there')
+    ap.add_argument('--no-levels', action='store_true', help='do not import the stages')
+    ap.add_argument('--no-classic', action='store_true', help='do not import the classic characters')
     ap.add_argument('--no-music', action='store_true', help='leave the stages with the music of the Rumble world they borrow')
     a = ap.parse_args()
     game = a.game
@@ -142,7 +148,7 @@ def main():
     t0 = time.time()
 
     mania = ManiaData(a.mania)
-    courses = plan_courses(mania, set(a.only.split(',')) if a.only else None)
+    courses = [] if a.no_levels else plan_courses(mania, set(a.only.split(',')) if a.only else None)
     stage_ids = []
     for _, _, _, ids in courses:
         stage_ids += [i for i in ids if i not in stage_ids]
@@ -170,7 +176,49 @@ def main():
     courses = [(n, p, t, [i for i in ids if i in stage_ids]) for n, p, t, ids in courses]
     courses = [c for c in courses if c[3]]
 
-    # ---- tables
+    written, music_lines, lines = [], [], []
+    cat = Catalog(os.path.join(aa, 'catalog.json'))
+    if courses:
+        written, music_lines, lines = import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch)
+        add_scenes(cat, stage_ids, out)
+    with open(os.path.join(out, 'mania_courses.txt'), 'w', newline='\n') as f:
+        f.write(''.join(x + '\n' for x in lines))
+    with open(os.path.join(out, 'mania_music.txt'), 'w', newline='\n') as f:
+        f.write(''.join(x + '\n' for x in music_lines))
+
+    # ---- classic characters
+    if not a.no_classic:
+        sys.path.insert(0, os.path.join(HERE, 'classic'))
+        import classic_chara
+        import classic_outfit
+        if classic_chara.available(a.mania):
+            print('classic characters:', flush=True)
+            classic_outfit.configure(aa, a.mania, out, str(paths.BUILD / 'mania_work'))
+            classic_outfit.build(cat)
+        else:
+            print('classic characters: this Banana Mania install has no Classic Character Pack; skipped')
+    cat.save(os.path.join(out, 'catalog.json'))
+
+    # what each stage has and what was left out, for whoever looks into a stage that plays wrong
+    skipped = {}
+    with open(os.path.join(out, 'import_report.txt'), 'w', encoding='utf-8') as f:
+        for bundle, st in sorted(reports.items()):
+            print(bundle, st, sep='\t', file=f)
+            for k in st.get('skipped', {}):
+                skipped[k] = skipped.get(k, 0) + 1
+        for bundle, e in sorted(failed.items()):
+            print(bundle, 'FAILED ' + e, sep='\t', file=f)
+    if skipped:
+        print('not converted (stages that have it): ' + ', '.join(f'{k} {n}' for k, n in sorted(skipped.items(), key=lambda x: -x[1])))
+    print(f'imported {len(stage_ids)} stages in {len(courses)} courses ({len(failed)} stages failed), {len(written)} tables, '
+          f'{int(time.time() - t0)} s -> {out}')
+    for b, e in failed.items():
+        print('  failed:', b, e)
+    return 0
+
+
+def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
+    """The table rows and the music of the imported courses; returns (tables written, music lines, course lines)."""
     db = Database(aa_switch, cache=str(paths.BUILD / 'mania_table_index.json'))
     stage_t = db.table('Stage')
     model = dict(stage_t.row(TEMPLATE_STAGE_ROW))
@@ -260,14 +308,13 @@ def main():
                           innerCueId=0, ThumbnailSpriteID=0, IsEnabledTrial=False)
             if cues[name] is not None:
                 music_lines.append(f'{row_of[sid]} {cues[name]}')
-    with open(os.path.join(out, 'mania_music.txt'), 'w', newline='\n') as f:
-        f.write(''.join(x + '\n' for x in music_lines))
     written = db.save(out_switch)
-    with open(os.path.join(out, 'mania_courses.txt'), 'w', newline='\n') as f:
-        f.write('\n'.join(lines) + '\n')
+    return written, music_lines, lines
 
-    # ---- catalog
-    cat = Catalog(os.path.join(aa, 'catalog.json'))
+
+def add_scenes(cat, stage_ids, out):
+    """Catalog entries of the stage scenes: a bundle and a scene each, depending on what the template stage's scene
+    depends on (the shader and material bundles the converted materials use)."""
     tmpl = cat.locations('bg_stg_w01_001')[0]
     deps = cat.buckets[tmpl['dep']]
     asm, cls, opts = cat.extra_json(cat.entries[deps[0]][4])
@@ -282,24 +329,6 @@ def main():
         cat.add_entry(RT + '/' + rel, prov_bundle, None, cat.add_extra_json(asm, cls, o), primary, rt_bundle, [primary, depkey])
         cat.buckets[cat.add_key(depkey)] += deps[1:]
         cat.add_entry(f'Assets/Mania/{name}.unity', tmpl['prov'], depkey, -1, name, tmpl['rt'], [name])
-    cat.save(os.path.join(out, 'catalog.json'))
-
-    # what each stage has and what was left out, for whoever looks into a stage that plays wrong
-    skipped = {}
-    with open(os.path.join(out, 'import_report.txt'), 'w', encoding='utf-8') as f:
-        for bundle, st in sorted(reports.items()):
-            print(bundle, st, sep='\t', file=f)
-            for k in st.get('skipped', {}):
-                skipped[k] = skipped.get(k, 0) + 1
-        for bundle, e in sorted(failed.items()):
-            print(bundle, 'FAILED ' + e, sep='\t', file=f)
-    if skipped:
-        print('not converted (stages that have it): ' + ', '.join(f'{k} {n}' for k, n in sorted(skipped.items(), key=lambda x: -x[1])))
-    print(f'imported {len(stage_ids)} stages in {len(courses)} courses ({len(failed)} stages failed), {len(written)} tables, '
-          f'{int(time.time() - t0)} s -> {out}')
-    for b, e in failed.items():
-        print('  failed:', b, e)
-    return 0
 
 
 if __name__ == '__main__':

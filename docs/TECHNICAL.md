@@ -1,3 +1,19 @@
+# RumbleManiaSlop: technical guide to the port
+
+RumbleManiaSlop is a fork of RumbleSlop. This file is RumbleSlop's guide to the PC port, which the fork shares;
+read "RumbleSlop" below as "the port". What the fork adds is in two other files:
+
+* `docs\MANIA.md`: importing Banana Mania's stages and music (both games' stage data, the conversion, the
+  runtime hooks in `port\runtime\mania.c`, the test tool);
+* `docs\COSTUMES.md`: characters and costumes, and the Classic Outfit (`mania\classic\`, `port\runtime\classic.c`).
+
+Differences from RumbleSlop in the shared code: the game is named `RumbleManiaSlop` (`port\paths.py`), the setup
+has a last step `mania` (`setup\setup.py`), the runtime has `classic.c` and `mania.c` with their entry hooks
+(`port\recomp\hooks.txt`), the file layer asks `classic_fs_override` for files of the override folder
+`game\mania\`, and a per-frame tick calls `classic_tick` and `mania_tick` (`display_opt.c`).
+
+---
+
 # RumbleSlop: technical guide
 
 A native Windows build of Super Monkey Ball Banana Rumble (Switch, Unity 2022.3.30f1, IL2CPP, version 2.0.0) made

@@ -391,6 +391,7 @@ int rt_hook_43a7850(Cpu *c) {
     {   // per-frame ticks of the other parts of the port
         extern void chara_dump_tick(Cpu *c);
         extern void classic_tick(Cpu *c);
+        extern void mania_tick(void);
         extern void window_title_tick(void);
         extern void ultrawide_tick(Cpu *c);
         extern void online_tick(Cpu *c);
@@ -402,6 +403,7 @@ int rt_hook_43a7850(Cpu *c) {
         memcpy(sx, c->x, sizeof sx); memcpy(sv, c->v, sizeof sv);
         chara_dump_tick(c);
         classic_tick(c);
+        mania_tick();
         window_title_tick();
         ultrawide_tick(c);
         online_tick(c);

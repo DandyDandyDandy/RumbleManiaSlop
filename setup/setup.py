@@ -11,8 +11,9 @@ Put these into input\\ first (see README.md):
     the base game        .xci (cartridge dump) or .nsp
     the 2.0.0 update     .nsp
     add-on content       .nsp files, optional
+    mania.txt            optional: where Super Monkey Ball Banana Mania (Steam) is and what to import from it
 
-Steps: tools, extract, image, generate, compile, link, assets, shaders, textures, assemble, dlc.
+Steps: tools, extract, image, generate, compile, link, assets, shaders, textures, assemble, dlc, mania.
 Logs of each step are in build\\logs\\.
 """
 import json
@@ -214,6 +215,77 @@ def step_dlc():
     say(f'    {n} pack(s) installed')
 
 
+def mania_config():
+    """input\\mania.txt: lines `path=<Banana Mania folder>`, `levels=yes|no`, `classic=yes|no`, `music=yes|no`."""
+    cfg = {'path': '', 'levels': 'yes', 'classic': 'yes', 'music': 'yes'}
+    f = paths.INPUT / 'mania.txt'
+    if f.exists():
+        for line in f.read_text(encoding='utf-8', errors='replace').splitlines():
+            line = line.split('#')[0].strip()
+            if '=' in line:
+                k, _, v = line.partition('=')
+                cfg[k.strip().lower()] = v.strip().strip('"')
+    return cfg
+
+
+def find_mania(cfg):
+    """The Banana Mania folder: the one named in input\\mania.txt or BANANA_MANIA, else looked for in the Steam
+    libraries of this PC. None when there is none."""
+    def ok(p):
+        return p and (Path(p) / 'smbbm_Data' / 'sharedassets0.assets').exists()
+    for p in (cfg.get('path'), os.environ.get('BANANA_MANIA')):
+        if ok(p):
+            return Path(p)
+    roots = []
+    try:
+        import winreg
+        for hive, key, val in ((winreg.HKEY_CURRENT_USER, r'Software\Valve\Steam', 'SteamPath'),
+                               (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Valve\Steam', 'InstallPath')):
+            try:
+                with winreg.OpenKey(hive, key) as k:
+                    roots.append(Path(winreg.QueryValueEx(k, val)[0]))
+            except OSError:
+                pass
+    except ImportError:
+        pass
+    libs = list(roots)
+    for r in roots:
+        vdf = r / 'steamapps' / 'libraryfolders.vdf'
+        if vdf.exists():
+            import re
+            for m in re.finditer(r'"path"\s+"([^"]+)"', vdf.read_text(encoding='utf-8', errors='replace')):
+                libs.append(Path(m.group(1).replace('\\\\', '\\')))
+    for lib in libs:
+        p = lib / 'steamapps' / 'common' / 'smbbm'
+        if ok(p):
+            return p
+    return None
+
+
+def step_mania():
+    cfg = mania_config()
+    yes = lambda k: cfg.get(k, 'yes').lower() not in ('no', '0', 'false', 'off')
+    if not yes('levels') and not yes('classic'):
+        say('    input\\mania.txt turns both imports off: nothing to do')
+        return
+    game = find_mania(cfg)
+    if game is None:
+        if cfg.get('path'):
+            raise Fail(f'input\\mania.txt names {cfg["path"]}, but Super Monkey Ball Banana Mania is not there '
+                       f'(no smbbm_Data folder).')
+        say('    Super Monkey Ball Banana Mania was not found on this PC: nothing imported (optional).')
+        say('    To import its stages and classic characters, write its folder into input\\mania.txt as')
+        say('    path=<...\\steamapps\\common\\smbbm> and run setup.cmd --only mania')
+        return
+    say(f'    Banana Mania: {game}')
+    args = [a for a, on in (('--no-levels', not yes('levels')), ('--no-classic', not yes('classic')), ('--no-music', not yes('music'))) if on]
+    run('mania', PY, paths.ROOT / 'mania' / 'build.py', game, *args)
+    tail = (LOGS / 'mania.log').read_text(encoding='utf-8', errors='replace').splitlines()[-6:]
+    for line in tail:
+        if line.startswith(('imported', 'not converted', 'classic characters', '  database', '  failed')):
+            say('    ' + line.strip())
+
+
 STEPS = [
     ('tools', 'Getting the build tools (compiler, Unity player; about 300 MB of downloads)', step_tools),
     ('extract', 'Reading your game dump', step_extract),
@@ -226,6 +298,7 @@ STEPS = [
     ('textures', 'Converting textures', step_textures),
     ('assemble', 'Putting the game folder together', step_assemble),
     ('dlc', 'Add-on content', step_dlc),
+    ('mania', 'Importing Banana Mania stages and classic characters (optional)', step_mania),
 ]
 NAMES = [s[0] for s in STEPS]
 
@@ -268,6 +341,10 @@ def main():
             st['done'] = [d for d in st['done'] if d not in (NAMES[i:] if flag == '--redo' else [name])]
             todo = NAMES[i:] if flag == '--redo' else [name]
     stamp = input_stamp() if paths.INPUT.exists() else []
+    mania_stamp = (paths.INPUT / 'mania.txt').read_text(errors='replace') if (paths.INPUT / 'mania.txt').exists() else ''
+    if st.get('mania_cfg', mania_stamp) != mania_stamp:
+        st['done'] = [d for d in st['done'] if d != 'mania']          # the import choices changed
+    st['mania_cfg'] = mania_stamp
     if st.get('inputs') not in (None, [list(x) for x in stamp]) and 'extract' in st['done']:
         say('The files in input\\ changed: starting again from the game dump.')
         st['done'] = [d for d in st['done'] if d == 'tools']

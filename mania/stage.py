@@ -25,6 +25,7 @@ import os
 import struct
 import zlib
 
+import attrs
 import numpy as np
 import UnityPy
 
@@ -33,10 +34,16 @@ from unityfile import Editor, NULL, overlay, pptr, serialized_files
 
 LAYER = 7                       # the layer of stage objects in Rumble's stage scenes
 Y180 = (0.0, 1.0, 0.0, 0.0)     # Mania's start and goal face -Z, Rumble's +Z
+TAG_STGMOT = 20000              # the tag "StgMot" (the game's first own tag): collision under it follows its transform
 TEMPLATE_STAGE = 'bg_stg_w01_001'
 MATERIAL_CACHE = os.path.join('manual_additions_assets_maingame', 'stagemiddle', 'w01', 'unitymaterialscache.bundle')
 # the template materials (World 1's material cache): name -> what it is used for
 MATERIAL_MODELS = {'opaque': 'bg_stg_w01_island02', 'cutout': 'bg_stg_w01_plants01', 'transparent': 'bg_stg_w01_swg02'}
+# Script classes the template stage does not use are taken from a stage of the game that does (its type entry with
+# the type tree, and its MonoScript object): class -> stage scene
+SCRIPT_DONORS = {'CollisionBumper': 'bg_stg_w01_102', 'MgBumper': 'bg_stg_w01_102',
+                 'MgStageSwitchController': 'bg_stg_w03_001', 'MgSwitch': 'bg_stg_w03_001', 'CollisionSwitchUpper': 'bg_stg_w03_001'}
+SWITCH_CLIPS = ('bg_stg_w03_001', 'obj_com_switch_on', 'obj_com_switch_off')   # the clips Rumble's switch names
 
 
 # ------------------------------------------------------------------------------------------------- small maths
@@ -144,6 +151,7 @@ class Scene:
         self.shared_fid = 1 + [i for i, e in enumerate(self.scene.sf.externals) if e.path.endswith(self.shared_name)][0]
         s = self.scene
         self.go_of_tr, self.tr_of_go = {}, {}
+        self._imported = {}
         for o in s.objects('Transform'):
             t = s.get(o.path_id)
             self.go_of_tr[o.path_id] = t['m_GameObject']['m_PathID']
@@ -243,8 +251,10 @@ class Scene:
         self.scene.get(go)['m_Component'].append({'component': pptr(pid)})
         return pid
 
-    def set_transform(self, go, pos=None, rot=None, parent=None):
+    def set_transform(self, go, pos=None, rot=None, parent=None, scale=None):
         t = self.scene.get(self.tr_of_go[go])
+        if scale is not None:
+            t['m_LocalScale'] = v3(scale)
         if pos is not None:
             t['m_LocalPosition'] = v3(pos)
         if rot is not None:
@@ -283,6 +293,42 @@ class Scene:
         rt['m_Father'] = pptr(self.tr_of_go[parent_go])
         s.get(self.tr_of_go[parent_go])['m_Children'].append(pptr(self.tr_of_go[root]))
         return root
+
+    def import_script(self, aa_switch, cls):
+        """Make the script class `cls` usable in this scene: copy its MonoScript and its type entry from a stage of
+        the game that has an object of it. Afterwards scene.template('MonoBehaviour', cls) and add(...) work."""
+        s, sh = self.scene, self.shared
+        if ('MonoBehaviour', cls) in s._donors:
+            return
+        try:
+            s.donor('MonoBehaviour', cls)
+            return
+        except KeyError:
+            pass
+        donor = _donor_stage(os.path.join(aa_switch, f'scene_{SCRIPT_DONORS[cls]}_scenes_all.bundle'))
+        obj, tree, script_tree = donor[cls]
+        script = sh.add('MonoScript', copy.deepcopy(script_tree))
+        ident = copy.copy(s.sf.script_types[0])
+        ident.local_serialized_file_index = self.shared_fid
+        ident.local_identifier_in_file = script
+        s.sf.script_types.append(ident)
+        typ = copy.copy(obj.serialized_type)
+        typ.script_type_index = len(s.sf.script_types) - 1
+        s.sf.types.append(typ)
+        model = attrs.evolve(next(o for o in s.sf.objects.values() if o.type.name == 'MonoBehaviour'),
+                             type_id=len(s.sf.types) - 1, serialized_type=typ, data=None)
+        tree = copy.deepcopy(tree)
+        tree['m_Script'] = pptr(script, self.shared_fid)
+        s._donors[('MonoBehaviour', cls)] = (model, tree)
+
+    def import_asset(self, aa_switch, stage, cls, name):
+        """Copy the object of class `cls` named `name` from the sharedAssets of another stage of the game; its id."""
+        key = (stage, cls, name)
+        if key not in self._imported:
+            shared = _donor_stage(os.path.join(aa_switch, f'scene_{stage}_scenes_all.bundle'), want_shared=True)
+            src = next(o for o in shared.objects.values() if o.type.name == cls and o.peek_name() == name)
+            self._imported[key] = self.shared.add(cls, src.read_typetree())
+        return self._imported[key]
 
     def shared_ref(self, pid):
         """A PPtr, as written in the scene file, to an object of the sharedAssets file."""
@@ -367,6 +413,31 @@ class Scene:
             f.write(data)
         os.replace(out_path + '.tmp', out_path)
         return len(data)
+
+
+_donor_cache = {}
+
+
+def _donor_stage(bundle, want_shared=False):
+    """{script class: (object, its type tree dict, its MonoScript's dict)} of the MonoBehaviours of a stage scene."""
+    if bundle not in _donor_cache:
+        env = UnityPy.load(bundle)
+        files = serialized_files(env)
+        shared_name = [n for n in files if n.endswith('.sharedAssets')][0]
+        scene, shared = files[shared_name[:-len('.sharedAssets')]], files[shared_name]
+        out = {}
+        for o in scene.objects.values():
+            if o.type.name != 'MonoBehaviour':
+                continue
+            t = o.read_typetree()
+            ref = t['m_Script']
+            so = shared.objects.get(ref['m_PathID']) if ref['m_FileID'] else scene.objects.get(ref['m_PathID'])
+            if so is None:
+                continue
+            st = so.read_typetree()
+            out.setdefault(st['m_ClassName'], (o, t, st))
+        _donor_cache[bundle] = (env, out, shared)
+    return _donor_cache[bundle][2 if want_shared else 1]
 
 
 # ------------------------------------------------------------------------------------------------- conversion
@@ -563,6 +634,8 @@ class Converter:
 
         clip_ids = {}
 
+        animated_paths = set()          # hashes of the object paths (from the Animator's object) the clips move
+
         def clip(sf, ref):
             got = m.get(sf, ref)
             if got is None:
@@ -570,6 +643,7 @@ class Converter:
             key, t, _, _ = got
             if key not in clip_ids:
                 clip_ids[key] = sh.add('AnimationClip', overlay(sh.template('AnimationClip'), t))
+            animated_paths.update(b['path'] for b in t['m_ClipBindingConstant']['genericBindings'])
             return pptr(clip_ids[key]), len(t['m_ClipBindingConstant']['genericBindings'])
 
         def controller(sf, ref):
@@ -604,6 +678,16 @@ class Converter:
         def skip(what):
             stats['skipped'][what] = stats['skipped'].get(what, 0) + 1
 
+        # a node with a LODGroup has one child per detail level: only the nearest one is drawn here
+        far_levels = set()
+        for n in m.nodes.values():
+            lod = n.component('LODGroup')
+            if lod:
+                for level in lod[2].get('m_LODs', [])[1:]:
+                    for r in level.get('renderers', []):
+                        far_levels.add(r['renderer']['m_PathID'])
+        bumpers, go_of = [], {}
+
         def copy_node(n, parent, visual):
             nonlocal lo, hi, start_node
             kinds = {c[0] for c in n.components}
@@ -617,8 +701,9 @@ class Converter:
             if n.name in ('NODISP_FALL', 'RINGOUT'):
                 return
             go = sc.new_object(n.name, parent, n.pos, n.rot, n.scale, n.active)
+            go_of[n.id] = go
             mf, mr = n.component('MeshFilter'), n.component('MeshRenderer')
-            if visual and mf and mr and mf[2]['m_Mesh']['m_PathID']:
+            if visual and mf and mr and mf[2]['m_Mesh']['m_PathID'] and mr[1] not in far_levels:
                 sc.add_component(go, 'MeshFilter', {'m_Mesh': sc.shared_ref(mesh(m.main, mf[2]['m_Mesh'])['m_PathID'])})
                 r = s.template('MeshRenderer')
                 r['m_Enabled'] = bool(mr[2]['m_Enabled'])
@@ -648,11 +733,14 @@ class Converter:
                             for cz in (plo[2], phi[2]):
                                 p3 = (w @ np.array([cx, cy, cz, 1.0]))[:3]
                                 lo, hi = np.minimum(lo, p3), np.maximum(hi, p3)
+            if not visual and n.component('CollisionBumper'):
+                bumpers.append((n, go))
             banana = n.component('BananaPos')
             if banana and not visual:
                 bananas.append((go, banana[2]['m_Kind']))
             for kind in kinds - {'Transform', 'MeshFilter', 'MeshRenderer', 'CollisionStagePart', 'BananaPos', 'Animator', 'GravityTilt',
-                                 'MonoBehaviour'}:
+                                 'MonoBehaviour', 'CollisionBumper', 'Bumper', 'LODGroup', 'MgStageSwitch', 'CollisionSwitchUpper',
+                                 'MgTRSSync', 'StageMovObjManager', 'MgStageSwitchManager', 'MainGameStage'}:
                 skip(kind)
             for c in n.children:
                 copy_node(c, go, visual)
@@ -660,18 +748,109 @@ class Converter:
 
         behavior_go = copy_node(m.behavior, holder, True) if m.behavior is not None else None
         collision_go = copy_node(m.collision, holder, False) if m.collision is not None else None
+        # other children of the stage root are drawn things kept apart from the stage's tilt group (the bumper models)
+        for c in m.root.children:
+            if c is not m.behavior and c is not m.collision:
+                copy_node(c, holder, True)
 
-        # ---- moving parts: Mania animates the Collision tree and copies the motion to the drawn twin of each node
-        # (the node at the same path under Behavior). Here both trees get an Animator with the same controller.
+        # ---- bumpers: the same sphere and push as in Mania, on Rumble's bumper classes; the drawn bumper is the
+        # node named <collision node>_INS under Behavior
+        if bumpers:
+            sc.import_script(self.aa, 'CollisionBumper')
+            sc.import_script(self.aa, 'MgBumper')
+            drawn = {s.get(g)['m_Name']: g for g in list(sc.tr_of_go)}
+            for n, go in bumpers:
+                src = n.component('CollisionBumper')[2]
+                cb = s.template('MonoBehaviour', 'CollisionBumper')
+                cb.update(isPhysical=1, isTrigger=0, isDynamic=0, priority=0, layerMask=4, isDebugSelected=0, isItem=0,
+                          m_Globe=copy.deepcopy(src['m_Globe']), m_BumperPower=src['m_BumperPower'])
+                sc.add_component(go, 'MonoBehaviour', cb, 'CollisionBumper')
+                mb = s.template('MonoBehaviour', 'MgBumper')
+                mb['m_RotationRoot'] = pptr(sc.tr_of_go[drawn.get(n.name + '_INS', go)])
+                sc.add_component(go, 'MonoBehaviour', mb, 'MgBumper')
+                tr = s.template('MonoBehaviour', 'ReplayTracker')         # Rumble's bumpers carry one (on the model)
+                tr['m_RecordProperties']['m_AnimatorProperty'] = {'m_Animator': dict(NULL), 'm_isSelfUpdate': 0}
+                sc.add_component(go, 'MonoBehaviour', tr, 'ReplayTracker')
+            stats['bumpers'] = len(bumpers)
+
+        # ---- moving parts. Mania animates the Collision tree only and copies each moving node's transform to other
+        # objects every frame: to its drawn twin (StageMovObjManager.m_info: animationTRS -> meshTRS) and to things
+        # that ride on it (MgTRSSync: source -> targets; a switch on a moving floor). Here each such target is hung
+        # under its source instead, keeping its place, so one Animator on the Collision tree moves everything.
+        pairs = []
+        mov = m.root.component('StageMovObjManager')
+        for info in (mov[2].get('m_info', []) if mov else []):
+            pairs.append((info['animationTRS']['m_PathID'], info['meshTRS']['m_PathID']))
+        for n in m.nodes.values():
+            sync = n.component('MgTRSSync')
+            if sync:
+                pairs += [(sync[2]['m_srcTransform']['m_PathID'], d['m_PathID']) for d in sync[2]['m_dstTransformList']]
+        attached = set()
+        for src_tr, dst_tr in pairs:
+            a, b = m.by_transform.get(src_tr), m.by_transform.get(dst_tr)
+            if a is None or b is None or a is b or a.id not in go_of or b.id not in go_of or b.id in attached:
+                continue
+            up = a
+            while up is not None and up is not b:
+                up = up.parent
+            if up is b:                              # the target is above its source: leave it
+                continue
+            rel = np.linalg.inv(world_matrix(a, m.root)) @ world_matrix(b, m.root)
+            scale = np.linalg.norm(rel[:3, :3], axis=0)
+            if (scale < 1e-9).any():
+                continue
+            axes = rel[:3, :3] / scale
+            sc.set_transform(go_of[b.id], rel[:3, 3], quat_from_axes(axes[:, 0], axes[:, 1], axes[:, 2]), go_of[a.id], scale)
+            attached.add(b.id)
+        stats['attached'] = len(attached)
         animators = []
         man = m.collision.component('Animator') if m.collision is not None else None
         if man and collision_go:
             ctrl, bound = controller(m.main, man[2]['m_Controller'])
             if ctrl:
                 animators.append(animator(collision_go, ctrl))
-                if behavior_go:
-                    animators.append(animator(behavior_go, ctrl))
             stats['animated_bindings'] = bound
+
+        # ---- switches. Rumble's switch classes are Mania's with other names: MgStageSwitchManager ->
+        # MgStageSwitchController (the Animator, the switches, switch class -> the animator parameters it drives),
+        # MgStageSwitch -> MgSwitch (what the switch does: StageAnimation.eState 1 fast rewind, 2 reverse, 3 stop,
+        # 4 play, 5 fast forward; its class), CollisionSwitchUpper (the cylinder that is pressed). Rumble's
+        # controller reads the class of each animator layer from the layer's name with the same pattern Mania's
+        # names have (class<N>_<A>to<B>_...).
+        mgr = m.root.component('MgStageSwitchManager')
+        switches = [n for n in m.nodes.values() if n.id in go_of and n.component('MgStageSwitch')
+                    and n.component('MgStageSwitch')[2]['m_StageSwitchManager']['m_PathID']]
+        if mgr and switches and animators:
+            for cls in ('MgStageSwitchController', 'MgSwitch', 'CollisionSwitchUpper'):
+                sc.import_script(self.aa, cls)
+            on = sc.import_asset(self.aa, SWITCH_CLIPS[0], 'AnimationClip', SWITCH_CLIPS[1])
+            off = sc.import_asset(self.aa, SWITCH_CLIPS[0], 'AnimationClip', SWITCH_CLIPS[2])
+            ctl = s.template('MonoBehaviour', 'MgStageSwitchController')
+            ctl['m_Animator'] = pptr(animators[0])
+            ctl['m_SwitchList'] = []
+            ctl['m_ClassIdToParamNameDict'] = {'m_EntryList': [{'m_Key': e['Key'], 'm_Value': list(e['Value'])}
+                                                                for e in mgr[2]['m_ClassIdToParamNameDict']['list']]}
+            ctl_id = sc.add_component(collision_go, 'MonoBehaviour', ctl, 'MgStageSwitchController')
+            for n in switches:
+                src = n.component('MgStageSwitch')[2]
+                sw = s.template('MonoBehaviour', 'MgSwitch')
+                sw.update(m_SwitchType=src['m_State'], m_ClassId=src['m_ClassId'], m_SerialId=src['m_SerialId'],
+                          m_isTurnOnDefault=src['m_isTurnOnDefault'], m_StageSwitchController=pptr(ctl_id), m_Animators=[],
+                          m_OnClip=sc.shared_ref(on), m_OffClip=sc.shared_ref(off), m_TrsFollow=dict(NULL))
+                ctl['m_SwitchList'].append(pptr(sc.add_component(go_of[n.id], 'MonoBehaviour', sw, 'MgSwitch')))
+                cyl = n.component('CollisionSwitchUpper')
+                rad, height = (cyl[2]['m_CylinderRadius'], cyl[2]['m_CylinderHeight']) if cyl else (0.9, 0.7)
+                cu = s.template('MonoBehaviour', 'CollisionSwitchUpper')
+                cu.update(isPhysical=0, isTrigger=1, isDynamic=0, priority=0, layerMask=1, isDebugSelected=0, isItem=0)
+                cu['m_Cylinder'] = {'pos': v3((0.0, 0.4, 0.0)), 'rad': float(rad), 'height': float(max(height, 0.7)), 'rot': q4((0, 0, 0, 1))}
+                sc.add_component(go_of[n.id], 'MonoBehaviour', cu, 'CollisionSwitchUpper')
+                # MgSwitch.Awake takes the ReplayTracker of its own object and registers with it
+                tr = s.template('MonoBehaviour', 'ReplayTracker')
+                tr['m_RecordProperties']['m_RecordFlags'] = [1] + [0] * (len(tr['m_RecordProperties']['m_RecordFlags']) - 1)
+                tr['m_RecordProperties']['m_AnimatorProperty'] = {'m_Animator': dict(NULL), 'm_isSelfUpdate': 0}
+                sc.add_component(go_of[n.id], 'MonoBehaviour', tr, 'ReplayTracker')
+            mgs['m_StageSwitchControllers'] = [pptr(ctl_id)]
+            stats['switches'] = len(switches)
         if not np.isfinite(lo).all():
             lo, hi = np.zeros(3), np.zeros(3)
 
@@ -683,6 +862,22 @@ class Converter:
             goal_colis.append(pptr(sc.component(g, 'MonoBehaviour', 'MgGoalColi')))
         if not goals:
             sc.delete(goal0)
+
+        # ---- what the Animator moves gets the tag "StgMot", with everything under it. Rumble's collision shapes look
+        # for that tag on their parents when they wake (CollisionShapeBase.Awake); without it a shape is taken for
+        # a still one and keeps colliding where it stood when the stage was loaded.
+        tagged = 0
+        if animators and collision_go:
+            def tag(go, path, moving):
+                nonlocal tagged
+                moving = moving or (zlib.crc32(path.encode('utf-8')) & 0xffffffff) in animated_paths
+                if moving:
+                    s.get(go)['m_Tag'] = TAG_STGMOT
+                    tagged += 1
+                for c in sc.children(go):
+                    tag(c, (path + '/' if path else '') + sc.name(c), moving)
+            tag(collision_go, '', False)
+        stats['moving_objects'] = tagged
 
         # ---- start: Mania's START is the ball's centre, Rumble's the ground under it
         if start_node is not None:
@@ -699,6 +894,8 @@ class Converter:
         mgs['m_MeshBounds'] = {'m_Center': v3(centre), 'm_Extent': v3(extent)}
         fb = m.info.get('m_FalloutBounds')
         ring = float(m.info.get('m_ringoutY', lo[1] - 10.0))
+        if ring < -1e5:                              # some stages have no fall-out height (-FLT_MAX): below the lowest floor
+            ring = float(lo[1] - 15.0)
         if fb and max(fb['m_Extent'].values()) > 0:
             mgs['m_FalloutBounds'] = {'m_Center': copy.deepcopy(fb['m_Center']), 'm_Extent': copy.deepcopy(fb['m_Extent'])}
         else:

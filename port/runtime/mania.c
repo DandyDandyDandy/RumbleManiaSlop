@@ -20,6 +20,11 @@
 //     with the cue of <exe dir>mania\mania_music.txt ("<Stage row id> <Sound_Cue row id>" per line) when the stage
 //     being played is listed there.
 //
+//  4. The co-op world list. Local and online co-op offer the courses from the first one along the NextCourseID
+//     chain up to the "highest unlocked" course, which is the last course in display order whose previous course
+//     is cleared. The imported courses are always open and come last, so every course before them would be
+//     offered, also worlds the player has not reached. The hook on getUnlockedCourseList takes those out again.
+//
 // Without the mania folder none of this changes anything: no stage row has a numeric scene name and no course has
 // a virtual list.
 #include <windows.h>
@@ -101,7 +106,76 @@ static void load_courses(void) {
         }
     }
     fclose(f);
+    // online rooms: only players with the same imported courses meet (see np_set_content_tag)
+    uint32_t tag = 2166136261u;
+    for (int i = 0; i < g_ncourses; i++) {
+        uint32_t v[3] = {g_courses[i].list, (uint32_t)g_courses[i].first, (uint32_t)g_courses[i].count};
+        for (int k = 0; k < 12; k++) tag = (tag ^ ((const uint8_t *)v)[k]) * 16777619u;
+    }
+    extern void np_set_content_tag(uint32_t tag);
+    np_set_content_tag(g_ncourses ? (tag | 1) : 0);
     rt_log("mania: %d imported courses", g_ncourses);
+}
+
+// called once per frame (display_opt.c): the course list is read at the start, before a room can be opened,
+// because it sets the content tag of online play
+void mania_tick(void) {
+    if (g_ncourses < 0) load_courses();
+}
+
+#define F_UNLOCKED_COURSES 0x45605b0ull     // UIChoicesItemData_Factory.getUnlockedCourseList(...) -> List<Course.Record>
+#define F_COURSE_STAGELIST 0x4797890ull     // Course.Record.StageListID()
+#define F_IS_COURSE_UNLOCKED 0x43c3770ull   // SaveUserParam.AdventureParam.IsCourseUnlocked(Course.eID)
+#define F_USER_PARAM 0x43d4e30ull           // SaveDataContainer.UserParam.entity (static) -> SaveUserParam
+#define USER_ADVENTURE 0x38                 // SaveUserParam -> AdventureParam
+#define RECORD_ID 0x18                      // IDRecord.id
+#define LIST_BASE 1000                      // virtual stage list ids start here (mania\build.py)
+
+int rt_hook_45605b0(Cpu *c) {
+    static __thread int inside;
+    if (inside) return 0;
+    if (g_ncourses < 0) load_courses();
+    if (!g_ncourses) return 0;
+    uint64_t lr = c->x[30];
+    inside = 1;
+    uint64_t lst = rt_call(c, FN(F_UNLOCKED_COURSES), 4, c->x[0], c->x[1], c->x[2], c->x[3]);
+    inside = 0;
+    uint64_t items = lst ? LD64(lst + LIST_ITEMS) : 0, user = rt_call(c, FN(F_USER_PARAM), 1, 0ull);
+    uint64_t adv = user ? LD64(user + USER_ADVENTURE) : 0;
+    int n = lst ? (int)LD32(lst + LIST_SIZE) : 0, kept = 0;
+    for (int i = 0; items && adv && i < n; i++) {
+        uint64_t rec = LD64(items + ARR_DATA + 8 * (uint64_t)i);
+        int keep = 1;
+        if (rec && (uint32_t)rt_call(c, FN(F_COURSE_STAGELIST), 2, rec, 0ull) < LIST_BASE)       // one of the game's own
+            keep = (int)(rt_call(c, FN(F_IS_COURSE_UNLOCKED), 3, adv, (uint64_t)LD32(rec + RECORD_ID), 0ull) & 1);
+        if (keep) ST64(items + ARR_DATA + 8 * (uint64_t)kept++, rec);
+    }
+    if (items && adv && kept != n) {
+        for (int i = kept; i < n; i++) ST64(items + ARR_DATA + 8 * (uint64_t)i, 0);
+        ST32(lst + LIST_SIZE, (uint32_t)kept);
+        ST32(lst + LIST_VERSION, LD32(lst + LIST_VERSION) + 1);
+    }
+    c->x[0] = lst;
+    c->x[30] = lr;
+    return 1;
+}
+
+// Wonder.MgStageSwitchController.Request(eState switchType, int classId, int serialId, bool playSound, float time):
+// a switch was pressed. BR_MANIA_LOG=1 logs it (a test aid for imported switch stages).
+int rt_hook_4308520(Cpu *c) {
+    static int on = -1;
+    if (on < 0) on = getenv("BR_MANIA_LOG") != NULL;
+    if (on) rt_log("mania: switch request: state %d, class %d, serial %d", (int)c->x[1], (int)c->x[2], (int)c->x[3]);
+    return 0;
+}
+
+// Wonder.MgSwitch.OnTriggerEnterPlayer(PhysicsBall): a ball has rolled onto a switch. Outside battles the switch
+// queues its request on the controller itself, so this is the one place every press passes.
+int rt_hook_430b0a0(Cpu *c) {
+    static int on = -1;
+    if (on < 0) on = getenv("BR_MANIA_LOG") != NULL;
+    if (on && c->x[0]) rt_log("mania: switch pressed: type %d, class %d, serial %d", (int)LD32(c->x[0] + 0x20), (int)LD32(c->x[0] + 0x24), (int)LD32(c->x[0] + 0x28));
+    return 0;
 }
 
 // Framework.EnumRuntimeHelper<Int32Enum>.GetValue(string name, T defaultValue) (static, shared by every enum)
