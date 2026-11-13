@@ -51,9 +51,20 @@ static int have(void) {
 // host path of a file about to be opened by the file layer; rewritten in place for the catalog
 void classic_fs_override(char *path, size_t cap) {
     size_t n = strlen(path);
-    static const char tail[] = "\\aa\\catalog.json";
-    if (n < sizeof tail - 1 || _stricmp(path + n - (sizeof tail - 1), tail) || !have()) return;
-    snprintf(path, cap, "%smania\\catalog.json", rt_exe_dir());
+    static const char tail[] = "\\aa\\catalog.json", sound[] = "\\StreamingAssets\\Sound\\";
+    if (!have()) return;
+    if (n >= sizeof tail - 1 && !_stricmp(path + n - (sizeof tail - 1), tail)) {
+        snprintf(path, cap, "%smania\\catalog.json", rt_exe_dir());
+        return;
+    }
+    // a sound file (CRIWARE cue sheet or stream) that the override folder has: imported music
+    for (const char *p = path; *p; p++)
+        if (!_strnicmp(p, sound, sizeof sound - 1)) {
+            char cand[700];
+            snprintf(cand, sizeof cand, "%smania\\Sound\\%s", rt_exe_dir(), p + sizeof sound - 1);
+            if (is_file(cand)) snprintf(path, cap, "%s", cand);
+            return;
+        }
 }
 
 // UnityEngine.AssetBundle::LoadFromFileAsync_Internal(string path, uint crc, ulong offset) and the public overloads

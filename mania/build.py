@@ -8,6 +8,8 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\Switch\\...                        changed copies of the game's table bundles (dbtable.py)
     mania\\catalog.json                      the game's Addressables catalog plus the new scenes
     mania\\mania_courses.txt                 the stage range of each imported course (read by port\\runtime\\mania.c)
+    mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are)
+    mania\\mania_music.txt                   the BGM cue of each imported stage
 
 How the stages become courses (docs/MANIA.md has the reasons):
 
@@ -17,10 +19,12 @@ How the stages become courses (docs/MANIA.md has the reasons):
     Stage_List_Group_wld97_wldtst   the unused test list 12: the stages of every imported course, one after the other
     Course, Course_Text_<lang>      a row per imported course, with a virtual stage list id 1000 + n
     MainGame_Story_Progress         a row per (course, stage) that opens the stage from the start
+    Sound_CueSheet, Sound_Cue       a row per copied cue sheet and per stage BGM cue
 """
 import argparse
 import hashlib
 import os
+import shutil
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -127,6 +131,7 @@ def main():
     ap.add_argument('--only', help='import only these Mania courses (comma separated; for testing)')
     ap.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4) - 2))
     ap.add_argument('--no-stages', action='store_true', help='keep the stage bundles that are already there')
+    ap.add_argument('--no-music', action='store_true', help='leave the stages with the music of the Rumble world they borrow')
     a = ap.parse_args()
     game = a.game
     aa = os.path.join(game, f'{paths.NAME}_Data', 'StreamingAssets', 'aa')
@@ -226,6 +231,37 @@ def main():
                        MovieIDEpilogue=0)
     if courses:
         last_vanilla['NextCourseID'] = first_course
+
+    # ---- music: Mania names a stage's BGM '<cue sheet>_<cue>'; the cue sheet is a pair of files in its Sound folder
+    music_lines = []
+    if not a.no_music:
+        sound = os.path.join(a.mania, 'smbbm_Data', 'StreamingAssets', 'Sound')
+        sheet_t, cue_t = db.table('Sound_CueSheet'), db.table('Sound_Cue')
+        sheets, cues = {}, {}
+        os.makedirs(os.path.join(out, 'Sound'), exist_ok=True)
+        for sid in stage_ids:
+            name = mania.bgm_cue(sid)
+            if name not in cues:
+                parts = name.split('_')
+                sheet = next(('_'.join(parts[:i]) for i in range(len(parts) - 1, 0, -1)
+                              if os.path.exists(os.path.join(sound, '_'.join(parts[:i]) + '.acb'))), None)
+                if sheet is None:
+                    cues[name] = None
+                    continue
+                if sheet not in sheets:
+                    awb = os.path.exists(os.path.join(sound, sheet + '.awb'))
+                    for ext in ('.acb', '.awb') if awb else ('.acb',):
+                        shutil.copyfile(os.path.join(sound, sheet + ext), os.path.join(out, 'Sound', sheet + ext))
+                    sheets[sheet] = len(sheet_t.rows)
+                    sheet_t.use(sheets[sheet], acbPath=f'Sound/{sheet}.acb', awbPath=f'Sound/{sheet}.awb' if awb else '',
+                                cueSheetName=sheet)
+                cues[name] = len(cue_t.rows)
+                cue_t.use(cues[name], cueSheet=sheets[sheet], innerCueName=name[len(sheet) + 1:], title=0, displayOrderInGallery=0,
+                          innerCueId=0, ThumbnailSpriteID=0, IsEnabledTrial=False)
+            if cues[name] is not None:
+                music_lines.append(f'{row_of[sid]} {cues[name]}')
+    with open(os.path.join(out, 'mania_music.txt'), 'w', newline='\n') as f:
+        f.write(''.join(x + '\n' for x in music_lines))
     written = db.save(out_switch)
     with open(os.path.join(out, 'mania_courses.txt'), 'w', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')

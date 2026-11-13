@@ -15,6 +15,11 @@
 //     The hook on StageList.Setup builds the real list and keeps the course's own range of it.
 //     <exe dir>mania\mania_courses.txt has one line per virtual list: "<list id> <first row> <rows>".
 //
+//  3. Music. A stage's BGM is the cue the game's background table (MgBgData) names for the stage's scenery, by
+//     compiled cue name, so data alone cannot give a stage a new cue. The hook on MainGameBg.calcBgCue answers
+//     with the cue of <exe dir>mania\mania_music.txt ("<Stage row id> <Sound_Cue row id>" per line) when the stage
+//     being played is listed there.
+//
 // Without the mania folder none of this changes anything: no stage row has a numeric scene name and no course has
 // a virtual list.
 #include <windows.h>
@@ -40,6 +45,44 @@
 
 static struct { uint32_t list; int first, count; } g_courses[MAX_COURSES];
 static int g_ncourses = -1;
+
+#define F_GET_SELECTOR 0x43ad880ull         // Wonder.RuntimeParam.get_selector (static) -> SelectorParam
+#define F_CURRENT_STAGE 0x4329320ull        // Wonder.StageList.GetCurrentStage() -> Stage.eID
+#define SELECTOR_STAGELIST 0x28             // SelectorParam.m_StageList
+#define MAX_MUSIC 1024
+static struct { uint32_t stage, cue; } g_music[MAX_MUSIC];
+static int g_nmusic = -1;
+
+static void load_music(void) {
+    char path[700], line[128];
+    g_nmusic = 0;
+    snprintf(path, sizeof path, "%smania\\mania_music.txt", rt_exe_dir());
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    while (fgets(line, sizeof line, f) && g_nmusic < MAX_MUSIC) {
+        unsigned stage, cue;
+        if (sscanf(line, "%u %u", &stage, &cue) == 2) { g_music[g_nmusic].stage = stage; g_music[g_nmusic].cue = cue; g_nmusic++; }
+    }
+    fclose(f);
+    rt_log("mania: imported music for %d stages", g_nmusic);
+}
+
+// Wonder.MainGameBg.calcBgCue() -> ValueTuple<Sound.Cue.eID, Sound.Cue.eID> (the BGM cue and its overlay cue, in x0)
+int rt_hook_426a180(Cpu *c) {
+    if (g_nmusic < 0) load_music();
+    if (!g_nmusic) return 0;
+    uint64_t self = c->x[0], lr = c->x[30];
+    uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull), list = sel ? LD64(sel + SELECTOR_STAGELIST) : 0;
+    uint32_t stage = list ? (uint32_t)rt_call(c, FN(F_CURRENT_STAGE), 2, list, 0ull) : 0;
+    c->x[30] = lr;
+    for (int i = 0; i < g_nmusic; i++)
+        if (g_music[i].stage == stage) {
+            c->x[0] = g_music[i].cue;           // no overlay cue
+            return 1;
+        }
+    c->x[0] = self;
+    return 0;
+}
 
 static void load_courses(void) {
     char path[700], line[128];
