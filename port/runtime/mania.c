@@ -402,7 +402,9 @@ int rt_hook_42aff20(Cpu *c) {
     if (LD32(self + SEQ_STATE) != 4) { done = 0; return 0; }
     if (done) return 0;
     uint64_t x1 = c->x[1], x2 = c->x[2], x3 = c->x[3], lr = c->x[30];
-    if (bonus_stage(c) && (int)rt_call(c, FN(F_TOTAL_BANANA_WORTH), 1, 0ull) > 0 && (rt_call(c, FN(F_IS_TAKEN_ALL_BANANA), 1, 0ull) & 1)
+    extern int test_aids_all_bananas(void);                 // test_aids.c: the live command BANANAS
+    int forced = test_aids_all_bananas();
+    if (bonus_stage(c) && (forced || ((int)rt_call(c, FN(F_TOTAL_BANANA_WORTH), 1, 0ull) > 0 && (rt_call(c, FN(F_IS_TAKEN_ALL_BANANA), 1, 0ull) & 1)))
         && !(rt_call(c, FN(F_IS_LOADED_REPLAY), 1, 0ull) & 1)) {
         uint64_t players = rt_call(c, FN(F_PLAYER_LIST), 1, 0ull), battle = rt_call(c, FN(F_GET_BATTLE), 1, 0ull);
         uint64_t items = players ? LD64(players + LIST_ITEMS) : 0;
