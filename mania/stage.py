@@ -1023,7 +1023,9 @@ class Converter:
             for c in sc.children(g):
                 b = sc.component(c, 'MonoBehaviour', 'BeginningBounds')
                 if b:
-                    sc.set_transform(c, centre)
+                    # the intro camera flies along this box in the box's own frame, and Rumble's stages run towards
+                    # +Z where Mania's run towards -Z: turned half round, or the fly-over looks away from the stage
+                    sc.set_transform(c, centre, Y180)
                     s.get(b)['m_Bounds'] = {'m_Center': v3((0, 0, 0)), 'm_Extent': v3(np.maximum(extent, 1.0))}
 
         size = sc.save(out_path, *(identity or (None, None, None)))
