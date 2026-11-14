@@ -23,7 +23,7 @@ room code), plus, when Banana Mania is installed:
   Monkey Ball 2, its challenge difficulties, Deluxe, Original Stage Mode, Reverse Mode and the remaining special
   stages. They are played with Rumble's ball, physics, goal, camera and rules; every stage is open from the start.
 - **Banana Mania's stage music** on those stages, and the original games' music when your Banana Mania has the
-  Classic Soundtrack add-on (*Options > Display > Imported Stage Music*).
+  Classic Soundtrack add-on (*Options > Audio > Imported Stage Music*).
 - Banana Mania's 18 bonus stages are left out: the imported worlds are about reaching the goal and clear times.
 - **The classic monkeys** of the Classic Character Pack as the "Classic Outfit" in *Style > Outfit*, for AiAi,
   MeeMee, Baby, GonGon, YanYan and Doctor (needs that pack in your Banana Mania).

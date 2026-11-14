@@ -549,8 +549,8 @@ one for a test import).
   catalog from `mania\catalog.json`, sound files from `mania\Sound\`;
 * numeric scene names and virtual stage lists (above);
 * `MainGameBg.calcBgCue` answers with the imported cue for an imported stage (`mania_music.txt`): Banana Mania's
-  own music, or the Classic Soundtrack's when the import has it and the player chose it (Options > Display >
-  Imported Stage Music, a row added in `display_opt.c`; kept in `port_mania.txt`);
+  own music, or the Classic Soundtrack's when the import has it and the player chose it (Options > Audio >
+  Imported Stage Music, the last row of that page, added in `display_opt.c`; kept in `port_mania.txt`);
 * the list of worlds offered in co-op and online rooms keeps the imported courses (they are not "unlocked"
   in the save's sense) and the online protocol number carries a tag made from the imported course ranges, so
   games with different imports do not meet;

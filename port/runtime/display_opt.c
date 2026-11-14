@@ -9,6 +9,7 @@
 //   Frame Rate Limit  30 / 60 / 120 / 144 / Unlimited
 //   VSync             Off / On   (the game has a VSync option object but does not list it on this page; with
 //                     VSync on, Unity ignores the frame rate limit and follows the display)
+// And on the Audio page, under the volume rows:
 //   Imported Stage Music   Banana Mania / Classic Soundtrack   (RumbleManiaSlop, only when the import has both:
 //                     which music the imported stages play, mania.c; it takes effect with the next stage)
 // A change applies at once, as the game's own rows do.
@@ -62,6 +63,10 @@ static const int FPS[] = {30, 60, 120, 144, -1};
 
 static int g_res[MAX_RES][2], g_nres, g_k, g_desk_w, g_desk_h, g_mode = -1, g_fps = 1, g_def_k, g_vsync = 1, g_smooth = 1, g_deck;
 static uint64_t g_sm_klass;
+static uint32_t g_pattern_h;                // GC handle of the game's Screen Mode row object
+#define F_GCHANDLE_NEW 0x469da0ull          // il2cpp_gchandle_new(obj, pinned)
+#define F_GCHANDLE_TARGET 0x469df0ull
+#define F_GCHANDLE_FREE 0x469e10ull
 static INIT_ONCE g_once = INIT_ONCE_STATIC_INIT;
 static __thread int t_in_str, t_in_change, t_in_init, t_in_list, t_in_fps, t_in_vsync;
 
@@ -246,6 +251,13 @@ int rt_hook_4575bf0(Cpu *c) {
     uint64_t item = c->x[0];
     if (!g_sm_klass) g_sm_klass = LD64(item);
     int role = role_of(item);
+    if (role == ROLE_MODE) {      // the game's own row: kept as the pattern for a row on another page (the Audio page)
+        uint64_t sx[19], lr = c->x[30];
+        memcpy(sx, c->x, sizeof sx);
+        if (g_pattern_h) rt_call(c, FN(F_GCHANDLE_FREE), 1, (uint64_t)g_pattern_h);
+        g_pattern_h = (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, item, 0ull);
+        memcpy(c->x, sx, sizeof sx); c->x[30] = lr;
+    }
     if (role == ROLE_RES) { g_k = g_def_k; save_cfg(); apply_display(c); ST32(item + 0x50, g_k); return 1; }
     if (role == ROLE_FPS) { g_fps = 1; save_cfg(); apply_fps(c); ST32(item + 0x50, g_fps); return 1; }
     if (role == ROLE_VSYNC) { g_vsync = 1; save_cfg(); apply_vsync(c); ST32(item + 0x50, g_vsync); return 1; }
@@ -346,17 +358,41 @@ int rt_hook_455d030(Cpu *c) {
         uint64_t it = LD64(items + 0x20 + 8ull * i);
         if (it && LD64(it) == g_sm_klass && role_of(it) == ROLE_MODE) at = i;
     }
-    if (at < 0) return 1;
+    if (at < 0) {
+        // Not the Display page. On the Audio page (its rows are the volume rows) the Imported Stage Music row goes
+        // last, when the import has both soundtracks: a copy of the Screen Mode row object, like the rows below.
+        int audio = 0;
+        for (int i = 0; items && i < n && !audio; i++) {
+            uint64_t it = LD64(items + 0x20 + 8ull * i);
+            const char *name = it ? (const char *)(uintptr_t)LD64(LD64(it) + 0x10) : NULL;      // Il2CppClass.name
+            audio = name && strstr(name, "Volume") != NULL;
+        }
+        uint64_t pattern = audio && g_pattern_h && mania_has_classic_music() ? rt_call(c, FN(F_GCHANDLE_TARGET), 1, (uint64_t)g_pattern_h) : 0;
+        if (pattern) {
+            rt_call(c, FN(F_GC_DISABLE), 0);
+            uint64_t cls = LD64(LD64(FN(LIST_OBJECT_CLASS_SLOT)));
+            uint64_t add_mi = LD64(LD64(LD64(cls + 0x20) + 0xc0) + 0x70);
+            uint64_t obj = rt_call(c, FN(F_OBJECT_NEW), 1, g_sm_klass);
+            if (obj && !c->eh_unwinding) {
+                memcpy((void *)(uintptr_t)(obj + 0x10), (const void *)(uintptr_t)(pattern + 0x10), 0x44);
+                ST32(obj + 0x54, ROLE_MUSIC);
+                set_indices(obj, role_index(ROLE_MUSIC));
+                rt_call(c, FN(F_LIST_ADD_WITH_RESIZE), 3, list, obj, add_mi);
+            }
+            rt_call(c, FN(F_GC_ENABLE), 0);
+        }
+        c->x[0] = list;
+        return 1;
+    }
     uint64_t real = LD64(items + 0x20 + 8ull * at);
     set_indices(real, role_index(ROLE_MODE));
     // The copies are only reachable from host locals until they are in the list: no collection meanwhile.
     rt_call(c, FN(F_GC_DISABLE), 0);
     uint64_t cls = LD64(LD64(FN(LIST_OBJECT_CLASS_SLOT)));
     uint64_t add_mi = LD64(LD64(LD64(cls + 0x20) + 0xc0) + 0x70);
-    static const int roles[] = {ROLE_RES, ROLE_FPS, ROLE_VSYNC, ROLE_SMOOTH, ROLE_MUSIC};
+    static const int roles[] = {ROLE_RES, ROLE_FPS, ROLE_VSYNC, ROLE_SMOOTH};
     int added = 0;
     for (size_t r = 0; r < sizeof roles / sizeof *roles; r++) {
-        if (roles[r] == ROLE_MUSIC && !mania_has_classic_music()) continue;
         uint64_t obj = rt_call(c, FN(F_OBJECT_NEW), 1, g_sm_klass);
         if (!obj || c->eh_unwinding) break;
         memcpy((void *)(uintptr_t)(obj + 0x10), (const void *)(uintptr_t)(real + 0x10), 0x44);
