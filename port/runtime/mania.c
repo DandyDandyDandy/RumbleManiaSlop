@@ -66,7 +66,7 @@ static int g_nmusic = -1, g_have_classic;
 // games' (its Classic Soundtrack add-on). The choice is kept in <exe dir>\port_mania.txt as "music=remake" or
 // "music=classic"; mania_set_classic_music is for an option row.
 static int g_classic = -1;
-static void settings_path(char *path, size_t cap) { snprintf(path, cap, "%sport_mania.txt", rt_exe_dir()); }
+static void settings_path(char *path, size_t cap) { snprintf(path, cap, "%sport_mania.txt", rt_user_dir()); }
 int mania_classic_music(void) {
     if (g_classic < 0) {
         char path[700], line[64];
