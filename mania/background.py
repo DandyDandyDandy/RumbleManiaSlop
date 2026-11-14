@@ -47,8 +47,12 @@ part of the UV transform (texture scale / offset, the -0.5 of the scrolling shad
 material alpha below one. The time-dependent part of a scroll goes into `_UVscroll` / `_Speed`. Mania's light on
 the formerly lit materials becomes a constant per background multiplied into `_Color`.
 
-Not converted: particle systems, the collision twin, the flow-map wobble, mask textures, flip book animation, toon
-ramp / rim / specular / cube-map reflections, Mania's post-processing. The 27 imported stages that place the background
+Particle systems are carried over as they are (on the engine's classes, in the far scene), a flip book is played by
+an Animator over one mesh copy per frame, and the lighting scene's reflection cubemap is Mania's (the tunables
+PARTICLES, FLIPBOOK, REFLECTION_CUBEMAP; docs/MANIA.md).
+
+Not converted: the collision twin, the flow-map wobble, mask textures, toon ramp / rim / specular, mirror images on
+the scenery, Mania's post-processing. The 27 imported stages that place the background
 somewhere else (`BgRoot`) are listed in the result's `moved_stages`; build.py hands them to the port, which moves
 the scenery's root (mania.c).
 
@@ -70,7 +74,7 @@ from UnityPy.files import SerializedFile
 
 from maniadata import ManiaData
 from maniastage import BUNDLES, ManiaStage, Node
-from stage import TAG_STGMOT, Scene, q4, qmul, qrot, walk_pptrs, world_rotation
+from stage import TAG_STGMOT, Scene, q4, qmul, qrot, walk_pptrs, world_matrix, world_rotation
 from unityfile import NULL, Editor, overlay, pptr, serialized_files
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -192,7 +196,48 @@ SKY_COLOR = 'fog'           # the flat colour of the skybox cubemap (seen only t
 SKY_TINT = (0.5, 0.5, 0.5)  # `_Tint` of the Skybox/Cubemap material (0.5 is neutral: the shader doubles it)
 SKY_EXPOSURE = 1.0          # `_Exposure` of it
 SKY_CUBEMAP_SIZE = 16       # edge of the generated cubemap in pixels (RGBA32, no mips: 6 x 16 x 16 x 4 bytes)
-REFLECTION_INTENSITY = None     # RenderSettings reflection intensity (the template's cubemap on the ball); None = keep
+REFLECTION_INTENSITY = None     # RenderSettings reflection intensity (the reflection cubemap on the ball); None = keep
+REFLECTION_CUBEMAP = 'mania'    # 'mania': the lighting scene's reflection cubemap (what the ball and the reflecting
+#                                 materials mirror) is the cubemap Mania's reflecting materials of this background
+#                                 use (its scenery's, else its stages'); a background without one keeps the
+#                                 template's. 'template': always the template's
+REFLECTION_CUBEMAP_SIZE = 256   # edge of that cubemap: Mania's (1024) is cut down to this by leaving out its top levels
+
+# ------------------------------------------------------------------- tunables: reflections, flip books, particles
+REFLECTIONS = True          # True: Mania's cube-map reflecting materials (Reflective/Specular...) go on Rumble's
+#                             `bg_sad_abd_cube`, which adds the reflection cubemap to the albedo. False: plain albedo
+SCENERY_REFLECTIONS = False     # ... in the far scene. Off: there the shader draws pure black and through whatever is
+#                                 in front of it (seen in Electric and the Whale; light masks, probe usage and the
+#                                 layer were tried). On a stage it works, and the stage converter uses it
+CUBE_MATERIAL_MODEL = ('manual_additions_assets_maingame/farmiddle/w09/unitymaterialscache.bundle', 'bg_far_w09_obj02')
+#                             a bg_sad_abd_cube material of the game (bundle below aa/Switch, name); its shader is
+#                             in the same bundle
+CUBE_SHADER = 'Shader Graphs/bg_sad_abd_cube'
+CUBE_INTENSITY = 1.0        # `_CubeIntensity`; the reflection's colour (`_CubeColor`) is Mania's `_ReflectColor`
+CUBE_COLOR_GAIN = 1.0       # multiplies `_CubeColor`
+CUBE_DEFOCUS = 0.0          # `_CubeDefocus`: how blurred the reflection is (Rumble's own materials: 1.6 .. 4.1)
+CUBE_SMOOTHNESS = 0.0       # `_Smoothness` of those materials
+FLIPBOOK = True             # True: a flip book material (the animated signs of Night) is played: one copy of the
+#                             mesh per frame, shown in turn by an Animator. False: its first frame stands still
+FLIPBOOK_MAX_FRAMES = 64    # a flip book with more frames than this stands still
+PARTICLES = True            # True: Mania's particle systems (cloud puffs, fires and lightning, waterfall spray,
+#                             drifting crystals) are carried over into the far scene. False: left out
+PARTICLE_TEMPLATE = 'eff02_w02'     # a scene of the game with particle systems: the model of the two component classes
+PARTICLE_MAX = 1.0          # multiplies each system's particle limit (a way to thin them out)
+# Mania draws the background with a camera of its own, before the stage: nothing of it ever covers the stage. Rumble
+# draws the scenery layer after the stage with the same depth buffer, so a mist puff a hundred units wide that drifts
+# through where the stage is covers the floor (render queues do not help: tried). Such systems are left out:
+PARTICLE_BIG = 30.0         # a system whose particles are at least this large (start size x scale, in units) ...
+PARTICLE_CLEARANCE = 0.0    # ... is left out when their centres can come nearer than this to the origin, where the
+#                             stages are (emitter volume and distance travelled taken off the emitter's distance).
+#                             Of what the 19 backgrounds have this leaves out the mist and spray of the three
+#                             waterfalls next to the stage in Smb2_Jungle (eight more keep theirs); 0 = keep all
+MASK_AS_ALBEDO = False      # the scrolling shaders multiply a moving texture by a still mask, and the one Rumble shader
+#                             has one texture. False: the moving texture is drawn, the mask dropped (cloud rings: the
+#                             mask only fades their edges). True: the mask is drawn, standing still, times the mean
+#                             colour of the moving texture - for layers whose mask is the picture (the glow lines of
+#                             the Space floors, where the moving texture is a sheet of bright blobs that without the
+#                             mask whites the floor out). The stage converter sets it
 
 # Mania's shaders: what each does with the mesh, as read from its code (module docstring). Matched by the start of
 # the lower-case name, first match wins; a shader that matches nothing is treated like the last entry and reported.
@@ -215,7 +260,9 @@ SHADERS = [
     ('shader forge/flowmapscrollblend', dict(lit=False, vc='raw', fog=True, tex='_Texture', color='_TintColor')),
     ('shader forge/flow', dict(lit=False, vc='raw', fog=True, tex='_Texture', color='_TintColor', premul=True)),
     ('particles/', dict(lit=False, vc='raw', fog=True, tex='_MainTex', color='_Color')),
-    ('', dict(lit=True, vc='white', fog=True, tex='_MainTex', color='_Color')),     # Legacy Reflective / Diffuse, unknown
+    ('legacy shaders/reflective', dict(lit=True, vc='white', fog=True, tex='_MainTex', color='_Color', cube=True)),
+    ('custom/reflective', dict(lit=True, vc='white', fog=True, tex='_MainTex', color='_Color', cube=True)),
+    ('', dict(lit=True, vc='white', fog=True, tex='_MainTex', color='_Color')),     # Legacy Diffuse, unknown
 ]
 QUEUES = {'background': 1000, 'geometry': 2000, 'alphatest': 2450, 'transparent': 3000, 'overlay': 4000}
 BLEND_ONE, BLEND_ZERO, BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA = 1, 0, 5, 10
@@ -731,6 +778,129 @@ def material_model(aa_switch):
     return copy.deepcopy(cached(('model', aa_switch), find))
 
 
+def cube_model(aa_switch, opt):
+    """(type tree dict, internal file name, shader path id) of the game's material CUBE_MATERIAL_MODEL, whose shader
+    (bg_sad_abd_cube) is an object of the same file."""
+    rel, name = opt.cube_material_model
+
+    def find():
+        for cab, sf in serialized_files(UnityPy.load(os.path.join(aa_switch, rel.replace('/', os.sep)))).items():
+            for o in sf.objects.values():
+                if o.type.name == 'Material' and o.peek_name() == name:
+                    t = o.read_typetree()
+                    sh = t['m_Shader']
+                    if sh['m_FileID'] or sf.objects[sh['m_PathID']].read_typetree()['m_ParsedForm']['m_Name'] != opt.cube_shader:
+                        raise ValueError(f'material {name} is not a {opt.cube_shader} material with its shader in the same file')
+                    return t, cab, sh['m_PathID']
+        raise ValueError(f'material {name} not found in {rel}')
+    t, cab, pid = cached(('cube', aa_switch, rel, name), find)
+    return copy.deepcopy(t), cab, pid
+
+
+def particle_models(aa_switch, template):
+    """(ParticleSystem object, its dict, ParticleSystemRenderer object, its dict) of a scene of the game: what new
+    particle systems are modelled on. The system's dict has every module switched off, so that a module Mania's
+    engine version does not know stays off."""
+    def find():
+        env = UnityPy.load(os.path.join(aa_switch, f'scene_{template}_scenes_all.bundle'))
+        files = serialized_files(env)
+        scene = files[[n for n in files if n.endswith('.sharedAssets')][0][:-len('.sharedAssets')]]
+        ps = next(o for o in scene.objects.values() if o.type.name == 'ParticleSystem')
+        pr = next(o for o in scene.objects.values() if o.type.name == 'ParticleSystemRenderer')
+        base = ps.read_typetree()
+        for v in base.values():
+            if isinstance(v, dict) and 'enabled' in v:
+                v['enabled'] = False
+        return env, ps, base, pr, pr.read_typetree()
+    return cached(('particles', aa_switch, template), find)[1:]
+
+
+def find_cubemap(m):
+    """(Cubemap dict, its data) of the first cubemap a drawn material of the Mania bundle `m` (a ManiaStage) has as
+    its `_Cube`, or None."""
+    seen = set()
+    for n in m.nodes.values():
+        for kind in ('MeshRenderer', 'ParticleSystemRenderer'):
+            c = n.component(kind)
+            for x in c[2].get('m_Materials', []) if c else []:
+                got = m.get(m.main, x)
+                if got is None or got[0] in seen:
+                    continue
+                seen.add(got[0])
+                env = dict(got[1]['m_SavedProperties']['m_TexEnvs']).get('_Cube')
+                tex = m.get(got[2], env['m_Texture']) if env and env['m_Texture']['m_PathID'] else None
+                if tex and tex[3].type.name == 'Cubemap':
+                    t = tex[1]
+                    data = bytes(t.get('image data') or b'')
+                    if not data and t.get('m_StreamData', {}).get('size'):
+                        data = m.resource(tex[2], t['m_StreamData'])
+                    return t, data
+    return None
+
+
+def cut_cubemap(tree, data, size):
+    """A block-compressed cubemap (DXT1 / DXT5: six faces, each a full chain of levels) without its levels larger
+    than `size`: (edge, levels, data), or None when the layout is not the expected one."""
+    block = {10: 8, 12: 16}.get(tree['m_TextureFormat'])
+    w, levels = tree['m_Width'], tree['m_MipCount']
+    if block is None or w != tree['m_Height'] or tree.get('m_ImageCount', 6) != 6:
+        return None
+    sizes = [max(1, (max(w >> i, 1) + 3) // 4) ** 2 * block for i in range(levels)]
+    face = sum(sizes)
+    if face * 6 != len(data):
+        return None
+    skip = 0
+    while (w >> skip) > size and skip < levels - 1:
+        skip += 1
+    start = sum(sizes[:skip])
+    return w >> skip, levels - skip, b''.join(data[f * face + start:(f + 1) * face] for f in range(6))
+
+
+def stepped_clip(base, name, period, tracks):
+    """An AnimationClip dict (made from `base`, any generic clip of the target engine version) that switches objects
+    on and off by their scale: tracks is [(object path below the Animator, [(time, scale), ...])], the first key of
+    each at time 0; the clip loops after `period` seconds. Every key is a step (no blending between keys)."""
+    f32 = lambda x: float(np.float32(x))                                                    # noqa: E731
+    words = lambda *floats: list(np.array(floats, dtype='<f4').view('<u4'))                 # noqa: E731
+    curves = [(ti * 3 + k, keys) for ti, (_, keys) in enumerate(tracks) for k in range(3)]  # scale x, y, z of each
+    n = len(curves)
+    start = [keys[0][1] for _, keys in curves]
+    data = words(-3.4028234663852886e+38) + [n]
+    for i, v in enumerate(start):
+        data += [i] + words(0.0, 0.0, 0.0, v)
+    times = sorted({f32(t) for _, keys in curves for t, _ in keys if t < period})
+    for t in times:
+        hit = [(i, v) for i, keys in curves for kt, v in keys if f32(kt) == t]
+        data += words(t) + [len(hit)]
+        for i, v in hit:
+            data += [i] + words(0.0, 0.0, 0.0, v)
+    data += words(period) + [n]
+    for i, v in enumerate(start):                                   # the loop point: back to the start values
+        data += [i] + words(0.0, 0.0, 0.0, v)
+    data += words(np.inf) + [0]
+    new = copy.deepcopy(base)
+    mc = new['m_MuscleClip']
+    clip = mc['m_Clip']['data']
+    # the size of the clip's block in memory: what is left of the model's without its curve data, plus this data
+    fixed = (new['m_MuscleClipSize'] - 4 * len(clip['m_StreamedClip']['data']) - 4 * len(clip['m_DenseClip']['m_SampleArray'])
+             - 4 * len(clip['m_ConstantClip']['data']) - 8 * len(mc['m_ValueArrayDelta']))
+    clip['m_StreamedClip'].update(data=[int(x) for x in data], curveCount=n)
+    if 'discreteCurveCount' in clip['m_StreamedClip']:
+        clip['m_StreamedClip']['discreteCurveCount'] = 0
+    rate = 60.0
+    clip['m_DenseClip'].update(m_FrameCount=int(period * rate) + 2, m_CurveCount=0, m_SampleRate=rate, m_BeginTime=0.0, m_SampleArray=[])
+    clip['m_ConstantClip']['data'] = []
+    mc.update(m_StartTime=0.0, m_StopTime=f32(period), m_ValueArrayDelta=[{'m_Start': f32(v), 'm_Stop': f32(v)} for v in start],
+              m_ValueArrayReferencePose=[], m_LoopTime=True)
+    proto = dict(new['m_ClipBindingConstant']['genericBindings'][0]) if new['m_ClipBindingConstant']['genericBindings'] else {
+        'script': dict(NULL), 'typeID': 4, 'customType': 0, 'isPPtrCurve': 0, 'isIntCurve': 0, 'isSerializeReferenceCurve': 0}
+    new['m_ClipBindingConstant'] = {'genericBindings': [dict(proto, path=zlib.crc32(path.encode('utf-8')) & 0xffffffff, attribute=3,
+                                                             script=dict(NULL), typeID=4, customType=0, isPPtrCurve=0)
+                                                        for path, _ in tracks], 'pptrCurveMapping': []}
+    new.update(m_Name=name, m_SampleRate=rate, m_MuscleClipSize=fixed + 4 * len(data) + 8 * n, m_Events=[])
+    return new
+
+
 def load_catalog(path):
     """port/assets/aacatalog.Catalog of a catalog.json (the module lives outside this folder)."""
     try:
@@ -810,7 +980,7 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
         form = shader[1]['m_ParsedForm'] if shader else None
         sname = form['m_Name'] if form else ''
         rule = next(r for prefix, r in SHADERS if sname.lower().startswith(prefix))
-        if rule is SHADERS[-1][1] and not sname.lower().startswith(('legacy shaders/', 'custom/reflective')):
+        if rule is SHADERS[-1][1] and not sname.lower().startswith('legacy shaders/'):
             count('unmapped', sname or '(shader not in the bundles)')
         count('shaders', sname or '(shader not in the bundles)')
         declared = {p['m_Name'] for p in form['m_PropInfo']['m_Props']} if form else set()
@@ -829,6 +999,8 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
         blend = state['rtBlend0'] if state else {}
         src, dst = int(value(blend.get('srcBlend'), BLEND_ONE)), int(value(blend.get('destBlend'), BLEND_ZERO))
         zwrite, ztest = int(value(state and state['zWrite'], 1)), int(value(state and state['zTest'], 4))
+        if not 1 <= ztest <= 8:         # a shader that does not set it (Unity's particle shaders: 0) tests "less or equal";
+            ztest = 4                   # written out as 0 it would switch the test off and draw over everything
         cull = int(value(state and state['culling'], 2))
         if sname.lower().startswith('particles/'):          # Unity's own: the blend is the material's _Mode
             src, dst = int(floats.get('_SrcBlend', src)), int(floats.get('_DstBlend', dst))
@@ -856,12 +1028,24 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
 
         def f(name, default=0.0):
             return float(floats.get(name, default))
+        flip = cube = None
         if rule.get('uv') == 'allblend':
             offset -= 0.5 * st[:2]
             speed = np.array([f('_USpeed'), f('_VSpeed')]) / 20.0 * st[:2]
         elif rule.get('uv') == 'addmask':
             wfac = np.array([11.1 * f('_Urandom'), 7.77 * f('_Vrandom')]) * st[:2]
             speed = np.array([f('_uspeed'), f('_vspeed')]) * st[:2]
+        gain = 1.0
+        mask = texs.get('_Mask') if '_Mask' in declared else None
+        if opt.mask_as_albedo and rule.get('uv') in ('addmask', 'allblend') and env and mask and mask['m_Texture']['m_PathID']:
+            moving = m.get(msf, env['m_Texture'])
+            if moving is not None and moving[3].type.name == 'Texture2D':
+                px = np.asarray(moving[3].read().image.convert('RGBA'), dtype=np.float64) / 255.0
+                gain = float((srgb_to_linear(px[..., :3]) * px[..., 3:4]).mean())
+                env = mask
+                st = np.array([env['m_Scale']['x'], env['m_Scale']['y'], env['m_Offset']['x'], env['m_Offset']['y']])
+                scale, offset, wfac, speed = st[:2].copy(), st[2:].copy(), np.zeros(2), np.zeros(2)
+                count('dropped', 'scroll of a masked layer (the mask is drawn)')
         elif rule.get('uv') == 'opaquescroll':
             base = np.array([f('_basescaleU', 1.0), f('_basescaleV', 1.0)])
             scale, offset = base * st[:2], np.array([f('_baseoffsetU'), f('_baseoffsetV')]) * st[:2] + st[2:]
@@ -870,19 +1054,37 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
             cols_n, rows_n, frame = max(int(f('_Column', 1)), 1), max(int(f('_Row', 1)), 1), int(f('_StartFrame'))
             cell = np.array([1.0 / cols_n, 1.0 / rows_n])
             scale, offset = st[:2] * cell, st[2:] * cell + np.array([(frame % cols_n) * cell[0], 1.0 - (frame // cols_n + 1) * cell[1]])
-            count('dropped', 'flip book animation')
+            # the shader shows frame start + floor(time / step) mod (end - start)
+            last, step = int(f('_EndFrame')), f('_TimeStep')
+            if opt.flipbook and step > 0 and 1 < last - frame <= opt.flipbook_max_frames:
+                flip = (frame, last, step, tuple(st), cols_n, rows_n)
+            else:
+                count('dropped', 'flip book animation')
+        has_cube = bool('_Cube' in declared and (texs.get('_Cube') or {}).get('m_Texture', {}).get('m_PathID'))
+        if rule.get('cube') and has_cube and opt.reflections and kind == 'opaque':     # the shader cannot be see-through
+            rc = cols.get('_ReflectColor') or {'r': 1.0, 'g': 1.0, 'b': 1.0}
+            cube = np.array([rc['r'], rc['g'], rc['b']], dtype=np.float64)
         for prop, what in (('_FlowMap', 'flow map'), ('_Mask', 'mask texture'), ('_Cube', 'reflection cube'), ('_Ramp', 'toon ramp'),
                            ('_SubTex', 'second texture')):
-            if prop in declared and (texs.get(prop) or {}).get('m_Texture', {}).get('m_PathID'):
+            if (prop in declared and (texs.get(prop) or {}).get('m_Texture', {}).get('m_PathID') and not (prop == '_Cube' and cube is not None)
+                    and not (prop == '_Mask' and gain != 1.0)):
                 count('dropped', what)
         em = cols.get('_Emission')
         if rule['lit'] and '_Emission' in declared and em and max(em['r'], em['g'], em['b']) > 0:
             count('dropped', 'emission colour')
         d = dict(key=key, tree=t, sf=msf, name=t['m_Name'], shader=sname, rule=rule, kind=kind, src=src, dst=dst, zwrite=zwrite, ztest=ztest,
                  cull=cull, queue=queue, cutoff=f('_Cutoff', 0.5), tint=tint, env=env,
-                 fog=bool(rule['fog'] and 'FOG_OFF' not in keywords), uv=(tuple(scale), tuple(offset), tuple(wfac)), speed=speed)
+                 fog=bool(rule['fog'] and 'FOG_OFF' not in keywords), uv=(tuple(scale), tuple(offset), tuple(wfac)), speed=speed,
+                 flip=flip, cube=cube, gain=gain)
         mat_info[key] = d
         return d
+
+    def flip_frames(d):
+        """The UV transforms (as d['uv']) of the frames a flip book material shows, in turn."""
+        first, last, _, st, cols_n, rows_n = d['flip']
+        st, cell = np.array(st), np.array([1.0 / cols_n, 1.0 / rows_n])
+        return [(tuple(st[:2] * cell), tuple(st[2:] * cell + np.array([(k % cols_n) * cell[0], 1.0 - (k // cols_n + 1) * cell[1]])), (0.0, 0.0))
+                for k in range(first, last)]
 
     def material(d, alpha_to_vertex, light_in_vertex):
         """The bg_unlit_abd material for the Mania material described by `d`; its path id in the shared file.
@@ -893,9 +1095,14 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
             return mat_ids[key]
         kind, rule = d['kind'], d['rule']
         blended = kind in ('transparent', 'additive')
-        new = copy.deepcopy(model)
+        if d.get('cube') is not None:           # a reflecting material: Rumble's shader that adds the reflection cubemap
+            new, cab, pid = cube_model(aa, opt)
+            new['m_Shader'] = pptr(pid, sc.add_external(cab))
+            stats['reflecting'] = stats.get('reflecting', 0) + 1
+        else:
+            new = copy.deepcopy(model)
+            new['m_Shader'] = pptr(shader_pid, sc.add_external(shader_cab))
         new['m_Name'] = 'mania_' + d['name']
-        new['m_Shader'] = pptr(shader_pid, sc.add_external(shader_cab))
         new['m_ValidKeywords'] = ['_SURFACE_TYPE_TRANSPARENT'] if blended else ['_ALPHATEST_ON'] if kind == 'cutout' else []
         new['stringTagMap'] = [('RenderType', 'Transparent' if blended else 'TransparentCutout' if kind == 'cutout' else 'Opaque')]
         if opt.keep_mania_queue:
@@ -916,8 +1123,8 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
                  'm_Offset': {'x': 0.0, 'y': 0.0} if baked or k != '_Albedo' or not d['env'] else copy.deepcopy(d['env']['m_Offset'])})
             for k, _ in new['m_SavedProperties']['m_TexEnvs']]
         tint = d['tint'].copy()
-        lin = srgb_to_linear(tint[:3])
-        if rule['lit']:
+        lin = srgb_to_linear(tint[:3]) * d.get('gain', 1.0)
+        if rule['lit'] and d.get('cube') is None:       # (a reflecting material is lit by its shader)
             lin = lin * (opt.light_vertex_range if light_in_vertex else bake)
             stats['lit'] += 1
         alpha, cutoff = float(tint[3]), d['cutoff']
@@ -936,10 +1143,14 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
         floats = {'_Surface': float(blended), '_Blend': 2.0 if kind == 'additive' else 0.0, '_SrcBlend': float(d['src']), '_DstBlend': float(d['dst']),
                   '_ZWrite': float(d['zwrite']), '_ZTest': float(d['ztest']), '_Cull': float(d['cull']), '_AlphaClip': float(kind == 'cutout'),
                   '_AlphaCut': float(cutoff) if kind == 'cutout' else 0.5, '_AlphaToMask': float(kind == 'cutout' and opt.cutout_alpha_to_mask),
-                  '_Emission': 0.0, '_UVscroll': float(scroll), '_FogOn': float(fog), '_QueueOffset': 0.0, '_QueueControl': 0.0, '_ZWriteControl': 0.0}
+                  '_Emission': 0.0, '_UVscroll': float(scroll), '_FogOn': float(fog), '_QueueOffset': 0.0, '_QueueControl': 0.0, '_ZWriteControl': 0.0,
+                  '_CubeIntensity': float(opt.cube_intensity), '_CubeDefocus': float(opt.cube_defocus), '_Smoothness': float(opt.cube_smoothness)}
         new['m_SavedProperties']['m_Floats'] = [(k, floats.get(k, v)) for k, v in new['m_SavedProperties']['m_Floats']]
         colors = {'_Color': color(linear_to_srgb(lin), alpha), '_EmissionColor': color((0, 0, 0)), '_Tiling': color((1, 1, 0), 0),
                   '_Speed': color((speed[0], speed[1], 0), 0)}
+        if d.get('cube') is not None:
+            colors['_CubeColor'] = color(srgb_to_linear(d['cube']) * opt.cube_color_gain, 0.0)      # an HDR colour: linear
+            colors['_BaseColor'] = colors['_Color']
         new['m_SavedProperties']['m_Colors'] = [(k, colors.get(k, v)) for k, v in new['m_SavedProperties']['m_Colors']]
         count('kinds', kind)
         mat_ids[key] = sh.add('Material', new)
@@ -984,7 +1195,7 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
             else:
                 ops.append((d['rule']['vc'] if opt.bake_vertex_colors and has_color else 'raw', float(d['tint'][3]) if in_vertex[j] else 1.0,
                             d['uv'] if opt.bake_uvs and has_uv else IDENTITY_UV,
-                            rot_key if want_light and has_color and d['rule']['lit'] else None))
+                            rot_key if want_light and has_color and d['rule']['lit'] and d.get('cube') is None else None))
         ops = tuple(ops)
         lit = [bool(d) and ops[min(i, len(ops) - 1)][3] is not None if ops else False for i, d in enumerate(slots)]
         if (key, ops) not in mesh_ids:
@@ -1007,7 +1218,8 @@ def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
         pid, edited = mesh_ids[(key, ops)]
         return pid, in_vertex if edited else [False] * len(slots), lit if edited else [False] * len(slots)
 
-    return types.SimpleNamespace(count=count, texture=texture, describe=describe, material=material, mesh=mesh, tex_ids=tex_ids, white=white,
+    return types.SimpleNamespace(count=count, texture=texture, describe=describe, material=material, mesh=mesh, flip_frames=flip_frames,
+                                 tex_ids=tex_ids, white=white,
                                  mat_ids=mat_ids, mesh_ids=mesh_ids)
 
 
@@ -1120,8 +1332,24 @@ class BackgroundConverter:
         f = opt.light_bake_gain * (opt.light_bake_ambient * (sky + 2 * equator + ground) / 4 + opt.light_bake_ndotl * direct)
         return f * min(1.0, opt.light_bake_max / max(float(f.max()), 1e-9))
 
+    def reflection_cubemap(self, m, bg_name):
+        """(Cubemap dict, its data, where it was found) of the cubemap that Mania's reflecting materials use with
+        this background: the scenery's (`m`), else that of the first stage of the background that has one; None when
+        nothing of the background reflects a cubemap."""
+        found = find_cubemap(m)
+        if found:
+            return found + ('scenery',)
+        for sid in self.stages(bg_name):
+            bundle = self.data.bundles.get(sid)
+            if bundle:
+                found = find_cubemap(ManiaStage(self.mania_dir, bundle))
+                if found:
+                    return found + (f'stage {sid}',)
+        return None
+
     # ---- far scenery
     def _far(self, m, rs, lights, info, out_dir, opt):
+        opt = types.SimpleNamespace(**{**vars(opt), 'reflections': opt.reflections and opt.scenery_reflections})
         sc = BgScene(os.path.join(self.aa, f'scene_{opt.far_template}_scenes_all.bundle'))
         s, sh = sc.scene, sc.shared
         root = next(g for g in sc.roots() if sc.component(g, 'MonoBehaviour', 'MainGameBg'))
@@ -1205,10 +1433,118 @@ class BackgroundConverter:
         def has_drawn(n):
             """Is there anything to draw at or below this node?"""
             if n.id not in drawn:
-                drawn[n.id] = draws(n) or any([has_drawn(c) for c in n.children])
+                drawn[n.id] = draws(n) or emits(n) or any([has_drawn(c) for c in n.children])
             return drawn[n.id]
 
-        animators = []
+        animators, flips = [], []
+        stats.update(flip_books=0, particle_systems=0)
+
+        def add_renderer(go, mr, mesh_ref, slots, rot):
+            mesh_id, in_vertex, lit = mesh(m.main, mesh_ref, slots, rot)
+            sc.add_component(go, 'MeshFilter', {'m_Mesh': sc.shared_ref(mesh_id)})
+            r = s.template('MeshRenderer')
+            # a reflecting material takes its light and its mirror image from the probes of the renderer: with
+            # both off (as on the unlit scenery) it is drawn black
+            probes = int(any(d and d.get('cube') is not None for d in slots))
+            r.update(m_Enabled=bool(mr[2]['m_Enabled']), m_CastShadows=0, m_ReceiveShadows=0, m_StaticShadowCaster=0, m_LightProbeUsage=probes,
+                     m_ReflectionProbeUsage=probes, m_LightmapIndex=65535, m_LightmapIndexDynamic=65535,
+                     m_LightmapTilingOffset={'x': 1.0, 'y': 1.0, 'z': 0.0, 'w': 0.0}, m_LightmapTilingOffsetDynamic={'x': 1.0, 'y': 1.0, 'z': 0.0, 'w': 0.0},
+                     m_Materials=[sc.shared_ref(material(d, v, l)) if d else dict(NULL) for d, v, l in zip(slots, in_vertex, lit)],
+                     m_StaticBatchInfo={'firstSubMesh': 0, 'subMeshCount': 0}, m_StaticBatchRoot=dict(NULL), m_ProbeAnchor=dict(NULL),
+                     m_LightProbeVolumeOverride=dict(NULL), m_SortingLayerID=0, m_SortingLayer=0, m_SortingOrder=int(mr[2].get('m_SortingOrder', 0)),
+                     m_AdditionalVertexStreams=dict(NULL), m_EnlightenVertexStream=dict(NULL))
+            sc.add_component(go, 'MeshRenderer', r)
+            stats['renderers'] += 1
+
+        # ---- particle systems: the two components are carried over on the engine's own classes (modelled on a
+        # system of one of the game's effect scenes), their materials go on the unlit shader like all others
+        ps_new, ps_subs = {}, []
+        if opt.particles:
+            ps_obj, ps_base, pr_obj, pr_base = particle_models(self.aa, opt.particle_template)
+            sc._foreign_model(s, ps_obj, None, None)
+            sc._foreign_model(s, pr_obj, None, None)
+
+        covering = {}
+
+        def covers_stage(n, t):
+            """Can the (large) particles of this system get in front of the stage? (PARTICLE_CLEARANCE)"""
+            if n.id in covering:
+                return covering[n.id]
+
+            def top(c):                         # the largest value of a MinMaxCurve (states 2, 3: between two)
+                if not isinstance(c, dict):
+                    return abs(float(c or 0.0))
+                both = c.get('minMaxState', 0) in (2, 3)
+                return max(abs(float(c.get('scalar', 0.0))), abs(float(c.get('minScalar', 0.0))) if both else 0.0)
+            w = world_matrix(n)
+            scale = float(np.linalg.norm(w[:3, 0]))
+            init, shape = t['InitialModule'], t['ShapeModule']
+            out = False
+            if opt.particle_clearance > 0 and top(init['startSize']) * scale >= opt.particle_big:
+                radius = shape.get('radius')
+                radius = float(radius.get('value', 0.0) if isinstance(radius, dict) else radius or 0.0)
+                dist = float(np.linalg.norm(w[:3, 3]))
+                if not shape.get('enabled'):
+                    dist_emit = dist
+                elif shape.get('type') in (10, 11, 17):                 # circle, its edge, donut: a ring around the centre
+                    dist_emit = abs(dist - radius * scale) - float(shape.get('donutRadius', 0.0)) * scale * (shape.get('type') == 17)
+                elif shape.get('type') in (5, 15, 16):                  # box
+                    dist_emit = dist - 0.5 * max(abs(shape['m_Scale'][k]) for k in 'xyz') * scale
+                else:                                                   # sphere, hemisphere, cone ...
+                    dist_emit = dist - radius * scale
+                out = dist_emit - top(init['startLifetime']) * top(init['startSpeed']) * scale < opt.particle_clearance
+            covering[n.id] = out
+            if out:
+                count('skipped', 'ParticleSystem whose large particles would cover the stage')
+            return out
+
+        def emits(n):
+            """Has this node a particle system that draws something (and that is carried over)?"""
+            ps, pr = n.component('ParticleSystem'), n.component('ParticleSystemRenderer')
+            return bool(opt.particles and ps and pr and any(describe(m.main, x) for x in pr[2].get('m_Materials', []))
+                        and not covers_stage(n, ps[2]))
+
+        def clear_refs(tree):
+            def clear(p):
+                p['m_FileID'], p['m_PathID'] = 0, 0
+            walk_pptrs(tree, clear)
+
+        def add_particles(go, n):
+            ps, pr = n.component('ParticleSystem'), n.component('ParticleSystemRenderer')
+            slots = [describe(m.main, x) for x in pr[2]['m_Materials']]
+            tree = overlay(ps_base, ps[2])
+            subs = [(i, e['emitter']['m_PathID']) for i, e in enumerate(tree.get('SubModule', {}).get('subEmitters', []))]
+            shape = tree.get('ShapeModule', {})
+            if shape.get('enabled') and any(shape.get(k, {}).get('m_PathID') for k in ('m_Mesh', 'm_MeshRenderer', 'm_SkinnedMeshRenderer')):
+                count('dropped', 'particle emitter shape from a mesh')
+            clear_refs(tree)
+            init = tree['InitialModule']
+            init['maxNumParticles'] = max(1, int(init['maxNumParticles'] * opt.particle_max))
+            # a see-through material's colour alpha: the shader does not read it, so it goes into the particles' colour
+            d0 = slots[0]
+            fold = bool(d0 and d0['kind'] == 'transparent' and d0['tint'][3] != 1.0)
+            if fold:
+                a = float(d0['tint'][3])
+                grad = init['startColor']
+                for k in ('minColor', 'maxColor'):
+                    grad[k]['a'] *= a
+                for k in ('minGradient', 'maxGradient'):
+                    for key, v in grad[k].items():
+                        if key.startswith('key') and isinstance(v, dict):
+                            v['a'] *= a
+            ps_new[ps[1]] = sc.add_component(go, 'ParticleSystem', tree)
+            ps_subs.append((tree, subs))
+            r = overlay(pr_base, pr[2])
+            clear_refs(r)
+            flat = [dict(d, rule=dict(d['rule'], lit=False)) if d else None for d in slots]     # no light per vertex: the particles turn
+            if pr[2].get('m_Mesh', {}).get('m_PathID'):
+                r['m_Mesh'] = sc.shared_ref(mesh(m.main, pr[2]['m_Mesh'], flat[:1], (0.0, 0.0, 0.0, 1.0))[0])
+            probes = int(any(d and d.get('cube') is not None for d in slots))
+            r.update(m_CastShadows=0, m_ReceiveShadows=0, m_StaticShadowCaster=0, m_LightProbeUsage=probes, m_ReflectionProbeUsage=probes,
+                     m_LightmapIndex=65535, m_LightmapIndexDynamic=65535,
+                     m_Materials=[sc.shared_ref(material(d, fold and i == 0, False)) if d else dict(NULL) for i, d in enumerate(slots)])
+            sc.add_component(go, 'ParticleSystemRenderer', r)
+            stats['particle_systems'] += 1
 
         def copy_node(n, parent):
             go = sc.new_object(n.name, parent, n.pos, n.rot, n.scale, n.active)
@@ -1218,23 +1554,26 @@ class BackgroundConverter:
                 count('skipped', 'MeshRenderer without a mesh')
             if draws(n):
                 slots = [describe(m.main, x) for x in mr[2]['m_Materials']]
-                mesh_id, in_vertex, lit = mesh(m.main, mf[2]['m_Mesh'], slots, world_rotation(n))
-                sc.add_component(go, 'MeshFilter', {'m_Mesh': sc.shared_ref(mesh_id)})
-                r = s.template('MeshRenderer')
-                r.update(m_Enabled=bool(mr[2]['m_Enabled']), m_CastShadows=0, m_ReceiveShadows=0, m_StaticShadowCaster=0, m_LightProbeUsage=0,
-                         m_ReflectionProbeUsage=0, m_LightmapIndex=65535, m_LightmapIndexDynamic=65535,
-                         m_LightmapTilingOffset={'x': 1.0, 'y': 1.0, 'z': 0.0, 'w': 0.0}, m_LightmapTilingOffsetDynamic={'x': 1.0, 'y': 1.0, 'z': 0.0, 'w': 0.0},
-                         m_Materials=[sc.shared_ref(material(d, v, l)) if d else dict(NULL) for d, v, l in zip(slots, in_vertex, lit)],
-                         m_StaticBatchInfo={'firstSubMesh': 0, 'subMeshCount': 0}, m_StaticBatchRoot=dict(NULL), m_ProbeAnchor=dict(NULL),
-                         m_LightProbeVolumeOverride=dict(NULL), m_SortingLayerID=0, m_SortingLayer=0, m_SortingOrder=int(mr[2].get('m_SortingOrder', 0)),
-                         m_AdditionalVertexStreams=dict(NULL), m_EnlightenVertexStream=dict(NULL))
-                sc.add_component(go, 'MeshRenderer', r)
-                stats['renderers'] += 1
+                rot = world_rotation(n)
+                book = next((d for d in slots if d and d.get('flip')), None)
+                if book:        # a flip book: one object per frame under this one, an Animator shows them in turn (below)
+                    frames = [assets.flip_frames(d) if d and d.get('flip') else None for d in slots]
+                    total = len(assets.flip_frames(book))
+                    for k in range(total):
+                        child = sc.new_object(f'flip{k:02d}', go, scale=(1, 1, 1) if k == 0 else (0, 0, 0))
+                        add_renderer(child, mr, mf[2]['m_Mesh'], [dict(d, uv=f[k % len(f)]) if f else d for d, f in zip(slots, frames)], rot)
+                    flips.append((go, total, book['flip'][2]))
+                    stats['flip_books'] += 1
+                else:
+                    add_renderer(go, mr, mf[2]['m_Mesh'], slots, rot)
+            if emits(n):
+                add_particles(go, n)
             anim = n.component('Animator')
             if anim:
                 animators.append((n, go, anim[2]['m_Controller']))
-            for kind in {c[0] for c in n.components} - {'Transform', 'MeshFilter', 'MeshRenderer', 'Animator'}:
-                count('skipped', kind)                  # particle systems, MgBgOptimizer
+            done = {'Transform', 'MeshFilter', 'MeshRenderer', 'Animator'} | ({'ParticleSystem', 'ParticleSystemRenderer'} if emits(n) else set())
+            for kind in {c[0] for c in n.components} - done:
+                count('skipped', kind)                  # MgBgOptimizer, particle systems that draw nothing
             for c in n.children:
                 if has_drawn(c):
                     copy_node(c, go)
@@ -1279,11 +1618,50 @@ class BackgroundConverter:
                     tag(ch, (path + '/' if path else '') + sc.name(ch), moving)
             tag(go, '', False)
 
+        # ---- particle systems that start others (a fire its sparks): the references follow the new components
+        for tree, subs in ps_subs:
+            for i, old in subs:
+                tree['SubModule']['subEmitters'][i]['emitter'] = pptr(ps_new.get(old, 0))
+
+        # ---- flip books: an Animator on the object that holds the frames; its clip gives one frame after the
+        # other the scale one, all others the scale zero (a clip and a controller per frame count and step)
+        models = None
+        for _, _, ref in animators:                     # the models: any controller of the background with its clip
+            got = m.get(m.main, ref)
+            clip = m.get(got[2], got[1]['m_AnimationClips'][0]) if got and got[1]['m_AnimationClips'] else None
+            if clip:
+                models = (overlay(sh.template('AnimatorController'), got[1]), overlay(sh.template('AnimationClip'), clip[1]))
+                break
+        if flips and models is None:
+            count('dropped', 'flip book animation (no Animator to model one on)')
+        flip_ctrl = {}
+        for go, total, step in flips if models else []:
+            key = (total, round(step, 6))
+            if key not in flip_ctrl:
+                tracks = [(f'flip{k:02d}', ([(0.0, 1.0)] if k == 0 else [(0.0, 0.0), (k * step, 1.0)]) + [((k + 1) * step, 0.0)])
+                          for k in range(total)]
+                name = f'mania_flip_{total}_{int(round(step * 1000))}'
+                cid = sh.add('AnimationClip', stepped_clip(models[1], name, total * step, tracks))
+                ctrl = copy.deepcopy(models[0])
+                ctrl.update(m_Name=name, m_AnimationClips=[pptr(cid)])
+                flip_ctrl[key] = sh.add('AnimatorController', ctrl)
+            a = s.template('Animator')
+            a.update(m_Enabled=1, m_Avatar=dict(NULL), m_Controller=sc.shared_ref(flip_ctrl[key]), m_CullingMode=0, m_UpdateMode=1, m_ApplyRootMotion=False)
+            aid = sc.add_component(go, 'Animator', a)
+            tracker = s.template('MonoBehaviour', 'ReplayTracker')
+            tracker['m_RecordProperties']['m_AnimatorProperty'] = {'m_Animator': pptr(aid), 'm_isSelfUpdate': 0}
+            sc.add_component(go, 'MonoBehaviour', tracker, 'ReplayTracker')
+            if opt.tag_animated:
+                for ch in sc.children(go):
+                    s.get(ch)['m_Tag'] = TAG_STGMOT
+        stats['flip_clips'] = len(flip_ctrl)
+
         out = os.path.join(out_dir, info['far_bundle'].replace('/', os.sep))
         n = info['far_scene']
         stats['bytes'] = sc.save(out, f'mania_bg_{n}', f'Assets/Mania/{n}.unity', 'CAB-' + md5(f'mania bg {n}'))
         stats.update(textures=len(tex_ids) + len(white), materials=len(mat_ids), meshes=len({v[0] for v in mesh_ids.values()}), clips=len(clip_ids))
-        return stats, self._dependencies(sc, [f'Switch/{UNLIT_SHADER_BUNDLE}', f'Switch/{BUILTIN_SHADER_BUNDLE}'])
+        return stats, self._dependencies(sc, [f'Switch/{UNLIT_SHADER_BUNDLE}', f'Switch/{BUILTIN_SHADER_BUNDLE}',
+                                              f'Switch/{opt.cube_material_model[0]}'])
 
     # ---- lighting
     def _light(self, m, rs, lights, info, out_dir, opt):
@@ -1365,6 +1743,25 @@ class BackgroundConverter:
                         'render_settings': bool(r['m_Fog']), 'volume': [f['active'] for f in fog_parts]}
         if opt.reflection_intensity is not None:
             r['m_ReflectionIntensity'] = float(opt.reflection_intensity)
+        # the reflection cubemap (what the ball, glossy stage parts and the reflecting materials mirror): Mania's own
+        # for this background, written over the template's cubemap object
+        stats['reflection'] = 'template'
+        ref = r['m_CustomReflection']
+        if opt.reflection_cubemap == 'mania' and r['m_DefaultReflectionMode'] == 1 and ref['m_FileID'] == sc.shared_fid and ref['m_PathID']:
+            found = self.reflection_cubemap(m, info['name'])
+            cut = cut_cubemap(found[0], found[1], int(opt.reflection_cubemap_size)) if found else None
+            if cut:
+                size, levels, data = cut
+                env_cube = sh.get(ref['m_PathID'])
+                env_cube.update({'m_Name': 'mania_' + found[0]['m_Name'], 'm_Width': size, 'm_Height': size, 'm_CompleteImageSize': len(data) // 6,
+                                 'm_TextureFormat': found[0]['m_TextureFormat'], 'm_MipCount': levels, 'm_MipsStripped': 0, 'm_ImageCount': 6,
+                                 'm_ColorSpace': found[0]['m_ColorSpace'], 'm_IsReadable': False, 'm_StreamingMipmaps': False,
+                                 'image data': data, 'm_StreamData': dict(NO_STREAM)})
+                if 'm_PlatformBlob' in env_cube:
+                    env_cube['m_PlatformBlob'] = []
+                stats['reflection'] = f"{found[0]['m_Name']} ({found[2]}), {size} px"
+            elif found:
+                stats['reflection'] = f"template ({found[0]['m_Name']} is in a format that is not handled)"
 
         # the skybox: the template's Skybox/Cubemap material with its cubemap made one flat colour (in place: the
         # material and the cubemap keep their objects, the cubemap's megabytes go)
@@ -1406,7 +1803,7 @@ def stage_fields(info):
 
     The far and lighting scenes are the converted ones, for split screen as well (they are light enough). The sky
     scene is the game's own empty one: Mania's sky is the dome in the far scene. No effect scene and no screen effect:
-    Mania's particle systems and camera weather are not converted (an empty EffectSceneID is what world 7's rows
+    Mania's particle systems are in the far scene and its camera weather is not converted (an empty EffectSceneID is what world 7's rows
     have, empty screen effects what worlds 9 and 10 have)."""
     far, light = str(info['far_scene']), str(info['light_scene'])
     return {'FarSceneID': far, 'LightSceneID': light, 'SkySceneID': EMPTY_SKY_SCENE, 'EffectSceneID': '', 'ScreenEffectAssetRef': ['', '', ''],

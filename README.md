@@ -70,8 +70,8 @@ Those of RumbleSlop, and for the imported stages:
   own player.
 - Imported stages have Banana Mania's goal (gate, party ball and tape, in blue, green or red); every goal ends the
   stage: green and red warp goals do not skip stages.
-- Stages have Banana Mania's backgrounds, sky and lighting, but without their particle effects (waterfall spray,
-  fires, lightning), weather, reflections and Mania's colour grading; the
+- Stages have Banana Mania's backgrounds, sky and lighting, with their particle effects (waterfall spray, fires,
+  lightning) and animated signs, but without the camera weather, mirror images on the scenery and Mania's colour grading; the
   light on the scenery is baked into it (no shadows cast on it). The stages themselves are drawn with Rumble's stage shaders: colours and materials
   differ from the original, vertex colouring is lost.
 - No stage pictures in *Select Stage*, no missions, no rankings for the imported worlds, and one generic intro

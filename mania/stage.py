@@ -48,6 +48,11 @@ BELT_UV_SPEED = 0.0075
 BUNCH = 10                      # what a banana bunch counts for
 WORMHOLE_DONOR = ('bg_stg_w06_215', 'wormhole_a1')      # a stage of the game with a wormhole, and the object's name
 BELT_DONOR = 'bg_stg_w02_006'                           # a stage that depends on the bundle of the belt shader
+# Mania's floors that mirror a cubemap (Space, Ice, Storm: Custom/Reflective/SpecularOpaque) stay on the lit shader
+# and get its own gloss: it then mirrors the lighting scene's reflection cubemap, which is Mania's (background.py).
+# Rumble's cube shader (bg_sad_abd_cube) was tried: it draws the floor black under the mirror image
+MIRROR_SMOOTHNESS = 0.45        # `_Smoothness` of such a material (0.8 put a white glare spot on Storm's floor)
+MIRROR_METALLIC = 0.5           # `_Metallic` = this x the brightness of Mania's `_ReflectColor` (in linear light), at most 0.9
 GOAL_MODEL_NAME = 'mania_goal'  # the object under a goal that holds Mania's goal model (mania.c looks for it)
 AREA_KINDS = {'InactiveGoal': 'goal', 'DisableWormhole': 'wormhole'}    # Mania's area attribute -> mania_areas.txt
 # Script classes the template stage does not use are taken from a stage of the game that does (its type entry with
@@ -868,7 +873,7 @@ class Converter:
         # read from the pass state and tags of Mania's shader
         import background                       # imports this module, so not at the top
         asset_stats = copy.deepcopy(background.ASSET_STATS)
-        assets = background.scenery_assets(sc, m, background.options({}), self.aa, asset_stats, np.ones(3))
+        assets = background.scenery_assets(sc, m, background.options({'mask_as_albedo': True}), self.aa, asset_stats, np.ones(3))
 
         def texture(sf, ref):
             got = m.get(sf, ref)
@@ -934,6 +939,10 @@ class Converter:
                     donors.add(BELT_DONOR)
                 if floats.get('_Cull') is not None:
                     change['_Cull'] = float(floats['_Cull'])
+                if d.get('cube') is not None and kind == 'opaque':
+                    change['_Smoothness'] = float(MIRROR_SMOOTHNESS)
+                    change['_Metallic'] = float(min(0.9, MIRROR_METALLIC * background.srgb_to_linear(d['cube']).mean()))
+                    stats['mirror_materials'] = stats.get('mirror_materials', 0) + 1
                 if kind == 'cutout':                # Mania's threshold (0.75 on the start mark), not the template's
                     change['_AlphaCut'] = float(d['cutoff'])
                 new['m_SavedProperties']['m_Floats'] = [(k, change.get(k, v)) for k, v in new['m_SavedProperties']['m_Floats']]
@@ -1063,12 +1072,20 @@ class Converter:
             mf, mr = n.component('MeshFilter'), n.component('MeshRenderer')
             if visual and mf and mr and mf[2]['m_Mesh']['m_PathID'] and mr[1] not in far_levels:
                 refs = mr[2]['m_Materials']
-                unlit = [d if d and not d['rule']['lit'] else None for d in (assets.describe(m.main, x) for x in refs)]
-                if any(unlit):                      # a copy of the mesh with the unlit slots' colours and UVs baked
-                    mesh_id, in_vertex, _ = assets.mesh(m.main, mf[2]['m_Mesh'], unlit, (0.0, 0.0, 0.0, 1.0))
+                descs = [assets.describe(m.main, x) for x in refs]
+                unlit = [d if d and not d['rule']['lit'] else None for d in descs]
+                # A lit see-through material whose colour has an alpha below one (the glass sheet over the Masters
+                # floors: 0.5): Rumble's shader takes alpha from the texture and the vertices, not from `_Color`, so
+                # without this the sheet is drawn solid and hides the floor under a bright slab
+                sheer = [dict(d, rule=dict(d['rule'], vc='raw'), uv=background.IDENTITY_UV)
+                         if d and d['rule']['lit'] and d['kind'] == 'transparent' and d['tint'][3] != 1.0 else None for d in descs]
+                if any(unlit) or any(sheer):        # a copy of the mesh with the unlit slots' colours and UVs baked
+                    mesh_id, in_vertex, _ = assets.mesh(m.main, mf[2]['m_Mesh'], [u or g for u, g in zip(unlit, sheer)],
+                                                        (0.0, 0.0, 0.0, 1.0))
                     materials = [sc.shared_ref(assets.material(d, v, False) if d else material(m.main, x)['m_PathID'])
                                  for d, v, x in zip(unlit, in_vertex, refs)]
-                    stats['unlit_renderers'] = stats.get('unlit_renderers', 0) + 1
+                    stats['unlit_renderers'] = stats.get('unlit_renderers', 0) + bool(any(unlit))
+                    stats['sheer_renderers'] = stats.get('sheer_renderers', 0) + bool(any(sheer))
                 else:
                     mesh_id = mesh(m.main, mf[2]['m_Mesh'])['m_PathID']
                     materials = [sc.shared_ref(material(m.main, x, belts.get(mr[1]))['m_PathID']) for x in refs]

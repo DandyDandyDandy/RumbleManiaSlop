@@ -519,9 +519,29 @@ one for a test import).
 * **Placement**: 27 imported stages move, turn or scale their background (Mania's `BgRoot` prefab). There is one scenery
   scene per background, made at the origin; `MainGameBg.Awake` (0x426a5b0) is hooked and sets the root's local
   position, rotation and scale from the stage's `bgroot` line.
-* Not converted: particle systems (storm fires and lightning, waterfall
-  spray, cloud puffs), camera weather, flow-map distortion, flip-book animation (city lights of Night), toon ramp,
-  rim light, specular and cube-map reflections, Mania's post-processing, the collision twin of four backgrounds.
+* **Particle systems** (storm fires, sparks and lightning, waterfall mist and spray, the cloud puffs of Masters,
+  drifting ice crystals, meteorites; `PARTICLES`): the two components are carried over into the far scene, on the
+  engine's own classes (their type entries come from one of the game's effect scenes, `PARTICLE_TEMPLATE`; modules
+  the newer engine added stay off), where the node is in Mania's tree, so they follow a moved background. Their
+  materials go on the unlit shader like the rest. A system that starts another (a fire its sparks) keeps the link.
+  **Depth test trap**: Unity's particle shaders do not set `ZTest`; written out as 0 the material's `_ZTest` means
+  "off" and the particles are drawn over everything (mist and fire in front of the stage). `describe` turns any
+  value outside 1..8 into 4. `PARTICLE_CLEARANCE` can leave out systems with large particles near the stages; it
+  is 0 (off), because with the depth test right nothing covered the stage any more.
+* **Flip books** (the dancing silhouettes in the windows of Night; `FLIPBOOK`): the one shader cannot step through
+  a sprite sheet, so a flip book renderer becomes one object per frame (the frame baked into the UVs of a mesh
+  copy) under the original object, and an Animator there gives one frame after the other the scale one and all
+  others zero. The clip is written by `stepped_clip` (a streamed clip of step keys on scale curves; one clip and
+  controller per frame count and step time). Frame = start + floor(time / step) mod (end - start), as in Mania's
+  shader.
+* **Reflections**: the lighting scene's reflection cubemap (what the ball mirrors, and glossy stage floors) is the
+  cubemap that Mania's reflecting materials use with the background (its scenery's, else its stages'; cut down to
+  256 px; `REFLECTION_CUBEMAP`); a background without one keeps the Rumble template's. The reflecting scenery
+  itself (Electric's batteries, the Whale's metal) is still plain albedo: Rumble's cube shader `bg_sad_abd_cube`
+  was tried for it and draws pure black, through whatever is in front (`SCENERY_REFLECTIONS`, off).
+* Not converted: camera weather (the `ScreenEffect_*` prefabs), flow-map distortion, toon ramp, rim light,
+  specular highlights, mirror images on the scenery, Mania's post-processing, the collision twin of four
+  backgrounds.
 
 ### Runtime (`port\runtime\mania.c`, `classic.c`)
 
@@ -653,7 +673,7 @@ What was checked in the running game (2.00, one PC):
 * Mania's own model of the wormhole: Rumble's stands there.
 * A seesaw inside another seesaw (three stages), the camera distance area of st1110, the manager's scroll on
   the unlit belts of st1069.
-* Of Mania's backgrounds: particles, weather, distortion and reflections (see "Backgrounds"). The stage intro
+* Of Mania's backgrounds: weather, distortion and the mirror images on scenery (see "Backgrounds"). The stage intro
   graphics and the big picture of a course in the world picker are a Rumble world's (the one chosen in the
   editor, else the one in `WORLD_OF_BG`).
 * A stage's lit materials are reduced to a texture, a tint, culling and (cut-out) the alpha threshold on three
@@ -661,7 +681,13 @@ What was checked in the running game (2.00, one PC):
   `describe`). Its unlit materials (`Custom/TextureVc`, `TextureVa`: arrows, marks) go on `bg_unlit_abd` with a
   baked copy of the mesh, as the backgrounds do, because the Rumble stage shaders take transparency only from
   the texture and those materials have it in the colour and the vertex alpha. On the lit ones vertex colours, second textures,
-  rim light ramps, reflection cubes and scrolling textures are dropped.
+  rim light ramps and scrolling textures are dropped. Three things about them:
+  a see-through lit material whose colour has an alpha below one (the glass sheet over the Masters floors, 0.5)
+  gets that alpha in the vertices of a mesh copy, or it is drawn solid (that was the white glare on Masters);
+  a floor that mirrors a cubemap in Mania (Space, Ice, Storm) gets a little gloss on the lit shader
+  (`MIRROR_SMOOTHNESS`, `MIRROR_METALLIC` in `stage.py`; more gloss puts a glare spot on it); and an additive layer
+  that is a moving texture times a still mask is drawn as the mask, standing still (`MASK_AS_ALBEDO`: the glow
+  lines of the Space floors, which without the mask were a white sheet).
 * The guide line, rotten / golden banana layouts, half-time and checkpoint flags of the
   courses, stage start animations (`OnReadyGo`).
 * `import_report.txt` in `game\mania\` lists per stage what it has and which components were skipped.
