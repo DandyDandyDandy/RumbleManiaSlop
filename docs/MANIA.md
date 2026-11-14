@@ -567,6 +567,35 @@ one for a test import).
 * `BR_MANIA_LOG`: log lines for switch presses, seesaw touches, the BGM cue of a stage, the world picker's
   list and dropped statistics calls.
 
+## Spin Dash on or off (`port\runtime\spindash.c`)
+
+Banana Mania's stages were made for a ball without the Spin Dash, so it can be turned off. The choice is not tied
+to imported stages: it holds for every Adventure stage of the mode it is set for. Kept in `port_gameplay.txt` next
+to the saves (`spindash=`, `spindash_multi=`; both on when there is no file).
+
+* **Single player:** *Options > General > Spin Dash (Single Player)*, the last row of the page (a copy of the
+  Screen Mode row object with a role, like the other added rows in `display_opt.c`).
+* **Multiplayer Adventure:** a *Spin Dash* picker under *Ball Collision* on the game settings screen, in split
+  screen (`UIViewCtrl_AdvMultiSetting_Offline`) and online (`UIViewCtrl_AdvMulti_GameSetting`). That screen is a
+  fixed panel with one view per row, so the hook on `setupChoicesItemList` adds a row object (a copy of the Ball
+  Collision row; the two functions the screen calls for such a row tell the copy apart) and, the first time, a
+  picker view and a heading (copies of Ball Collision's), and spreads the three groups between the World heading
+  and the line over Confirm. The two panels differ (the online one has a picker and a heading this screen does
+  not use), so headings are found by position, not by name.
+* **Online** the host's choice holds for the room. It travels in the "advanced settings" the host sends with every
+  stage start (`AdvGameMaster.getAdvancedSettings`: `int[2]` = time limit, ball collision off) as bit 1 of the
+  second number; `OnRecvAdvInit` / `setAdvancedSettings` take it out again before the game reads the number. A
+  guest whose game lacks this code would read "ball collision off" from a host with Spin Dash off (both games are
+  this port, and the room tag already keeps games with different imports apart).
+* **What off does:** `PlayerSpinActionModule.getMainActionInput` / `getMainActionDownInput` answer "not pressed"
+  for a local player, so no charge starts; `UIMgPlayerViewCtrl_Base.SpinAction_OnUpdateIdle` hides the charge
+  gauge of the HUD (the ring around the face; the speedometer stays). Players of other machines are shown as
+  their machines report them.
+* **Never changed:** Battle modes (told by the class of `RuntimeParam.battle.gameMaster`: only `AdvGameMaster`
+  is multiplayer Adventure; no BattleRoyale object = single player), the tutorial (it waits for a Spin Dash),
+  replays (they play what was recorded).
+* `BR_SPIN_LOG=1` logs which mode applies and what a room was told.
+
 ## Missions, menu pictures and the editor
 
 Three things of a Rumble world have no counterpart in Banana Mania, and a person decides them: `mania\overrides.json`

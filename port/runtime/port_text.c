@@ -41,6 +41,9 @@ static const Text g_text[] = {
     {"Enter: OK      Esc: Cancel", "Enter：決定      Esc：キャンセル", "Entrée : OK      Échap : Annuler", "Invio: OK      Esc: Annulla",
      "Enter: OK      Esc: Abbrechen", "Intro: Aceptar      Esc: Cancelar", "Enter：确定      Esc：取消", "Enter：確定      Esc：取消",
      "Enter: 확인      Esc: 취소", "Enter: OK      Esc: Cancelar"},
+    {"Spin Dash", "スピンダッシュ", "Spin Dash", "Spin Dash", "Spin Dash", "Spin Dash", "旋转冲刺", "旋轉衝刺", "스핀 대시", "Spin Dash"},
+    {"Spin Dash (Single Player)", "スピンダッシュ（ひとりプレイ）", "Spin Dash (un joueur)", "Spin Dash (giocatore singolo)", "Spin Dash (Einzelspieler)",
+     "Spin Dash (un jugador)", "旋转冲刺（单人游戏）", "旋轉衝刺（單人遊戲）", "스핀 대시 (싱글 플레이)", "Spin Dash (um jogador)"},
     {"Imported Stage Music", "インポートステージの音楽", "Musique des niveaux importés", "Musica dei livelli importati", "Musik importierter Level",
      "Música de niveles importados", "导入关卡音乐", "匯入關卡音樂", "가져온 스테이지 음악", "Música das fases importadas"},
 };

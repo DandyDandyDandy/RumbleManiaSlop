@@ -38,7 +38,9 @@
 #include <string.h>
 #include "rt.h"
 
-enum { MODE_VALUE_WINDOW = 1, MAX_RES = 16, ROLE_MODE = 0, ROLE_RES = 1, ROLE_FPS = 2, ROLE_VSYNC = 3, ROLE_SMOOTH = 5, ROLE_DOLE = 6, ROLE_MUSIC = 4 };
+enum { MODE_VALUE_WINDOW = 1, MAX_RES = 16, ROLE_MODE = 0, ROLE_RES = 1, ROLE_FPS = 2, ROLE_VSYNC = 3, ROLE_SMOOTH = 5, ROLE_DOLE = 6, ROLE_MUSIC = 4, ROLE_SPIN = 7 };
+extern int spindash_single(void);                                         // spindash.c
+extern void spindash_set_single(int on);
 extern int mania_has_classic_music(void), mania_classic_music(void);      // mania.c
 extern void mania_set_classic_music(int on);
 enum { M_WINDOWED, M_BORDERLESS, M_FULLSCREEN, M_COUNT };
@@ -176,10 +178,10 @@ static int game_index(uint64_t item, int want_window) {
     return want_window ? 1 : 0;
 }
 static int role_index(int role) {
-    return role == ROLE_DOLE ? g_dole : role == ROLE_SMOOTH ? g_smooth : role == ROLE_RES ? g_k : role == ROLE_FPS ? g_fps : role == ROLE_VSYNC ? g_vsync : role == ROLE_MUSIC ? mania_classic_music()
+    return role == ROLE_SPIN ? spindash_single() : role == ROLE_DOLE ? g_dole : role == ROLE_SMOOTH ? g_smooth : role == ROLE_RES ? g_k : role == ROLE_FPS ? g_fps : role == ROLE_VSYNC ? g_vsync : role == ROLE_MUSIC ? mania_classic_music()
          : g_mode < 0 ? M_BORDERLESS : g_mode;
 }
-static int role_count(int role) { return role == ROLE_SMOOTH || role == ROLE_DOLE ? 2 : role == ROLE_RES ? g_nres : role == ROLE_FPS ? NFPS : role == ROLE_VSYNC || role == ROLE_MUSIC ? 2 : M_COUNT; }
+static int role_count(int role) { return role == ROLE_SMOOTH || role == ROLE_DOLE || role == ROLE_SPIN ? 2 : role == ROLE_RES ? g_nres : role == ROLE_FPS ? NFPS : role == ROLE_VSYNC || role == ROLE_MUSIC ? 2 : M_COUNT; }
 static void set_indices(uint64_t item, int idx) { ST32(item + 0x20, idx); ST32(item + 0x28, idx); ST32(item + 0x50, idx); }
 // A copy of the Screen Mode row object `pattern` with a role, appended to a page's row list.
 static void append_copy(Cpu *c, uint64_t list, uint64_t pattern, int role) {
@@ -300,6 +302,7 @@ int rt_hook_4575bf0(Cpu *c) {
     if (role == ROLE_SMOOTH) { g_smooth = 1; save_cfg(); ST32(item + 0x50, g_smooth); return 1; }
     if (role == ROLE_DOLE) { set_dole(c, 0); ST32(item + 0x50, 0); return 1; }
     if (role == ROLE_MUSIC) { mania_set_classic_music(0); ST32(item + 0x50, 0); return 1; }
+    if (role == ROLE_SPIN) { spindash_set_single(1); ST32(item + 0x50, 1); return 1; }
     t_in_init = 1; call_orig(c, F_SET_INIT_INDEX); t_in_init = 0;
     if (c->eh_unwinding) return 1;
     if (g_deck) {      // the port's setting decides; make the game's saved value agree, so the row's own text does
@@ -336,6 +339,7 @@ int rt_hook_4575ea0(Cpu *c) {
     if (role == ROLE_SMOOTH) { g_smooth = idx; save_cfg(); return 1; }
     if (role == ROLE_DOLE) { set_dole(c, idx); return 1; }
     if (role == ROLE_MUSIC) { mania_set_classic_music(idx); return 1; }
+    if (role == ROLE_SPIN) { spindash_set_single(idx); return 1; }
     g_mode = idx;
     save_cfg();
     // the game's own handler stores its value and ends in set_fullScreenMode, which applies the new mode
@@ -364,6 +368,8 @@ int rt_hook_4575d40(Cpu *c) {
         c->x[0] = new_str(c, g_smooth ? "On" : "Off");
     } else if (role == ROLE_DOLE) {
         c->x[0] = new_str(c, g_dole ? "On" : "Off");
+    } else if (role == ROLE_SPIN) {
+        c->x[0] = new_str(c, spindash_single() ? "On" : "Off");
     } else if (role == ROLE_MUSIC) {
         c->x[0] = new_str(c, mania_classic_music() ? "Classic Soundtrack" : "Banana Mania");
     } else if (g_mode == M_BORDERLESS) {
@@ -379,8 +385,8 @@ int rt_hook_4534720(Cpu *c) {
     uint64_t item = c->x[0];
     if (!item || !g_sm_klass || LD64(item) != g_sm_klass) return 0;
     int role = role_of(item);
-    if (role != ROLE_DOLE && role != ROLE_SMOOTH && role != ROLE_RES && role != ROLE_FPS && role != ROLE_VSYNC && role != ROLE_MUSIC) return 0;
-    c->x[0] = new_str(c, role == ROLE_RES ? "Resolution" : role == ROLE_FPS ? "Frame Rate Limit" : role == ROLE_DOLE ? "Dole Collaboration" : role == ROLE_SMOOTH ? "Smooth Motion" : role == ROLE_VSYNC ? "VSync" : "Imported Stage Music");
+    if (role != ROLE_SPIN && role != ROLE_DOLE && role != ROLE_SMOOTH && role != ROLE_RES && role != ROLE_FPS && role != ROLE_VSYNC && role != ROLE_MUSIC) return 0;
+    c->x[0] = new_str(c, role == ROLE_SPIN ? "Spin Dash (Single Player)" : role == ROLE_RES ? "Resolution" : role == ROLE_FPS ? "Frame Rate Limit" : role == ROLE_DOLE ? "Dole Collaboration" : role == ROLE_SMOOTH ? "Smooth Motion" : role == ROLE_VSYNC ? "VSync" : "Imported Stage Music");
     return 1;
 }
 
@@ -412,6 +418,7 @@ int rt_hook_455d030(Cpu *c) {
         }
         uint64_t dole_pattern = gameplay && g_pattern_h ? rt_call(c, FN(F_GCHANDLE_TARGET), 1, (uint64_t)g_pattern_h) : 0;
         if (dole_pattern) append_copy(c, list, dole_pattern, ROLE_DOLE);
+        if (dole_pattern) append_copy(c, list, dole_pattern, ROLE_SPIN);      // fork only: spindash.c
         else if (gameplay) rt_log("options: no Screen Mode row seen yet, the Dole Collaboration row is left out");
         // On the Audio page (its rows are the volume rows) the Imported Stage Music row goes
         // last, when the import has both soundtracks: a copy of the Screen Mode row object, like the rows below.

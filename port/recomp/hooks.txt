@@ -160,5 +160,16 @@
 47042b0   Wonder.UI.MainMenu.Adventure.UIStateAdvMultiSetting_Offline::<setupInnerFSM>b__9_3   (test switch BR_START_STAGE)
 454d230   Wonder.UI.SceneChange.UIStateArgTransitionToMainGameScene::.ctor   (test switch BR_START_STAGE)
 45524c0   Wonder.UI.TitleLoop.UIStateTitle::onCancel_SelectPlayStyle   (asks "Quit the game?", pc_shell.c)
+# port/runtime/spindash.c: Spin Dash on or off (Options row for single player, room row for multiplayer Adventure)
+4307c30   Wonder.MgPlayer+PlayerSpinActionModule::getMainActionInput
+43084a0   Wonder.MgPlayer+PlayerSpinActionModule::getMainActionDownInput
+45ca090   Wonder.UI.MainGame.UIMgPlayerViewCtrl_Base::SpinAction_OnUpdateIdle
+2179830   BattleGameMaster.AdvGameMaster::getAdvancedSettings
+2179930   BattleGameMaster.AdvGameMaster::OnRecvAdvInit
+2179a30   BattleGameMaster.AdvGameMaster::setAdvancedSettings
+464a040   Wonder.UI.ViewCtrl.UIViewCtrl_AdvMulti_GameSetting::setupChoicesItemList
+4645c70   Wonder.UI.ViewCtrl.UIViewCtrl_AdvMultiSetting_Offline::setupChoicesItemList
+4649b10   Wonder.UI.ViewCtrl.UIViewCtrl_AdvMulti_GameSetting::onInitSelectableButtonForBallCollision
+4649c50   Wonder.UI.ViewCtrl.UIViewCtrl_AdvMulti_GameSetting::onChangePickerValueForBallCollision
 43c3150   Wonder.AppInput+ActionAssignMouse::VirtualPadDef   (the game's mouse drag bindings, pc_input.c)
 43c31e0   Wonder.AppInput+ActionAssignMouse::GestureDef
