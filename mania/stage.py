@@ -589,6 +589,13 @@ class Converter:
 
         # ---- assets
         tex_ids, mat_ids, mesh_ids = {}, {}, {}
+        # Mania's unlit materials (Custom/TextureVc, TextureVa, the scrolling ones: arrows, marks, glows) go on the
+        # unlit shader the backgrounds use, with what that shader cannot be told baked into a copy of the mesh
+        # (background.py); `describe` also says what kind every other material is (opaque / cut-out / blended),
+        # read from the pass state and tags of Mania's shader
+        import background                       # imports this module, so not at the top
+        asset_stats = copy.deepcopy(background.ASSET_STATS)
+        assets = background.scenery_assets(sc, m, background.options({}), self.aa, asset_stats, np.ones(3))
 
         def texture(sf, ref):
             got = m.get(sf, ref)
@@ -618,16 +625,8 @@ class Converter:
                 texs = dict(props['m_TexEnvs'])
                 cols = dict(props['m_Colors'])
                 floats = dict(props['m_Floats'])
-                shader = m.get(msf, t['m_Shader'])
-                sname = shader[1]['m_ParsedForm']['m_Name'] if shader else ''
-                tags = dict(t.get('stringTagMap') or [])
-                kind = 'opaque'
-                low = sname.lower()
-                if tags.get('RenderType') == 'Transparent' or 'transparent' in low or low.endswith(('trvc', 'rimtr', 'tr', 'va')) \
-                        or t.get('m_CustomRenderQueue', -1) >= 3000:
-                    kind = 'transparent'
-                elif tags.get('RenderType') == 'TransparentCutout' or 2450 <= t.get('m_CustomRenderQueue', -1) < 3000:
-                    kind = 'cutout'
+                d = assets.describe(sf, ref)
+                kind = {'additive': 'transparent'}.get(d['kind'], d['kind'])
                 model, cab, shader_pid = self.materials.models[kind]
                 new = copy.deepcopy(model)
                 new['m_Name'] = 'mania_' + t['m_Name']
@@ -649,10 +648,12 @@ class Converter:
                         v = {'r': tint['r'], 'g': tint['g'], 'b': tint['b'], 'a': tint['a'] if kind == 'transparent' else 1.0}
                     ncol.append((k, v))
                 new['m_SavedProperties']['m_Colors'] = ncol
-                cull = floats.get('_Cull')
-                if cull is not None:
-                    new['m_SavedProperties']['m_Floats'] = [(k, float(cull) if k == '_Cull' else v)
-                                                            for k, v in new['m_SavedProperties']['m_Floats']]
+                change = {}
+                if floats.get('_Cull') is not None:
+                    change['_Cull'] = float(floats['_Cull'])
+                if kind == 'cutout':                # Mania's threshold (0.75 on the start mark), not the template's
+                    change['_AlphaCut'] = float(d['cutoff'])
+                new['m_SavedProperties']['m_Floats'] = [(k, change.get(k, v)) for k, v in new['m_SavedProperties']['m_Floats']]
                 mat_ids[key] = sh.add('Material', new)
             return pptr(mat_ids[key])
 
@@ -767,11 +768,21 @@ class Converter:
             go_of[n.id] = go
             mf, mr = n.component('MeshFilter'), n.component('MeshRenderer')
             if visual and mf and mr and mf[2]['m_Mesh']['m_PathID'] and mr[1] not in far_levels:
-                sc.add_component(go, 'MeshFilter', {'m_Mesh': sc.shared_ref(mesh(m.main, mf[2]['m_Mesh'])['m_PathID'])})
+                refs = mr[2]['m_Materials']
+                unlit = [d if d and not d['rule']['lit'] else None for d in (assets.describe(m.main, x) for x in refs)]
+                if any(unlit):                      # a copy of the mesh with the unlit slots' colours and UVs baked
+                    mesh_id, in_vertex, _ = assets.mesh(m.main, mf[2]['m_Mesh'], unlit, (0.0, 0.0, 0.0, 1.0))
+                    materials = [sc.shared_ref(assets.material(d, v, False) if d else material(m.main, x)['m_PathID'])
+                                 for d, v, x in zip(unlit, in_vertex, refs)]
+                    stats['unlit_renderers'] = stats.get('unlit_renderers', 0) + 1
+                else:
+                    mesh_id = mesh(m.main, mf[2]['m_Mesh'])['m_PathID']
+                    materials = [sc.shared_ref(material(m.main, x)['m_PathID']) for x in refs]
+                sc.add_component(go, 'MeshFilter', {'m_Mesh': sc.shared_ref(mesh_id)})
                 r = s.template('MeshRenderer')
                 r['m_Enabled'] = bool(mr[2]['m_Enabled'])
                 r['m_CastShadows'], r['m_ReceiveShadows'] = 0, 1
-                r['m_Materials'] = [sc.shared_ref(material(m.main, x)['m_PathID']) for x in mr[2]['m_Materials']]
+                r['m_Materials'] = materials
                 r['m_StaticBatchInfo'] = {'firstSubMesh': 0, 'subMeshCount': 0}
                 r['m_StaticBatchRoot'] = dict(NULL)
                 sc.add_component(go, 'MeshRenderer', r)

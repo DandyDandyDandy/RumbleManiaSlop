@@ -28,7 +28,8 @@ How the stages become courses (docs/MANIA.md has the reasons):
 
     Stage                   a new row per imported stage; its scene name is the number 100000 + Mania stage id
     Stage_Text_<lang>       the stage's name
-    Stage_DoleDisposition   a row per new stage (the sponsor logo under the start; the game reads it without a check)
+    Stage_DoleDisposition   a row per new stage that names no logo (the sponsor logo under the start; the game reads
+                            the row without a check)
     Stage_List_Group_wld97_wldtst   the unused test list 12: the stages of every imported course, one after the other
     Course, Course_Text_<lang>      a row per imported course, with a virtual stage list id 1000 + n
     MainGame_Story_Progress         a row per (course, stage) that opens the stage from the start
@@ -287,7 +288,7 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
         row = next((r for r in stage_t.rows if not r['_empty'] and r['SceneID'].startswith(f'bg_stg_w{w:02d}_0')), None)
         scenery[w] = {f: row[f] for f in SCENERY_FIELDS} if row else {f: model[f] for f in SCENERY_FIELDS}
     dole_t = db.table('Stage_DoleDisposition')
-    dole_model = dict(dole_t.row(TEMPLATE_STAGE_ROW))
+    dole_model = dict(next((r for r in dole_t.rows if not r['_empty'] and not r['AssetRef'][0]), dole_t.row(TEMPLATE_STAGE_ROW)))
     text_t = {lang: db.table(f'Stage_Text_{lang}') for lang in LANGS}
     row_of = {}
     next_id = len(stage_t.rows)
@@ -305,7 +306,9 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
                       CheckpointSwitchClass=-1, CheckpointSwitchAnimationSpeed=0, CheckpointSwitchAnimationFrame=0, AnimationType=0,
                       AnimationSpeedMultiplier=0.0)
         stage_t.use(rid, **fields)
-        dole_t.use(rid, **{k: v for k, v in dole_model.items() if not k.startswith('_')})
+        # no sponsor logo under the start: a row as the game's own stages without one have it (the game reads the
+        # row without a check, so there must be one)
+        dole_t.use(rid, **dict({k: v for k, v in dole_model.items() if not k.startswith('_')}, AssetRef=['', '', ''], Num=0))
         for lang, t in text_t.items():
             caption = t.row(TEMPLATE_STAGE_ROW)['CaptionText']
             t.use(rid, Name=mania.stage_name(sid, MANIA_LANG.get(lang, lang)), CaptionText=caption)

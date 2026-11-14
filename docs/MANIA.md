@@ -180,7 +180,7 @@ described in `docs\COSTUMES.md`, sections 3 and 4). Those that matter here:
 |---|---|
 | `Stage` (705 rows) | `Name` (text row), `SceneID`, `BaseID`, `BGSceneID`, `TimeLimit`, mission values, `CaptionText`, thumbnail sprites, `LightSceneID`, `MiniMapImageID`, `FarSceneID`, `SkySceneID`, `EffectSceneID`, checkpoint animation values, `ScreenEffectAssetRef`, `GoalCameraID`, `IsRailGround`, `StartCameraID`, the four scene ids and the effect for split screen, `AnimationType`, `AnimationSpeedMultiplier` |
 | `Stage_Text_<lang>` | `Name`, `CaptionText` |
-| `Stage_DoleDisposition` | per stage id: the sponsor logo under the start (read in `MainGameStage.Start` without a check) |
+| `Stage_DoleDisposition` | per stage id: the sponsor logo under the start (read in `MainGameStage.Start` without a check). Imported stages get a row without a logo (`AssetRef` empty, `Num` 0, as seven of the game's own rows are): Mania's stages have their own start mark |
 | `Stage_List` (40 rows) | a reference to a `Stage_List_Group_<name>` table |
 | `Stage_List_Group_<name>` | the stages of one list: `StageID`, `NextStage[2]`, `StageListID`, `OverrideCourseID` |
 | `Course` (27 rows) | `Name`, `StageListID`, `CategoryID`, `NextCourseID`, `PrevCourseID`, `SerialName`, sprites, texts, `BeginningTitle`, `ClearMainMissionID`, `AssistKind`, `IsEnabledCategory[7]`, `IsStageMissionEnabled` |
@@ -475,7 +475,11 @@ What was checked in the running game (2.00, one PC):
 * Goal colours: every goal is Rumble's arch and ends the stage.
 * Of Mania's backgrounds: particles, weather, distortion and reflections (see "Backgrounds"). The stage intro
   graphics and the course's look in the world picker are still those of the Rumble world in `WORLD_OF_BG`.
-* Materials are reduced to a texture, a tint and culling on three Rumble shaders. Vertex colours, second textures,
+* A stage's lit materials are reduced to a texture, a tint, culling and (cut-out) the alpha threshold on three
+  Rumble shaders; which of the three is read from the pass state and tags of Mania's shader (`background.py`,
+  `describe`). Its unlit materials (`Custom/TextureVc`, `TextureVa`: arrows, marks) go on `bg_unlit_abd` with a
+  baked copy of the mesh, as the backgrounds do, because the Rumble stage shaders take transparency only from
+  the texture and those materials have it in the colour and the vertex alpha. On the lit ones vertex colours, second textures,
   rim light ramps, reflection cubes and scrolling textures are dropped.
 * Stage pictures, missions, the guide line, rotten / golden banana layouts, half-time and checkpoint flags of the
   courses, stage start animations (`OnReadyGo`).

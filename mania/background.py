@@ -155,9 +155,10 @@ LIGHT_DIRECTIONS = 'mania'  # 'mania': the lights point as in Mania; 'template':
 LIGHT_COLORS = 'mania'      # 'mania' / 'template', likewise for the lights' colours
 LIGHT_GAMMA_INTENSITY = True    # Mania multiplies colour x intensity before the gamma decode (GraphicsSettings
 #                                 m_LightsUseLinearIntensity = 0), URP after it: a Mania intensity i is i^2.2 in URP
-LIGHT_EXPOSURE = 0.6        # multiplies all of Mania's light (the lights and the ambient colours): Mania renders
+LIGHT_EXPOSURE = 0.85       # multiplies all of Mania's light (the lights and the ambient colours): Mania renders
 #                             HDR through a tone curve, Rumble does not. 0.6 puts Mania's key lights (1.0 .. 2.4 after
-#                             the gamma rule) around Rumble's own 0.6 .. 1.2
+#                             the gamma rule) around Rumble's own 0.6 .. 1.2, but the stage floors came out dull
+#                             next to pictures of Banana Mania; 0.85 with AMBIENT_GAIN 2 matched Jump Single
 LIGHT_SCALE_KEY = 1.0       # further factor on the key light (Stage_MainLight <- Stage/Directional Light01)
 LIGHT_SCALE_BACK = 1.0      # ... on the back light (BackLight <- Stage/Directional Light02, all of them merged)
 LIGHT_SCALE_CHARA = 1.0     # ... on the character light (Chara_MainLight <- Chara/Directional Light01)
@@ -173,7 +174,7 @@ SHADOW_STRENGTH = 'mania'   # the key light's shadow strength: 'mania' (0.75 eve
 #                             reaches shadowed ground), 'template' (1.0), or a number
 AMBIENT = 'mania'           # 'mania': trilight colours from Mania (copied where Mania uses three colours, read off its
 #                             baked ambient probe at up / horizon / down where it uses the skybox); 'template': keep
-AMBIENT_GAIN = 1.0          # multiplies Mania's ambient colours (on top of LIGHT_EXPOSURE). The probe of the 15
+AMBIENT_GAIN = 2.0          # multiplies Mania's ambient colours (on top of LIGHT_EXPOSURE). The probe of the 15
 #                             skybox backgrounds is dim and blue; raise this if shadowed sides come out too dark
 FOG = 'render_settings'     # 'render_settings': RenderSettings linear fog with Mania's colour / start / end, the
 #                             Volume's SC Fog switched off (what the game's own split-screen lighting scenes and
@@ -740,6 +741,276 @@ def load_catalog(path):
     return Catalog(path)
 
 
+# ---------------------------------------------------------------------------------------------- scene assets
+
+ASSET_STATS = {'kinds': {}, 'shaders': {}, 'unmapped': {}, 'dropped': {}, 'queues': {}, 'scroll': 0, 'lit': 0, 'mesh_copies': 0, 'uv_baked': 0,
+               'color_baked': 0, 'alpha_to_vertex': 0, 'alpha_in_material': 0, 'vertex_clashes': 0, 'vertex_lit': 0}
+
+
+def scenery_assets(sc, m, opt, aa, stats, bake, light=None):
+    """What turns Mania's materials, meshes and textures into objects of the scene `sc` (a stage.Scene) for the
+    unlit shader: a namespace with describe(sf, ref) (what a Mania material is), mesh(sf, ref, slots, rot) and
+    material(d, alpha_to_vertex, light_in_vertex), as BackgroundConverter uses them. The stage converter uses the
+    same for the unlit materials of a stage (arrows, marks).
+
+    m: the ManiaStage read; stats: a dict with the keys of ASSET_STATS; bake: the constant (linear RGB) for a lit
+    material whose light is not in its vertices; light: None, or the function (normals, node rotation) -> light
+    factor per vertex (then lit materials get their light per vertex)."""
+    sh = sc.shared
+    vertex_lit = light is not None
+    shader_cab, shader_pid = unlit_shader(aa)
+    model = material_model(aa)
+    tex_ids, mat_ids, mat_info, mesh_base, mesh_ids = {}, {}, {}, {}, {}
+    white = []
+
+    def count(table, key, n=1):
+        stats[table][key] = stats[table].get(key, 0) + n
+
+    def texture(sf, ref):
+        got = m.get(sf, ref)
+        if got is None or got[3].type.name != 'Texture2D':
+            return None
+        key, t, tsf, _ = got
+        if key not in tex_ids:
+            new = overlay(sh.template('Texture2D'), t)
+            data = bytes(t.get('image data') or b'')
+            if not data and t.get('m_StreamData', {}).get('size'):
+                data = m.resource(tsf, t['m_StreamData'])
+            new.update({'image data': data, 'm_StreamData': dict(NO_STREAM), 'm_IsReadable': False})
+            if 'm_PlatformBlob' in new:
+                new['m_PlatformBlob'] = []
+            tex_ids[key] = sh.add('Texture2D', new)
+        return tex_ids[key]
+
+    def white_texture():
+        """4 x 4 white: the albedo of Mania's materials without a texture (flat colour spheres)."""
+        if not white:
+            t = sh.template('Texture2D')
+            t.update({'m_Name': 'mania_white', 'm_Width': 4, 'm_Height': 4, 'm_CompleteImageSize': 64, 'm_TextureFormat': 4, 'm_MipCount': 1,
+                      'm_MipsStripped': 0, 'm_ImageCount': 1, 'm_TextureDimension': 2, 'm_LightmapFormat': 0, 'm_ColorSpace': 1,
+                      'm_IsReadable': False, 'm_StreamingMipmaps': False, 'm_IsAlphaChannelOptional': False,
+                      'm_TextureSettings': {'m_FilterMode': 1, 'm_Aniso': 1, 'm_MipBias': 0.0, 'm_WrapU': 0, 'm_WrapV': 0, 'm_WrapW': 0},
+                      'image data': b'\xff' * 64, 'm_StreamData': dict(NO_STREAM)})
+            if 'm_PlatformBlob' in t:
+                t['m_PlatformBlob'] = []
+            white.append(sh.add('Texture2D', t))
+        return white[0]
+
+    def describe(sf, ref):
+        """What a Mania material is, as a dict (no object is made): see `material`. None for a missing one."""
+        got = m.get(sf, ref)
+        if got is None:
+            return None
+        key, t, msf, _ = got
+        if key in mat_info:
+            return mat_info[key]
+        props = t['m_SavedProperties']
+        texs, cols, floats = pairs(props['m_TexEnvs']), pairs(props['m_Colors']), pairs(props['m_Floats'])
+        shader = m.get(msf, t['m_Shader'])
+        form = shader[1]['m_ParsedForm'] if shader else None
+        sname = form['m_Name'] if form else ''
+        rule = next(r for prefix, r in SHADERS if sname.lower().startswith(prefix))
+        if rule is SHADERS[-1][1] and not sname.lower().startswith(('legacy shaders/', 'custom/reflective')):
+            count('unmapped', sname or '(shader not in the bundles)')
+        count('shaders', sname or '(shader not in the bundles)')
+        declared = {p['m_Name'] for p in form['m_PropInfo']['m_Props']} if form else set()
+        sub = form['m_SubShaders'][0] if form and form['m_SubShaders'] else None
+        state = sub['m_Passes'][0]['m_State'] if sub and sub['m_Passes'] else None
+        tags = {k.lower(): v for k, v in sub['m_Tags']['tags']} if sub else {}
+        tags.update({k.lower(): v for k, v in (t.get('stringTagMap') or [])})
+
+        def value(v, default):
+            """A pass state value: a number, or the material's value of the property it is bound to."""
+            if v is None:
+                return default
+            if v.get('name') and v['name'] != '<noninit>':
+                return float(floats.get(v['name'], default))
+            return float(v['val'])
+        blend = state['rtBlend0'] if state else {}
+        src, dst = int(value(blend.get('srcBlend'), BLEND_ONE)), int(value(blend.get('destBlend'), BLEND_ZERO))
+        zwrite, ztest = int(value(state and state['zWrite'], 1)), int(value(state and state['zTest'], 4))
+        cull = int(value(state and state['culling'], 2))
+        if sname.lower().startswith('particles/'):          # Unity's own: the blend is the material's _Mode
+            src, dst = int(floats.get('_SrcBlend', src)), int(floats.get('_DstBlend', dst))
+            zwrite = int(floats.get('_ZWrite', zwrite))
+        if rule.get('premul') and (src, dst) == (BLEND_ONE, BLEND_ONE):
+            src = BLEND_SRC_ALPHA
+        if rule.get('cutout') or tags.get('rendertype') == 'TransparentCutout' and (src, dst) == (BLEND_ONE, BLEND_ZERO):
+            kind = 'cutout'
+        elif (src, dst) == (BLEND_ONE, BLEND_ZERO):
+            kind = 'opaque'
+        else:
+            kind = 'additive' if dst == BLEND_ONE else 'transparent'
+        queue = t.get('m_CustomRenderQueue', -1)
+        if queue < 0:
+            name, _, offset = tags.get('queue', 'geometry').lower().partition('+')
+            queue = QUEUES.get(name.strip(), 2000) + (int(offset) if offset.strip().lstrip('-').isdigit() else 0)
+        keywords = t.get('m_ShaderKeywords') or ''
+        keywords = set(keywords.split() if isinstance(keywords, str) else keywords) | set(t.get('m_ValidKeywords') or [])
+        tint = cols.get(rule['color']) if rule['color'] and (rule['color'] in declared or not declared) else None
+        tint = np.array([tint[k] for k in 'rgba'], dtype=np.float64) if tint else np.ones(4)
+        env = texs.get(rule['tex']) if rule['tex'] in declared or not declared else None
+        st = np.array([env['m_Scale']['x'], env['m_Scale']['y'], env['m_Offset']['x'], env['m_Offset']['y']]) if env else np.array([1.0, 1.0, 0, 0])
+        # the UV transform: uv' = uv x scale + offset + uv.w x wfac, and the scroll in UV units per second
+        scale, offset, wfac, speed = st[:2].copy(), st[2:].copy(), np.zeros(2), np.zeros(2)
+
+        def f(name, default=0.0):
+            return float(floats.get(name, default))
+        if rule.get('uv') == 'allblend':
+            offset -= 0.5 * st[:2]
+            speed = np.array([f('_USpeed'), f('_VSpeed')]) / 20.0 * st[:2]
+        elif rule.get('uv') == 'addmask':
+            wfac = np.array([11.1 * f('_Urandom'), 7.77 * f('_Vrandom')]) * st[:2]
+            speed = np.array([f('_uspeed'), f('_vspeed')]) * st[:2]
+        elif rule.get('uv') == 'opaquescroll':
+            base = np.array([f('_basescaleU', 1.0), f('_basescaleV', 1.0)])
+            scale, offset = base * st[:2], np.array([f('_baseoffsetU'), f('_baseoffsetV')]) * st[:2] + st[2:]
+            speed = np.array([f('_BaseUvel'), f('_BaseVvel')]) * f('_BaseUVSpeed') * st[:2]
+        elif rule.get('uv') == 'flipbook':      # the first frame of the sheet, which reads from the top left
+            cols_n, rows_n, frame = max(int(f('_Column', 1)), 1), max(int(f('_Row', 1)), 1), int(f('_StartFrame'))
+            cell = np.array([1.0 / cols_n, 1.0 / rows_n])
+            scale, offset = st[:2] * cell, st[2:] * cell + np.array([(frame % cols_n) * cell[0], 1.0 - (frame // cols_n + 1) * cell[1]])
+            count('dropped', 'flip book animation')
+        for prop, what in (('_FlowMap', 'flow map'), ('_Mask', 'mask texture'), ('_Cube', 'reflection cube'), ('_Ramp', 'toon ramp'),
+                           ('_SubTex', 'second texture')):
+            if prop in declared and (texs.get(prop) or {}).get('m_Texture', {}).get('m_PathID'):
+                count('dropped', what)
+        em = cols.get('_Emission')
+        if rule['lit'] and '_Emission' in declared and em and max(em['r'], em['g'], em['b']) > 0:
+            count('dropped', 'emission colour')
+        d = dict(key=key, tree=t, sf=msf, name=t['m_Name'], shader=sname, rule=rule, kind=kind, src=src, dst=dst, zwrite=zwrite, ztest=ztest,
+                 cull=cull, queue=queue, cutoff=f('_Cutoff', 0.5), tint=tint, env=env,
+                 fog=bool(rule['fog'] and 'FOG_OFF' not in keywords), uv=(tuple(scale), tuple(offset), tuple(wfac)), speed=speed)
+        mat_info[key] = d
+        return d
+
+    def material(d, alpha_to_vertex, light_in_vertex):
+        """The bg_unlit_abd material for the Mania material described by `d`; its path id in the shared file.
+        alpha_to_vertex: the colour's alpha is in the mesh copy's vertex alpha, so the material's is one.
+        light_in_vertex: Mania's light is in the mesh copy's vertex colours (divided by light_vertex_range)."""
+        key = (d['key'], alpha_to_vertex, light_in_vertex)
+        if key in mat_ids:
+            return mat_ids[key]
+        kind, rule = d['kind'], d['rule']
+        blended = kind in ('transparent', 'additive')
+        new = copy.deepcopy(model)
+        new['m_Name'] = 'mania_' + d['name']
+        new['m_Shader'] = pptr(shader_pid, sc.add_external(shader_cab))
+        new['m_ValidKeywords'] = ['_SURFACE_TYPE_TRANSPARENT'] if blended else ['_ALPHATEST_ON'] if kind == 'cutout' else []
+        new['stringTagMap'] = [('RenderType', 'Transparent' if blended else 'TransparentCutout' if kind == 'cutout' else 'Opaque')]
+        if opt.keep_mania_queue:
+            queue = d['queue']
+        else:
+            queue = 3000 if blended else 2450 if kind == 'cutout' else -1
+        new['m_CustomRenderQueue'] = queue
+        count('queues', queue)
+        # A material that does not write depth must not write it in a depth pre-pass either (the game's own
+        # blended materials switch DepthOnly off). One that does - Mania's domes and colour spheres blend with
+        # ZWrite on in the opaque queues - keeps the pass, so the depth texture has it like any solid thing.
+        new['disabledShaderPasses'] = [] if d['zwrite'] else ['DepthOnly', 'DepthNormalsOnly', 'SHADOWCASTER']
+        tex = texture(d['sf'], d['env']['m_Texture']) if d['env'] else None
+        baked = opt.bake_uvs
+        new['m_SavedProperties']['m_TexEnvs'] = [
+            (k, {'m_Texture': pptr(tex or white_texture()) if k == '_Albedo' else dict(NULL),
+                 'm_Scale': {'x': 1.0, 'y': 1.0} if baked or k != '_Albedo' or not d['env'] else copy.deepcopy(d['env']['m_Scale']),
+                 'm_Offset': {'x': 0.0, 'y': 0.0} if baked or k != '_Albedo' or not d['env'] else copy.deepcopy(d['env']['m_Offset'])})
+            for k, _ in new['m_SavedProperties']['m_TexEnvs']]
+        tint = d['tint'].copy()
+        lin = srgb_to_linear(tint[:3])
+        if rule['lit']:
+            lin = lin * (opt.light_vertex_range if light_in_vertex else bake)
+            stats['lit'] += 1
+        alpha, cutoff = float(tint[3]), d['cutoff']
+        if kind == 'additive' and d['src'] == BLEND_SRC_ALPHA:      # rgb x alpha is added: the alpha can be in the rgb
+            lin, alpha = lin * alpha, 1.0
+        elif kind == 'cutout' and 0 < alpha < 1:                    # the test is on texture alpha x colour alpha
+            cutoff, alpha = min(cutoff / alpha, 1.0), 1.0
+        elif not blended or alpha_to_vertex:
+            alpha = 1.0
+        elif alpha != 1.0:
+            stats['alpha_in_material'] += 1
+        speed = d['speed'] * np.array(opt.scroll_scale) if opt.uv_scroll else np.zeros(2)
+        scroll = bool(np.abs(speed).max() > 1e-9)
+        stats['scroll'] += scroll
+        fog = opt.fog_on_materials and d['fog'] and (kind != 'additive' or opt.additive_fog)
+        floats = {'_Surface': float(blended), '_Blend': 2.0 if kind == 'additive' else 0.0, '_SrcBlend': float(d['src']), '_DstBlend': float(d['dst']),
+                  '_ZWrite': float(d['zwrite']), '_ZTest': float(d['ztest']), '_Cull': float(d['cull']), '_AlphaClip': float(kind == 'cutout'),
+                  '_AlphaCut': float(cutoff) if kind == 'cutout' else 0.5, '_AlphaToMask': float(kind == 'cutout' and opt.cutout_alpha_to_mask),
+                  '_Emission': 0.0, '_UVscroll': float(scroll), '_FogOn': float(fog), '_QueueOffset': 0.0, '_QueueControl': 0.0, '_ZWriteControl': 0.0}
+        new['m_SavedProperties']['m_Floats'] = [(k, floats.get(k, v)) for k, v in new['m_SavedProperties']['m_Floats']]
+        colors = {'_Color': color(linear_to_srgb(lin), alpha), '_EmissionColor': color((0, 0, 0)), '_Tiling': color((1, 1, 0), 0),
+                  '_Speed': color((speed[0], speed[1], 0), 0)}
+        new['m_SavedProperties']['m_Colors'] = [(k, colors.get(k, v)) for k, v in new['m_SavedProperties']['m_Colors']]
+        count('kinds', kind)
+        mat_ids[key] = sh.add('Material', new)
+        return mat_ids[key]
+
+    def mesh(sf, ref, slots, rot):
+        """The Mesh for a renderer; (path id, per material slot: is the colour alpha in the vertices, per slot: is
+        Mania's light in the vertices). slots: the renderer's materials as `describe` gives them; rot: the
+        node's world rotation."""
+        got = m.get(sf, ref)
+        if got is None:
+            return 0, [False] * len(slots), [False] * len(slots)
+        key, t, msf, _ = got
+        if key not in mesh_base:
+            new = overlay(sh.template('Mesh'), t)
+            vd = new['m_VertexData']
+            if not vd.get('m_DataSize') and t.get('m_StreamData', {}).get('size'):
+                vd['m_DataSize'] = m.resource(msf, t['m_StreamData'])
+            new.update(m_StreamData=dict(NO_STREAM), m_BakedConvexCollisionMesh=b'', m_BakedTriangleCollisionMesh=b'')
+            chans = vd['m_Channels']
+            mesh_base[key] = (new, bool(chans[CHANNEL_COLOR]['dimension'] & 15), bool(chans[CHANNEL_UV0]['dimension'] & 15))
+        new, has_color, has_uv = mesh_base[key]
+        want_light = vertex_lit and any(d and d['rule']['lit'] for d in slots)
+        want_alpha = opt.color_alpha_to_vertex and opt.bake_vertex_colors and any(d and d['kind'] == 'transparent' and d['tint'][3] != 1.0
+                                                                                  for d in slots)
+        if (want_light or want_alpha) and not has_color:    # no vertex colours to put it in: give it white ones
+            colored = with_color_channel(new)
+            if colored is not None:
+                mesh_base[key] = (colored, True, has_uv)
+                new, has_color, has_uv = mesh_base[key]
+        rot_key = tuple(round(float(x), 4) for x in rot)
+        # a blended material's alpha goes into the vertices where the mesh has vertex colours (an additive
+        # material's goes into its RGB, a cut-out's into the threshold: see `material`)
+        in_vertex = [bool(d and opt.color_alpha_to_vertex and opt.bake_vertex_colors and has_color and d['tint'][3] != 1.0
+                          and d['kind'] == 'transparent') for d in slots]
+        ops = []
+        for i in range(len(new['m_SubMeshes'])):
+            j = min(i, len(slots) - 1)
+            d = slots[j] if slots else None
+            if d is None:
+                ops.append(PLAIN_OP)
+            else:
+                ops.append((d['rule']['vc'] if opt.bake_vertex_colors and has_color else 'raw', float(d['tint'][3]) if in_vertex[j] else 1.0,
+                            d['uv'] if opt.bake_uvs and has_uv else IDENTITY_UV,
+                            rot_key if want_light and has_color and d['rule']['lit'] else None))
+        ops = tuple(ops)
+        lit = [bool(d) and ops[min(i, len(ops) - 1)][3] is not None if ops else False for i, d in enumerate(slots)]
+        if (key, ops) not in mesh_ids:
+            plain = all(o == PLAIN_OP for o in ops)
+            edit = None if plain else edited_mesh(new, ops, light)
+            if edit is None:                    # the mesh as it is (one object for all who want it so)
+                if not plain:
+                    count('dropped', 'mesh layout not understood (colours / UVs not baked)')
+                if (key, None) not in mesh_ids:
+                    mesh_ids[(key, None)] = (sh.add('Mesh', new), False)
+                mesh_ids[(key, ops)] = mesh_ids[(key, None)]
+            else:
+                stats['vertex_clashes'] += edit[1]
+                stats['mesh_copies'] += 1
+                stats['color_baked'] += any(o[0] != 'raw' or o[1] != 1.0 for o in ops)
+                stats['uv_baked'] += any(o[2] != IDENTITY_UV for o in ops)
+                stats['alpha_to_vertex'] += any(o[1] != 1.0 for o in ops)
+                stats['vertex_lit'] += any(o[3] is not None for o in ops)
+                mesh_ids[(key, ops)] = (sh.add('Mesh', edit[0]), True)
+        pid, edited = mesh_ids[(key, ops)]
+        return pid, in_vertex if edited else [False] * len(slots), lit if edited else [False] * len(slots)
+
+    return types.SimpleNamespace(count=count, texture=texture, describe=describe, material=material, mesh=mesh, tex_ids=tex_ids, white=white,
+                                 mat_ids=mat_ids, mesh_ids=mesh_ids)
+
+
 # ------------------------------------------------------------------------------------------------- conversion
 
 class BackgroundConverter:
@@ -899,252 +1170,9 @@ class BackgroundConverter:
             for direction, energy in bg_lights:
                 out = out + np.maximum(-(world @ direction), 0.0)[:, None] * energy
             return np.clip(out * opt.light_bake_gain / opt.light_vertex_range, 0.0, 1.0)
-        shader_cab, shader_pid = unlit_shader(self.aa)
-        model = material_model(self.aa)
-        tex_ids, mat_ids, mat_info, mesh_base, mesh_ids, clip_ids = {}, {}, {}, {}, {}, {}
-        white = []
-
-        def count(table, key, n=1):
-            stats[table][key] = stats[table].get(key, 0) + n
-
-        def texture(sf, ref):
-            got = m.get(sf, ref)
-            if got is None or got[3].type.name != 'Texture2D':
-                return None
-            key, t, tsf, _ = got
-            if key not in tex_ids:
-                new = overlay(sh.template('Texture2D'), t)
-                data = bytes(t.get('image data') or b'')
-                if not data and t.get('m_StreamData', {}).get('size'):
-                    data = m.resource(tsf, t['m_StreamData'])
-                new.update({'image data': data, 'm_StreamData': dict(NO_STREAM), 'm_IsReadable': False})
-                if 'm_PlatformBlob' in new:
-                    new['m_PlatformBlob'] = []
-                tex_ids[key] = sh.add('Texture2D', new)
-            return tex_ids[key]
-
-        def white_texture():
-            """4 x 4 white: the albedo of Mania's materials without a texture (flat colour spheres)."""
-            if not white:
-                t = sh.template('Texture2D')
-                t.update({'m_Name': 'mania_white', 'm_Width': 4, 'm_Height': 4, 'm_CompleteImageSize': 64, 'm_TextureFormat': 4, 'm_MipCount': 1,
-                          'm_MipsStripped': 0, 'm_ImageCount': 1, 'm_TextureDimension': 2, 'm_LightmapFormat': 0, 'm_ColorSpace': 1,
-                          'm_IsReadable': False, 'm_StreamingMipmaps': False, 'm_IsAlphaChannelOptional': False,
-                          'm_TextureSettings': {'m_FilterMode': 1, 'm_Aniso': 1, 'm_MipBias': 0.0, 'm_WrapU': 0, 'm_WrapV': 0, 'm_WrapW': 0},
-                          'image data': b'\xff' * 64, 'm_StreamData': dict(NO_STREAM)})
-                if 'm_PlatformBlob' in t:
-                    t['m_PlatformBlob'] = []
-                white.append(sh.add('Texture2D', t))
-            return white[0]
-
-        def describe(sf, ref):
-            """What a Mania material is, as a dict (no object is made): see `material`. None for a missing one."""
-            got = m.get(sf, ref)
-            if got is None:
-                return None
-            key, t, msf, _ = got
-            if key in mat_info:
-                return mat_info[key]
-            props = t['m_SavedProperties']
-            texs, cols, floats = pairs(props['m_TexEnvs']), pairs(props['m_Colors']), pairs(props['m_Floats'])
-            shader = m.get(msf, t['m_Shader'])
-            form = shader[1]['m_ParsedForm'] if shader else None
-            sname = form['m_Name'] if form else ''
-            rule = next(r for prefix, r in SHADERS if sname.lower().startswith(prefix))
-            if rule is SHADERS[-1][1] and not sname.lower().startswith(('legacy shaders/', 'custom/reflective')):
-                count('unmapped', sname or '(shader not in the bundles)')
-            count('shaders', sname or '(shader not in the bundles)')
-            declared = {p['m_Name'] for p in form['m_PropInfo']['m_Props']} if form else set()
-            sub = form['m_SubShaders'][0] if form and form['m_SubShaders'] else None
-            state = sub['m_Passes'][0]['m_State'] if sub and sub['m_Passes'] else None
-            tags = {k.lower(): v for k, v in sub['m_Tags']['tags']} if sub else {}
-            tags.update({k.lower(): v for k, v in (t.get('stringTagMap') or [])})
-
-            def value(v, default):
-                """A pass state value: a number, or the material's value of the property it is bound to."""
-                if v is None:
-                    return default
-                if v.get('name') and v['name'] != '<noninit>':
-                    return float(floats.get(v['name'], default))
-                return float(v['val'])
-            blend = state['rtBlend0'] if state else {}
-            src, dst = int(value(blend.get('srcBlend'), BLEND_ONE)), int(value(blend.get('destBlend'), BLEND_ZERO))
-            zwrite, ztest = int(value(state and state['zWrite'], 1)), int(value(state and state['zTest'], 4))
-            cull = int(value(state and state['culling'], 2))
-            if sname.lower().startswith('particles/'):          # Unity's own: the blend is the material's _Mode
-                src, dst = int(floats.get('_SrcBlend', src)), int(floats.get('_DstBlend', dst))
-                zwrite = int(floats.get('_ZWrite', zwrite))
-            if rule.get('premul') and (src, dst) == (BLEND_ONE, BLEND_ONE):
-                src = BLEND_SRC_ALPHA
-            if rule.get('cutout') or tags.get('rendertype') == 'TransparentCutout' and (src, dst) == (BLEND_ONE, BLEND_ZERO):
-                kind = 'cutout'
-            elif (src, dst) == (BLEND_ONE, BLEND_ZERO):
-                kind = 'opaque'
-            else:
-                kind = 'additive' if dst == BLEND_ONE else 'transparent'
-            queue = t.get('m_CustomRenderQueue', -1)
-            if queue < 0:
-                name, _, offset = tags.get('queue', 'geometry').lower().partition('+')
-                queue = QUEUES.get(name.strip(), 2000) + (int(offset) if offset.strip().lstrip('-').isdigit() else 0)
-            keywords = t.get('m_ShaderKeywords') or ''
-            keywords = set(keywords.split() if isinstance(keywords, str) else keywords) | set(t.get('m_ValidKeywords') or [])
-            tint = cols.get(rule['color']) if rule['color'] and (rule['color'] in declared or not declared) else None
-            tint = np.array([tint[k] for k in 'rgba'], dtype=np.float64) if tint else np.ones(4)
-            env = texs.get(rule['tex']) if rule['tex'] in declared or not declared else None
-            st = np.array([env['m_Scale']['x'], env['m_Scale']['y'], env['m_Offset']['x'], env['m_Offset']['y']]) if env else np.array([1.0, 1.0, 0, 0])
-            # the UV transform: uv' = uv x scale + offset + uv.w x wfac, and the scroll in UV units per second
-            scale, offset, wfac, speed = st[:2].copy(), st[2:].copy(), np.zeros(2), np.zeros(2)
-
-            def f(name, default=0.0):
-                return float(floats.get(name, default))
-            if rule.get('uv') == 'allblend':
-                offset -= 0.5 * st[:2]
-                speed = np.array([f('_USpeed'), f('_VSpeed')]) / 20.0 * st[:2]
-            elif rule.get('uv') == 'addmask':
-                wfac = np.array([11.1 * f('_Urandom'), 7.77 * f('_Vrandom')]) * st[:2]
-                speed = np.array([f('_uspeed'), f('_vspeed')]) * st[:2]
-            elif rule.get('uv') == 'opaquescroll':
-                base = np.array([f('_basescaleU', 1.0), f('_basescaleV', 1.0)])
-                scale, offset = base * st[:2], np.array([f('_baseoffsetU'), f('_baseoffsetV')]) * st[:2] + st[2:]
-                speed = np.array([f('_BaseUvel'), f('_BaseVvel')]) * f('_BaseUVSpeed') * st[:2]
-            elif rule.get('uv') == 'flipbook':      # the first frame of the sheet, which reads from the top left
-                cols_n, rows_n, frame = max(int(f('_Column', 1)), 1), max(int(f('_Row', 1)), 1), int(f('_StartFrame'))
-                cell = np.array([1.0 / cols_n, 1.0 / rows_n])
-                scale, offset = st[:2] * cell, st[2:] * cell + np.array([(frame % cols_n) * cell[0], 1.0 - (frame // cols_n + 1) * cell[1]])
-                count('dropped', 'flip book animation')
-            for prop, what in (('_FlowMap', 'flow map'), ('_Mask', 'mask texture'), ('_Cube', 'reflection cube'), ('_Ramp', 'toon ramp'),
-                               ('_SubTex', 'second texture')):
-                if prop in declared and (texs.get(prop) or {}).get('m_Texture', {}).get('m_PathID'):
-                    count('dropped', what)
-            em = cols.get('_Emission')
-            if rule['lit'] and '_Emission' in declared and em and max(em['r'], em['g'], em['b']) > 0:
-                count('dropped', 'emission colour')
-            d = dict(key=key, tree=t, sf=msf, name=t['m_Name'], shader=sname, rule=rule, kind=kind, src=src, dst=dst, zwrite=zwrite, ztest=ztest,
-                     cull=cull, queue=queue, cutoff=f('_Cutoff', 0.5), tint=tint, env=env,
-                     fog=bool(rule['fog'] and 'FOG_OFF' not in keywords), uv=(tuple(scale), tuple(offset), tuple(wfac)), speed=speed)
-            mat_info[key] = d
-            return d
-
-        def material(d, alpha_to_vertex, light_in_vertex):
-            """The bg_unlit_abd material for the Mania material described by `d`; its path id in the shared file.
-            alpha_to_vertex: the colour's alpha is in the mesh copy's vertex alpha, so the material's is one.
-            light_in_vertex: Mania's light is in the mesh copy's vertex colours (divided by light_vertex_range)."""
-            key = (d['key'], alpha_to_vertex, light_in_vertex)
-            if key in mat_ids:
-                return mat_ids[key]
-            kind, rule = d['kind'], d['rule']
-            blended = kind in ('transparent', 'additive')
-            new = copy.deepcopy(model)
-            new['m_Name'] = 'mania_' + d['name']
-            new['m_Shader'] = pptr(shader_pid, sc.add_external(shader_cab))
-            new['m_ValidKeywords'] = ['_SURFACE_TYPE_TRANSPARENT'] if blended else ['_ALPHATEST_ON'] if kind == 'cutout' else []
-            new['stringTagMap'] = [('RenderType', 'Transparent' if blended else 'TransparentCutout' if kind == 'cutout' else 'Opaque')]
-            if opt.keep_mania_queue:
-                queue = d['queue']
-            else:
-                queue = 3000 if blended else 2450 if kind == 'cutout' else -1
-            new['m_CustomRenderQueue'] = queue
-            count('queues', queue)
-            # A material that does not write depth must not write it in a depth pre-pass either (the game's own
-            # blended materials switch DepthOnly off). One that does - Mania's domes and colour spheres blend with
-            # ZWrite on in the opaque queues - keeps the pass, so the depth texture has it like any solid thing.
-            new['disabledShaderPasses'] = [] if d['zwrite'] else ['DepthOnly', 'DepthNormalsOnly', 'SHADOWCASTER']
-            tex = texture(d['sf'], d['env']['m_Texture']) if d['env'] else None
-            baked = opt.bake_uvs
-            new['m_SavedProperties']['m_TexEnvs'] = [
-                (k, {'m_Texture': pptr(tex or white_texture()) if k == '_Albedo' else dict(NULL),
-                     'm_Scale': {'x': 1.0, 'y': 1.0} if baked or k != '_Albedo' or not d['env'] else copy.deepcopy(d['env']['m_Scale']),
-                     'm_Offset': {'x': 0.0, 'y': 0.0} if baked or k != '_Albedo' or not d['env'] else copy.deepcopy(d['env']['m_Offset'])})
-                for k, _ in new['m_SavedProperties']['m_TexEnvs']]
-            tint = d['tint'].copy()
-            lin = srgb_to_linear(tint[:3])
-            if rule['lit']:
-                lin = lin * (opt.light_vertex_range if light_in_vertex else bake)
-                stats['lit'] += 1
-            alpha, cutoff = float(tint[3]), d['cutoff']
-            if kind == 'additive' and d['src'] == BLEND_SRC_ALPHA:      # rgb x alpha is added: the alpha can be in the rgb
-                lin, alpha = lin * alpha, 1.0
-            elif kind == 'cutout' and 0 < alpha < 1:                    # the test is on texture alpha x colour alpha
-                cutoff, alpha = min(cutoff / alpha, 1.0), 1.0
-            elif not blended or alpha_to_vertex:
-                alpha = 1.0
-            elif alpha != 1.0:
-                stats['alpha_in_material'] += 1
-            speed = d['speed'] * np.array(opt.scroll_scale) if opt.uv_scroll else np.zeros(2)
-            scroll = bool(np.abs(speed).max() > 1e-9)
-            stats['scroll'] += scroll
-            fog = opt.fog_on_materials and d['fog'] and (kind != 'additive' or opt.additive_fog)
-            floats = {'_Surface': float(blended), '_Blend': 2.0 if kind == 'additive' else 0.0, '_SrcBlend': float(d['src']), '_DstBlend': float(d['dst']),
-                      '_ZWrite': float(d['zwrite']), '_ZTest': float(d['ztest']), '_Cull': float(d['cull']), '_AlphaClip': float(kind == 'cutout'),
-                      '_AlphaCut': float(cutoff) if kind == 'cutout' else 0.5, '_AlphaToMask': float(kind == 'cutout' and opt.cutout_alpha_to_mask),
-                      '_Emission': 0.0, '_UVscroll': float(scroll), '_FogOn': float(fog), '_QueueOffset': 0.0, '_QueueControl': 0.0, '_ZWriteControl': 0.0}
-            new['m_SavedProperties']['m_Floats'] = [(k, floats.get(k, v)) for k, v in new['m_SavedProperties']['m_Floats']]
-            colors = {'_Color': color(linear_to_srgb(lin), alpha), '_EmissionColor': color((0, 0, 0)), '_Tiling': color((1, 1, 0), 0),
-                      '_Speed': color((speed[0], speed[1], 0), 0)}
-            new['m_SavedProperties']['m_Colors'] = [(k, colors.get(k, v)) for k, v in new['m_SavedProperties']['m_Colors']]
-            count('kinds', kind)
-            mat_ids[key] = sh.add('Material', new)
-            return mat_ids[key]
-
-        def mesh(sf, ref, slots, rot):
-            """The Mesh for a renderer; (path id, per material slot: is the colour alpha in the vertices, per slot: is
-            Mania's light in the vertices). slots: the renderer's materials as `describe` gives them; rot: the
-            node's world rotation."""
-            got = m.get(sf, ref)
-            if got is None:
-                return 0, [False] * len(slots), [False] * len(slots)
-            key, t, msf, _ = got
-            if key not in mesh_base:
-                new = overlay(sh.template('Mesh'), t)
-                vd = new['m_VertexData']
-                if not vd.get('m_DataSize') and t.get('m_StreamData', {}).get('size'):
-                    vd['m_DataSize'] = m.resource(msf, t['m_StreamData'])
-                new.update(m_StreamData=dict(NO_STREAM), m_BakedConvexCollisionMesh=b'', m_BakedTriangleCollisionMesh=b'')
-                chans = vd['m_Channels']
-                mesh_base[key] = (new, bool(chans[CHANNEL_COLOR]['dimension'] & 15), bool(chans[CHANNEL_UV0]['dimension'] & 15))
-            new, has_color, has_uv = mesh_base[key]
-            want_light = vertex_lit and any(d and d['rule']['lit'] for d in slots)
-            if want_light and not has_color:    # lit in Mania but without vertex colours: give it white ones
-                colored = with_color_channel(new)
-                if colored is not None:
-                    mesh_base[key] = (colored, True, has_uv)
-                    new, has_color, has_uv = mesh_base[key]
-            rot_key = tuple(round(float(x), 4) for x in rot)
-            # a blended material's alpha goes into the vertices where the mesh has vertex colours (an additive
-            # material's goes into its RGB, a cut-out's into the threshold: see `material`)
-            in_vertex = [bool(d and opt.color_alpha_to_vertex and opt.bake_vertex_colors and has_color and d['tint'][3] != 1.0
-                              and d['kind'] == 'transparent') for d in slots]
-            ops = []
-            for i in range(len(new['m_SubMeshes'])):
-                j = min(i, len(slots) - 1)
-                d = slots[j] if slots else None
-                if d is None:
-                    ops.append(PLAIN_OP)
-                else:
-                    ops.append((d['rule']['vc'] if opt.bake_vertex_colors and has_color else 'raw', float(d['tint'][3]) if in_vertex[j] else 1.0,
-                                d['uv'] if opt.bake_uvs and has_uv else IDENTITY_UV,
-                                rot_key if want_light and has_color and d['rule']['lit'] else None))
-            ops = tuple(ops)
-            lit = [bool(d) and ops[min(i, len(ops) - 1)][3] is not None if ops else False for i, d in enumerate(slots)]
-            if (key, ops) not in mesh_ids:
-                plain = all(o == PLAIN_OP for o in ops)
-                edit = None if plain else edited_mesh(new, ops, vertex_light)
-                if edit is None:                    # the mesh as it is (one object for all who want it so)
-                    if not plain:
-                        count('dropped', 'mesh layout not understood (colours / UVs not baked)')
-                    if (key, None) not in mesh_ids:
-                        mesh_ids[(key, None)] = (sh.add('Mesh', new), False)
-                    mesh_ids[(key, ops)] = mesh_ids[(key, None)]
-                else:
-                    stats['vertex_clashes'] += edit[1]
-                    stats['mesh_copies'] += 1
-                    stats['color_baked'] += any(o[0] != 'raw' or o[1] != 1.0 for o in ops)
-                    stats['uv_baked'] += any(o[2] != IDENTITY_UV for o in ops)
-                    stats['alpha_to_vertex'] += any(o[1] != 1.0 for o in ops)
-                    stats['vertex_lit'] += any(o[3] is not None for o in ops)
-                    mesh_ids[(key, ops)] = (sh.add('Mesh', edit[0]), True)
-            pid, edited = mesh_ids[(key, ops)]
-            return pid, in_vertex if edited else [False] * len(slots), lit if edited else [False] * len(slots)
+        assets = scenery_assets(sc, m, opt, self.aa, stats, bake, vertex_light if vertex_lit else None)
+        count, describe, material, mesh = assets.count, assets.describe, assets.material, assets.mesh
+        tex_ids, white, mat_ids, mesh_ids, clip_ids = assets.tex_ids, assets.white, assets.mat_ids, assets.mesh_ids, {}
 
         def controller(sf, ref):
             """Mania's AnimatorController (one layer, one state, one clip) with its clips, carried over as stage
