@@ -410,9 +410,11 @@ Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9
 |---|---|
 | `Switch\mania\scene_<n>.bundle` | one per stage |
 | `Switch\mania\bg_<n>.bundle` | two per Mania background: its scenery scene (200000 + n) and its lighting scene (210000 + n), see "Backgrounds" |
-| `Stage`, `Stage_Text_<lang>`, `Stage_DoleDisposition` | a new row per stage (ids from 705): scene name, name, 60 or 30 seconds, the converted scenery and lighting scenes of its Mania background, the game's empty sky scene `sky05_w05`, no effect scene and no screen effect. Without backgrounds (`--no-backgrounds`, `backgrounds=no` in `input\mania.txt`, or a background that failed to convert): the scenery, sky, lighting and effect scenes of the Rumble world that stands in for the Mania background (`WORLD_OF_BG`) |
+| `Switch\mania\thumb_<name>.bundle` | Banana Mania's thumbnail of each stage and course as a Rumble sprite ("Missions, menu pictures and the editor") |
+| `Stage`, `Stage_Text_<lang>`, `Stage_DoleDisposition` | a new row per stage (ids from 705): scene name, name, 60 or 30 seconds, its thumbnail, its mission values, the converted scenery and lighting scenes of its Mania background, the game's empty sky scene `sky05_w05`, no effect scene and no screen effect. Without backgrounds (`--no-backgrounds`, `backgrounds=no` in `input\mania.txt`, or a background that failed to convert): the scenery, sky, lighting and effect scenes of the Rumble world that stands in for the Mania background (`WORLD_OF_BG`) |
 | `Stage_List_Group_wld97_wldtst` | every imported course's stages, one after the other |
-| `Course`, `Course_Text_<lang>` | a row per course (ids from 27), category 6, always unlocked, no missions, hung on the end of the game's chain of Adventure worlds (below) |
+| `Course`, `Course_Text_<lang>` | a row per course (ids from 27), category 6, always unlocked, missions as `overrides.json` says, hung on the end of the game's chain of Adventure worlds (below) |
+| `UI_Sprite` | a row per new picture |
 | `MainGame_Story_Progress` | a row per stage that opens it |
 | `MainGame_Adventure_Type`, `MainGame_Adventure_Type_Text_<lang>` | a third row, "Mania": the tab of *Select World* that holds the imported courses (below) |
 | `Sound_CueSheet`, `Sound_Cue`, `Sound\*.acb`, `*.awb` | Mania's cue sheets, copied unchanged, and a cue row per BGM; with the Classic Soundtrack add-on also its sheets (`<sheet>_dx`, same cue names) and a second cue row per BGM |
@@ -545,6 +547,71 @@ one for a test import).
 * `BR_MANIA_LOG`: log lines for switch presses, seesaw touches, the BGM cue of a stage, the world picker's
   list and dropped statistics calls.
 
+## Missions, menu pictures and the editor
+
+Three things of a Rumble world have no counterpart in Banana Mania, and a person decides them: `mania\overrides.json`
+(format in `mania\overrides.py`), written by the editor and read by `mania\build.py`. The file is empty to begin
+with; without an entry an imported world looks and plays as the import alone makes it.
+
+**Stage missions.** Rumble's Adventure stages each have three (`Stage_Mission`, rows 1 to 3): "Clear within N
+seconds" (`Stage.MissionTime`; its perfect mark asks for `MissionTimeMaster`), "Clear and collect N bananas"
+(`MissionBanana`; perfect: all of them) and "Clear and collect the Golden Banana". A course shows them when
+`Course.IsStageMissionEnabled` is set. What is saved is a dictionary per stage entry of the course
+(`SaveParamStageMission`), so an imported course needs nothing more than the flag and the stage values:
+
+* the Golden Banana is an entry of kind 3 in `MainGameStage.m_BananaTransformList`. Mania's stages have none; the
+  banana named in the overrides (its path below the stage root, `Collision/bananaset/banana003`) gets that kind
+  in place of its own (`stage.py`, `gold`). What the rest are worth (a bunch counts 10) goes into
+  `game\mania\stage_extras.json` with the path, so `build.py --no-stages` converts again exactly the stages whose
+  Golden Banana changed;
+* a course has missions when its entry says so, and without one as soon as one of its stages has a Golden Banana
+  or a time. Stages nobody set values for get half the time limit and half the bananas; without a Golden Banana
+  the third mission cannot be completed (the editor shows which stages lack one);
+* the game adds up the missions of every course for the percentage of the Missions menu and for the conditions
+  that ask for all of them (`Util.Mission.GetStageMissionCompletedNumOnAll`, 0x4450ed0). Imported worlds stay out
+  of that sum: the hook on `GetStageMissionCompletedNumOnWorld` (0x4451cd0) answers "none" to that one caller
+  (told by the return address). Each world's own count is shown as for any world;
+* the play statistics call on a completed mission (`CRM.AdventureUtil.UpdateMissionStatus`) was already dropped
+  for imported courses (above).
+
+**Pictures.** A row of `UI_Sprite` names a sprite asset by GUID; the catalog leads to a bundle with one texture
+and one sprite. `mania\sprites.py` adds pictures: a copy of the bundle of World 1 Stage 1's thumbnail (512 x 512,
+DXT1) with another image, catalog entries under a GUID of its own, and an unused row of the table (it has two
+thousand; the Classic Outfit's icon takes the last one, so the table is written after that step, starting from
+its result).
+
+* Stage thumbnails (`Stage.ThumbnailSpriteID`, `MiniThumbnailSpriteID`; 0 shows "no image") are Banana Mania's
+  own: `MgStageData` names one per stage (`UI/thumbnail/Common/t_tmb_st<id>.tga`, bundle `ui_thumbnail_common`).
+  Mania's are slanted cards with a rim on a transparent ground, Rumble's plain squares, so the largest opaque
+  centred square is cut out (about two thirds of the card).
+* A course's small picture in Select World is Mania's thumbnail of the course where it has one (the story worlds,
+  Deluxe, the special modes; the SMB1 and SMB2 difficulty courses borrow that of the matching challenge course,
+  `THUMB_COURSE`), else the Rumble world's.
+* The rest of a course's look is borrowed from a Rumble world, the "theme" (`Course.BrochureSpriteID`: the big
+  picture beside the lists; `BeginningTitle`: the title card when a stage loads; and when asked for
+  `IconSpriteID`, which `MgBeginningTimelineController.SetupStageTimeline` reads for that card). Without a choice
+  it is the world that stands in for the first stage's background (`WORLD_OF_BG`), as before. A course without a
+  title card (an empty `BeginningTitle`, as the game's World Tour has) loads and plays.
+
+**The editor** (`editor.cmd`, `mania\editor.py` with the page `mania\editor.html`): a page in the browser, served
+on 127.0.0.1 only, that takes changes only from itself (the `Origin` header is checked). Left: the worlds and
+their stages. Middle: the stage as Mania has it, drawn with WebGL from the drawn meshes at rest (read from the
+Mania install with `maniastage.py`; textures scaled to 256), with a marker on each banana, the start and the
+goals; a click on a banana makes it the Golden Banana. Two more tabs are mock-ups of Select Stage and Select
+World with the pictures and mission numbers the game will show. Right: the stage's mission values and the
+world's missions switch, theme and pictures. Every change is saved at once; "Apply to game" runs
+`build.py --no-stages` (about a minute; it refuses while the game runs, because the game keeps the files open).
+Nothing of either game is copied into the repository: what the page reads is cached in
+`build\mania_work\editor\`.
+
+Checked in the running game (2.20, one stage each): the chosen banana is golden in the stage and taking it
+completes the third mission on the result screen; Select Stage shows Mania's thumbnails and the three stamps with
+the set numbers; Select World shows Mania's course pictures and the chosen theme's big picture; the Missions menu
+lists the imported worlds that have missions with the set values, while its overall percentage stays the game's
+own; a world without a title card. Not looked at: the title card with a world icon, the time and banana missions
+completed in play (only the golden one was), perfect marks, split screen and online with missions, other
+languages.
+
 ## Testing
 
 `python mania\tools\try_stage.py <course> <stage>` (or `st<Mania stage number>`) starts the built game, walks
@@ -574,13 +641,14 @@ What was checked in the running game (2.00, one PC):
 * A seesaw inside another seesaw (three stages), the camera distance area of st1110, the manager's scroll on
   the unlit belts of st1069.
 * Of Mania's backgrounds: particles, weather, distortion and reflections (see "Backgrounds"). The stage intro
-  graphics and the course's look in the world picker are still those of the Rumble world in `WORLD_OF_BG`.
+  graphics and the big picture of a course in the world picker are a Rumble world's (the one chosen in the
+  editor, else the one in `WORLD_OF_BG`).
 * A stage's lit materials are reduced to a texture, a tint, culling and (cut-out) the alpha threshold on three
   Rumble shaders; which of the three is read from the pass state and tags of Mania's shader (`background.py`,
   `describe`). Its unlit materials (`Custom/TextureVc`, `TextureVa`: arrows, marks) go on `bg_unlit_abd` with a
   baked copy of the mesh, as the backgrounds do, because the Rumble stage shaders take transparency only from
   the texture and those materials have it in the colour and the vertex alpha. On the lit ones vertex colours, second textures,
   rim light ramps, reflection cubes and scrolling textures are dropped.
-* Stage pictures, missions, the guide line, rotten / golden banana layouts, half-time and checkpoint flags of the
+* The guide line, rotten / golden banana layouts, half-time and checkpoint flags of the
   courses, stage start animations (`OnReadyGo`).
 * `import_report.txt` in `game\mania\` lists per stage what it has and which components were skipped.

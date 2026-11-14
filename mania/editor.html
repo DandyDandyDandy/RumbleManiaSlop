@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mania stage editor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --bg: #15171c; --panel: #1d2027; --panel2: #262a33; --line: #343945; --text: #e7e9ee; --dim: #9aa1b0;
+  --accent: #ffd23f; --accent-ink: #2a2100; --good: #5fd08a; --bad: #ff7a6b; --blue: #6fb6ff;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.4 "Segoe UI", system-ui, sans-serif; display: grid;
+       grid-template-rows: 48px 1fr; grid-template-columns: 300px 1fr 330px; overflow: hidden; }
+header { grid-column: 1 / 4; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: var(--panel);
+         border-bottom: 1px solid var(--line); }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+header .grow { flex: 1; }
+#saved { color: var(--dim); font-size: 13px; }
+#saved.err { color: var(--bad); }
+button, select, input { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line);
+                        border-radius: 6px; padding: 5px 9px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--dim); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+select, input { width: 100%; }
+input::placeholder { color: #6d7484; }
+aside { background: var(--panel); overflow: auto; min-height: 0; }
+#left { border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+#left .pick { padding: 10px; border-bottom: 1px solid var(--line); }
+#stages { overflow: auto; flex: 1; }
+.stage { display: grid; grid-template-columns: 44px 1fr auto; gap: 9px; align-items: center; padding: 6px 10px;
+         cursor: pointer; border-bottom: 1px solid #23262e; }
+.stage:hover { background: var(--panel2); }
+.stage.on { background: #333a4a; }
+.stage img { width: 44px; height: 44px; border-radius: 5px; object-fit: cover; background: #111; display: block; }
+.stage .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stage .s { color: var(--dim); font-size: 12px; }
+.badges { display: flex; gap: 4px; }
+.badge { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px;
+         background: #2c313c; color: #596072; }
+.badge.on { background: var(--accent); color: var(--accent-ink); }
+.badge.t.on { background: var(--blue); color: #06223d; }
+main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+#tabs { display: flex; gap: 4px; padding: 8px 10px 0; background: var(--panel); border-bottom: 1px solid var(--line); align-items: end; }
+#tabs button { border-radius: 6px 6px 0 0; border-bottom: none; background: transparent; color: var(--dim); }
+#tabs button.on { background: var(--bg); color: var(--text); }
+#tabs .title { margin-left: auto; padding: 0 4px 7px; color: var(--dim); }
+#tabs .title b { color: var(--text); }
+.view { flex: 1; min-height: 0; position: relative; display: none; }
+.view.on { display: block; }
+#gl { width: 100%; height: 100%; display: block; background: linear-gradient(#2b3550, #171a22); cursor: grab; }
+#marks { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.mk { position: absolute; left: 0; top: 0; transform: translate(-999px, -999px); pointer-events: auto; }
+.banana { width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: #ffe45c; border: 2px solid #5c4a00;
+          cursor: pointer; padding: 0; box-shadow: 0 1px 3px #0009; }
+.banana.bunch { width: 28px; height: 28px; margin: -14px 0 0 -14px; font-size: 10px; font-weight: 700; color: #3b3000; line-height: 22px; }
+.banana:hover { outline: 3px solid #fff; }
+.banana.gold { width: 34px; height: 34px; margin: -17px 0 0 -17px; background: radial-gradient(#fffbe0, #ffc400 60%, #c98500);
+               border-color: #fff; box-shadow: 0 0 0 4px #ffc40066, 0 0 18px 6px #ffc400aa; z-index: 2; }
+.banana.gold::after { content: "★"; color: #7a4b00; font-size: 17px; line-height: 28px; display: block; }
+.tag { margin: -11px 0 0 -11px; width: 22px; height: 22px; border-radius: 5px; font-size: 11px; font-weight: 700;
+       display: grid; place-items: center; pointer-events: none; }
+.tag.start { background: #3fd0ff; color: #00283a; }
+.tag.goal { background: #6f8cff; color: #fff; }
+.tag.goal.k2 { background: #47c96b; } .tag.goal.k3 { background: #ff5b5b; }
+#hint { position: absolute; left: 12px; bottom: 10px; color: #c8cede; font-size: 12px; background: #0008; padding: 5px 9px;
+        border-radius: 6px; pointer-events: none; }
+#viewbtns { position: absolute; right: 12px; top: 10px; display: flex; gap: 6px; }
+#busy { position: absolute; inset: 0; display: none; place-items: center; background: #15171ccc; font-size: 15px; }
+#right { border-left: 1px solid var(--line); padding: 0 0 20px; }
+section { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+section h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+label { display: block; margin: 10px 0 4px; font-weight: 600; }
+.note { color: var(--dim); font-size: 12px; margin-top: 4px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: 1; }
+.row > button { flex: 0 0 auto; }
+#goldbox { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; background: var(--panel2);
+           border: 1px solid var(--line); }
+#goldbox.set { border-color: var(--accent); }
+#goldbox .dot { width: 26px; height: 26px; border-radius: 50%; background: #3a3f4c; flex: 0 0 auto; }
+#goldbox.set .dot { background: radial-gradient(#fffbe0, #ffc400 60%, #c98500); box-shadow: 0 0 10px #ffc40099; }
+#goldbox .t { flex: 1; min-width: 0; }
+#applylog { white-space: pre-wrap; font: 12px/1.35 Consolas, monospace; color: var(--dim); max-height: 150px; overflow: auto;
+            margin-top: 8px; display: none; }
+/* ---- the menu mock-ups */
+.mock { position: absolute; inset: 0; overflow: auto; display: grid; place-items: center; padding: 16px; }
+.screen { width: min(100%, 1100px); aspect-ratio: 16 / 9; position: relative; border-radius: 10px; overflow: hidden;
+          background: radial-gradient(120% 90% at 30% 40%, #8fb6e8, #4b6fb1 55%, #2e3f73); container-type: inline-size;
+          box-shadow: 0 10px 40px #0008; }
+.screen .head { position: absolute; left: 11%; top: 6.5%; width: 38%; background: #f4f4f4; color: #e8506a; font-weight: 800;
+                font-size: 2.1cqw; text-align: center; padding: .5cqw 0 2.4cqw; transform: rotate(-4deg); border-radius: .4cqw; z-index: 3; }
+.screen .tabsrow { position: absolute; left: 0; right: 0; bottom: .45cqw; display: flex; gap: 1cqw; justify-content: center; }
+.screen .tabsrow span { font-size: 1cqw; background: #d9d9d9; color: #555; border-radius: 1cqw; padding: .1cqw 2.2cqw; }
+.screen .tabsrow span.on { background: #f05a78; color: #fff; }
+.screen .brochure { position: absolute; left: 8%; top: 8%; height: 88%; aspect-ratio: 804 / 1004; transform: rotate(-9deg);
+                    background: #fff center / cover; border-radius: .4cqw; box-shadow: 0 .6cqw 2cqw #0006; }
+.screen .card { position: absolute; left: 14.5%; top: 25%; width: 28%; background: #fff; padding: 1cqw 1cqw .8cqw; transform: rotate(-4deg);
+                box-shadow: 0 .5cqw 1.6cqw #0007; z-index: 2; }
+.screen .card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #ddd; }
+.screen .stamps { display: flex; justify-content: space-around; margin-top: .8cqw; }
+.screen .stamp { width: 26%; aspect-ratio: 1; background: #777486; color: #fff; display: grid; place-items: center; font-size: 2.2cqw;
+                 position: relative; outline: .25cqw dashed #fff; outline-offset: -.5cqw; }
+.screen .stamp small { position: absolute; right: 8%; bottom: 4%; font-size: 1.3cqw; font-weight: 800; background: #3d3b49;
+                       border-radius: 50%; min-width: 2.1cqw; text-align: center; padding: .1cqw .3cqw; }
+.screen .stamp.off { opacity: .28; }
+.screen .list { position: absolute; right: 4%; top: 15%; width: 40%; height: 68%; overflow: hidden auto; padding-right: .6cqw; }
+.screen .item { display: grid; grid-template-columns: 1fr 7cqw; gap: 1cqw; align-items: center; height: 8.6cqw; margin-bottom: .6cqw;
+                padding: .7cqw 1cqw .7cqw 1.4cqw; border-radius: .5cqw; cursor: pointer; background: #a9dcb9; color: #5fbf87; }
+.screen.world .item { background: #2b2b33; color: #6fd0e0; }
+.screen .item.on { background: #c9a6f0; color: #a45fe0; }
+.screen.world .item.on { background: #2b2b33; color: #ff8a5c; outline: .3cqw solid #fff; outline-offset: -.3cqw; }
+.screen .item .nm { background: #fff; border-radius: 2cqw; padding: .35cqw 1.2cqw; font-weight: 800; font-size: 1.75cqw;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.screen .item .sr { background: #fff; border-radius: .3cqw; padding: .1cqw 1cqw; font-weight: 700; font-size: 1.05cqw; display: inline-block;
+                    margin-top: .7cqw; min-width: 45%; text-align: center; }
+.screen .item img { width: 6.4cqw; height: 6.4cqw; object-fit: cover; border: .25cqw solid #fff; background: #555; display: block; }
+.screen .item .ic { height: 2.4cqw; vertical-align: middle; margin-left: .8cqw; }
+.screen .foot { position: absolute; right: 4%; bottom: 5%; width: 40%; background: #fdf3d6; color: #333; font-weight: 800; text-align: center;
+                font-size: 1.6cqw; padding: .9cqw; border-radius: .5cqw; }
+.mocknote { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; color: var(--dim); font-size: 12px; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mania stage editor</h1>
+  <span id="saved"></span>
+  <span class="grow"></span>
+  <span id="applystate" class="note" style="margin:0"></span>
+  <button id="apply" class="primary" title="Runs the import (mania\build.py --no-stages) so the game shows your changes">Apply to game</button>
+</header>
+
+<aside id="left">
+  <div class="pick">
+    <select id="course" aria-label="World"></select>
+    <div class="note" id="courseinfo"></div>
+  </div>
+  <div id="stages"></div>
+</aside>
+
+<main>
+  <div id="tabs">
+    <button data-tab="v3d" class="on">Stage</button>
+    <button data-tab="vstage">Select Stage preview</button>
+    <button data-tab="vworld">Select World preview</button>
+    <span class="title" id="title"></span>
+  </div>
+  <div class="view on" id="v3d">
+    <canvas id="gl"></canvas>
+    <div id="marks"></div>
+    <div id="viewbtns"><button id="prev" title="Previous stage (PageUp)">◂ Prev</button><button id="next" title="Next stage (PageDown)">Next ▸</button>
+      <button id="top">Top view</button><button id="reset">Reset view</button></div>
+    <div id="hint">Click a banana to make it the Golden Banana · drag: turn · right-drag or Shift-drag: move · wheel: zoom</div>
+    <div id="busy">Loading the stage …</div>
+  </div>
+  <div class="view" id="vstage"><div class="mock"><div class="screen" id="mockstage"></div></div>
+    <div class="mocknote">A mock-up of Select Stage with the pictures and numbers the game will show. Click a stage to edit it.</div></div>
+  <div class="view" id="vworld"><div class="mock"><div class="screen world" id="mockworld"></div></div>
+    <div class="mocknote">A mock-up of Select World (Mania tab). Click a world to edit it.</div></div>
+</main>
+
+<aside id="right">
+  <section>
+    <h2>Stage missions</h2>
+    <label>Golden Banana</label>
+    <div id="goldbox"><span class="dot"></span><span class="t" id="goldtext"></span><button id="goldclear">Remove</button></div>
+    <label for="time">Challenge time (seconds)</label>
+    <input id="time" type="number" min="1" max="999" step="0.1">
+    <div class="note" id="timenote"></div>
+    <label for="perfect">Perfect time (seconds)</label>
+    <input id="perfect" type="number" min="1" max="999" step="0.1">
+    <div class="note">For the time mission's perfect mark. Empty: the challenge time.</div>
+    <label for="bananas">Bananas to collect</label>
+    <input id="bananas" type="number" min="0" max="9999" step="1">
+    <div class="note" id="banananote"></div>
+  </section>
+  <section>
+    <h2>World · <span id="worldname"></span></h2>
+    <label for="missions">Stage missions</label>
+    <select id="missions"><option value="">Automatic</option><option value="on">On</option><option value="off">Off</option></select>
+    <div class="note" id="missionnote"></div>
+    <label for="theme">Theme (Rumble world)</label>
+    <select id="theme"></select>
+    <div class="note">The big picture beside the lists and the title card when a stage loads.</div>
+    <label for="thumbnail">Small picture in Select World</label>
+    <select id="thumbnail"></select>
+    <label for="brochure">Big picture</label>
+    <select id="brochure"></select>
+    <label for="titlecard">Title card</label>
+    <select id="titlecard"></select>
+    <label for="icon">World icon</label>
+    <select id="icon"></select>
+    <div class="note">The numbered star of a Rumble world, for the title card.</div>
+  </section>
+  <section>
+    <h2>Apply</h2>
+    <div class="note" style="margin:0">Changes are saved to <b>mania\overrides.json</b> as you make them. "Apply to game" rebuilds the
+      imported worlds from it (about a minute; close the game first).</div>
+    <div id="applylog"></div>
+  </section>
+</aside>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+let IDX, OV, course, stage, data = null, dirty = false, saveTimer = 0;
+
+// ------------------------------------------------------------------------------------------------ overrides
+const stageOv = id => OV.stages[id] || {};
+const courseOv = name => OV.courses[name] || {};
+function setOv(section, key, field, value) {
+  const e = OV[section][key] || (OV[section][key] = {});
+  if (value === undefined || value === '' || value === null || Number.isNaN(value)) delete e[field]; else e[field] = value;
+  if (!Object.keys(e).length) delete OV[section][key];
+  $('saved').textContent = 'Saving …'; $('saved').className = '';
+  clearTimeout(saveTimer); saveTimer = setTimeout(save, 350);
+}
+async function save() {
+  try {
+    const r = await fetch('/api/save', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(OV)});
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    $('saved').textContent = 'Saved'; dirty = true; $('applystate').textContent = 'Changes not yet in the game';
+  } catch (e) { $('saved').textContent = 'Not saved: ' + e.message; $('saved').className = 'err'; }
+}
+const hasMissions = c => {
+  const o = courseOv(c.name);
+  if ('missions' in o) return o.missions;
+  return c.stages.some(s => 'gold' in stageOv(s.id) || 'time' in stageOv(s.id));
+};
+const defaultTime = s => Math.floor(s.limit / 2);
+// what the stage's bananas are worth without the golden one (as the import counts them)
+function bananaTotal(s) {
+  if (data && data.id === s.id) {
+    const g = stageOv(s.id).gold;
+    return data.bananas.reduce((n, b) => n + (b.path === g ? 0 : b.kind ? IDX.bunch : 1), 0);
+  }
+  return s.bananas;
+}
+function missionValues(s) {
+  const o = stageOv(s.id), total = bananaTotal(s);
+  const t = o.time || defaultTime(s);
+  const n = 'bananas' in o ? o.bananas : (total == null ? null : Math.ceil(total / 2));
+  return {time: t, perfect: Math.min(o.time_perfect || t, t), bananas: n == null ? '?' : Math.min(n, total == null ? n : total), gold: !!o.gold};
+}
+const world = id => IDX.worlds.find(w => w.id === id);
+function look(c) {             // the pictures of a course, as mania\build.py chooses them
+  const o = courseOv(c.name), theme = world(o.theme) || world(c.world);
+  const brochure = world(o.brochure) || theme, icon = world(o.icon), small = o.thumbnail === undefined ? 'mania' : o.thumbnail;
+  const title = o.title === 0 ? null : (world(o.title) || theme);
+  return {
+    theme, title, brochure: `/img/sprite/${brochure.brochure}.png`, icon: icon && icon.icon ? `/img/sprite/${icon.icon}.png` : null,
+    small: small === 'mania' && c.thumb ? `/img/course/${encodeURIComponent(c.name)}.png` : `/img/sprite/${(world(small) || theme).thumbnail}.png`};
+}
+
+// ------------------------------------------------------------------------------------------------ lists
+function fillCourses() {
+  const sel = $('course'); sel.textContent = '';
+  IDX.courses.forEach((c, i) => { const o = el('option', null, `${c.title}  (${c.stages.length})`); o.value = i; sel.append(o); });
+}
+function badges(s) {
+  const o = stageOv(s.id), b = el('span', 'badges');
+  const g = el('span', 'badge' + (o.gold ? ' on' : ''), '★'); g.title = o.gold ? 'Golden Banana chosen' : 'No Golden Banana yet';
+  const t = el('span', 'badge t' + (o.time ? ' on' : ''), 's'); t.title = o.time ? `Challenge time ${o.time} s` : 'Challenge time not set';
+  b.append(g, t); return b;
+}
+function fillStages() {
+  const box = $('stages'); box.textContent = '';
+  course.stages.forEach((s, i) => {
+    const row = el('div', 'stage' + (s === stage ? ' on' : '')); row.dataset.id = s.id;
+    const img = el('img'); img.loading = 'lazy'; img.src = `/img/stage/${s.id}.png`; img.alt = '';
+    const txt = el('div'); txt.append(el('div', 'n', s.name), el('div', 's', `${course.prefix}-${String(i + 1).padStart(2, '0')} · st${s.id}`));
+    row.append(img, txt, badges(s));
+    row.onclick = () => pickStage(s);
+    box.append(row);
+  });
+  const done = course.stages.filter(s => stageOv(s.id).gold).length;
+  $('courseinfo').textContent = `${done} of ${course.stages.length} stages have a Golden Banana · missions ${hasMissions(course) ? 'on' : 'off'}`;
+}
+function pickCourse(i, stageId) {
+  course = IDX.courses[i]; $('course').value = i;
+  stage = course.stages.find(s => s.id === stageId) || course.stages[0];
+  fillStages(); fillWorldPanel(); pickStage(stage);
+}
+function pickStage(s) {
+  stage = s;
+  try { localStorage.setItem('mania-editor', JSON.stringify({course: IDX.courses.indexOf(course), stage: s.id})); } catch (e) {}
+  for (const r of $('stages').children) r.classList.toggle('on', +r.dataset.id === s.id);
+  const on = $('stages').querySelector('.on'); if (on) on.scrollIntoView({block: 'nearest'});
+  const i = course.stages.indexOf(s);
+  $('title').innerHTML = ''; $('title').append(el('b', null, s.name), ` · ${course.prefix}-${String(i + 1).padStart(2, '0')} · st${s.id}`);
+  fillStagePanel(); drawMocks(); loadStage(s);
+}
+function step(d) {
+  const i = course.stages.indexOf(stage) + d;
+  if (i >= 0 && i < course.stages.length) pickStage(course.stages[i]);
+}
+
+// ------------------------------------------------------------------------------------------------ panels
+function fillStagePanel() {
+  const o = stageOv(stage.id), total = bananaTotal(stage);
+  $('goldbox').classList.toggle('set', !!o.gold);
+  $('goldtext').textContent = o.gold ? o.gold.split('/').pop() + ' is the Golden Banana. Click another banana to move it.'
+                                     : 'None yet. Click a banana in the stage view.';
+  $('goldclear').style.display = o.gold ? '' : 'none';
+  $('time').value = o.time ?? ''; $('time').placeholder = defaultTime(stage) + '  (default: half the time limit)';
+  $('timenote').textContent = `"Clear within ${missionValues(stage).time} seconds". The stage's time limit is ${stage.limit} s.`;
+  $('perfect').value = o.time_perfect ?? ''; $('perfect').placeholder = String(o.time || defaultTime(stage));
+  $('bananas').value = o.bananas ?? ''; $('bananas').placeholder = total == null ? '' : Math.ceil(total / 2) + '  (default: half)';
+  $('banananote').textContent = total == null ? '' : `"Clear and collect ${missionValues(stage).bananas} bananas". The stage has ${total}` +
+    (o.gold ? ' besides the golden one' : '') + ' (a bunch counts 10).';
+}
+function options(sel, list, value) {
+  sel.textContent = '';
+  for (const [v, text] of list) { const o = el('option', null, text); o.value = v; sel.append(o); }
+  sel.value = String(value);
+}
+function fillWorldPanel() {
+  const o = courseOv(course.name), def = world(course.world);
+  const worlds = IDX.worlds.filter(w => w.brochure), named = w => [w.id, `${w.serial} · ${w.name}`];
+  $('worldname').textContent = course.title;
+  $('missions').value = 'missions' in o ? (o.missions ? 'on' : 'off') : '';
+  $('missionnote').textContent = 'missions' in o ? '' : `Automatic: on once a stage of the world has a Golden Banana or a challenge time (now ${hasMissions(course) ? 'on' : 'off'}).`;
+  options($('theme'), [['', `Default (${def.serial} · ${def.name})`], ...worlds.map(named)], o.theme ?? '');
+  options($('thumbnail'), [['', course.thumb ? "Banana Mania's picture" : 'The theme\'s'], ...worlds.map(named)], typeof o.thumbnail === 'number' ? o.thumbnail : '');
+  options($('brochure'), [['', 'The theme\'s'], ...worlds.map(named)], o.brochure ?? '');
+  options($('titlecard'), [['', 'The theme\'s'], ['0', 'None'], ...worlds.filter(w => w.title).map(named)], o.title ?? '');
+  options($('icon'), [['', 'None'], ...IDX.worlds.filter(w => w.icon).map(named)], o.icon || '');
+}
+function numberField(id, field, integer) {
+  $(id).addEventListener('input', () => {
+    const v = $(id).value === '' ? undefined : (integer ? Math.round(+$(id).value) : Math.round(+$(id).value * 1000) / 1000);
+    setOv('stages', stage.id, field, v !== undefined && v <= 0 && !integer ? undefined : v);
+    refreshStage(false);
+  });
+}
+function worldField(id, field) {
+  $(id).addEventListener('change', () => {
+    const v = $(id).value;
+    setOv('courses', course.name, field, v === '' ? undefined : field === 'missions' ? v === 'on' : +v);
+    if (field !== 'missions') fillWorldPanel(); else $('missionnote').textContent = '';
+    fillStages(); drawMocks();
+  });
+}
+function refreshStage(inputs = true) {
+  if (inputs) fillStagePanel(); else {
+    $('timenote').textContent = `"Clear within ${missionValues(stage).time} seconds". The stage's time limit is ${stage.limit} s.`;
+    $('perfect').placeholder = String(stageOv(stage.id).time || defaultTime(stage));
+    const total = bananaTotal(stage);
+    if (total != null) $('banananote').textContent = `"Clear and collect ${missionValues(stage).bananas} bananas". The stage has ${total}` +
+      (stageOv(stage.id).gold ? ' besides the golden one' : '') + ' (a bunch counts 10).';
+  }
+  const row = [...$('stages').children].find(r => +r.dataset.id === stage.id);
+  if (row) row.replaceChild(badges(stage), row.lastChild);
+  const done = course.stages.filter(s => stageOv(s.id).gold).length;
+  $('courseinfo').textContent = `${done} of ${course.stages.length} stages have a Golden Banana · missions ${hasMissions(course) ? 'on' : 'off'}`;
+  if (!('missions' in courseOv(course.name))) $('missionnote').textContent =
+    `Automatic: on once a stage of the world has a Golden Banana or a challenge time (now ${hasMissions(course) ? 'on' : 'off'}).`;
+  drawMocks(); placeMarks(true);
+}
+function setGold(path) {
+  setOv('stages', stage.id, 'gold', stageOv(stage.id).gold === path ? undefined : path);
+  refreshStage();
+}
+
+// ------------------------------------------------------------------------------------------------ mock-ups
+function drawMocks() {
+  const lk = look(course), on = hasMissions(course);
+  // Select Stage
+  const ms = $('mockstage'); ms.textContent = '';
+  const b = el('div', 'brochure'); b.style.backgroundImage = `url(${lk.brochure})`;
+  const head = el('div', 'head', 'Select Stage');
+  const card = el('div', 'card'); const big = el('img'); big.src = `/img/stage/${stage.id}.png`; big.alt = ''; card.append(big);
+  if (on) {
+    const v = missionValues(stage), st = el('div', 'stamps');
+    const a = el('div', 'stamp', '⏱'); a.append(el('small', null, String(+v.time.toFixed(1)))); a.title = `Clear within ${v.time} seconds`;
+    const c = el('div', 'stamp', '🍌'); c.append(el('small', null, String(v.bananas))); c.title = `Clear and collect ${v.bananas} bananas`;
+    const g = el('div', 'stamp' + (v.gold ? '' : ' off'), '✦'); g.title = v.gold ? 'Clear and collect the Golden Banana' : 'No Golden Banana chosen: this mission cannot be completed';
+    st.append(a, c, g); card.append(st);
+  }
+  const list = el('div', 'list');
+  course.stages.forEach((s, i) => {
+    const it = el('div', 'item' + (s === stage ? ' on' : ''));
+    const t = el('div'); t.append(el('div', 'nm', s.name), el('span', 'sr', `${course.prefix}-${String(i + 1).padStart(2, '0')}`));
+    const im = el('img'); im.loading = 'lazy'; im.src = `/img/stage/${s.id}.png`; im.alt = '';
+    it.append(t, im); it.onclick = () => pickStage(s); list.append(it);
+  });
+  ms.append(b, head, card, list, el('div', 'foot', 'Pick a Stage!'));
+  const cur = list.querySelector('.on'); if (cur) list.scrollTop = cur.offsetTop - list.clientHeight / 3;
+  // Select World
+  const mw = $('mockworld'); mw.textContent = '';
+  const b2 = el('div', 'brochure'); b2.style.backgroundImage = `url(${lk.brochure})`;
+  const head2 = el('div', 'head', 'Select World'); const tr = el('div', 'tabsrow');
+  tr.append(el('span', null, 'Story'), el('span', null, 'Special'), el('span', 'on', 'Mania')); head2.append(tr);
+  const list2 = el('div', 'list');
+  IDX.courses.forEach((c, i) => {
+    const l = look(c), it = el('div', 'item' + (c === course ? ' on' : ''));
+    const nm = el('div', 'nm', c.title);
+    const t = el('div'); t.append(nm, el('span', 'sr', c.prefix));
+    if (l.icon) { const ic = el('img', 'ic'); ic.src = l.icon; ic.alt = ''; ic.title = 'World icon (title card)'; ic.style.cssText = 'display:inline;width:auto;border:0;background:none'; t.append(ic); }
+    const im = el('img'); im.loading = 'lazy'; im.src = l.small; im.alt = '';
+    it.append(t, im); it.onclick = () => pickCourse(i); list2.append(it);
+  });
+  mw.append(b2, head2, list2, el('div', 'foot', 'Pick a World!'));
+  const cur2 = list2.querySelector('.on'); if (cur2) list2.scrollTop = cur2.offsetTop - list2.clientHeight / 3;
+}
+
+// ------------------------------------------------------------------------------------------------ 3D view
+const canvas = $('gl'), gl = canvas.getContext('webgl2', {antialias: true});
+const VS = `#version 300 es
+in vec3 aPos; in vec3 aNrm; in vec2 aUv; uniform mat4 uMvp; out vec3 vN; out vec2 vUv;
+void main() { vN = aNrm; vUv = aUv; gl_Position = uMvp * vec4(aPos, 1.0); }`;
+const FS = `#version 300 es
+precision mediump float;
+in vec3 vN; in vec2 vUv; uniform sampler2D uTex; uniform vec4 uColor; uniform int uMode; uniform bool uHasTex; out vec4 o;
+void main() {
+  vec4 c = uColor; if (uHasTex) c *= texture(uTex, vUv);
+  if (uMode == 1 && c.a < 0.5) discard;
+  vec3 n = normalize(vN); if (!gl_FrontFacing) n = -n;
+  float l = 0.5 + 0.5 * max(dot(n, normalize(vec3(0.35, 0.85, 0.4))), 0.0);
+  o = vec4(c.rgb * l, uMode == 2 ? c.a : 1.0);
+}`;
+let prog, loc = {}, scene = null;
+const cam = {target: [0, 0, 0], yaw: 0, pitch: 0.7, dist: 50};
+function shader(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+function initGl() {
+  prog = gl.createProgram(); gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog); gl.useProgram(prog);
+  for (const n of ['uMvp', 'uTex', 'uColor', 'uMode', 'uHasTex']) loc[n] = gl.getUniformLocation(prog, n);
+  for (const n of ['aPos', 'aNrm', 'aUv']) loc[n] = gl.getAttribLocation(prog, n);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+}
+const bytes = (b64, T) => { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new T(u.buffer); };
+function buildScene(d) {
+  if (scene) { for (const g of scene.groups) { gl.deleteVertexArray(g.vao); g.buffers.forEach(b => gl.deleteBuffer(b)); } scene.textures.forEach(t => gl.deleteTexture(t)); }
+  const textures = d.textures.map(url => {
+    const t = gl.createTexture(), img = new Image();
+    img.onload = () => { gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); t.ready = true; draw(); };
+    img.src = url; return t;
+  });
+  const groups = d.groups.map(g => {
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    const buffers = [['aPos', g.pos, 3], ['aNrm', g.nrm, 3], ['aUv', g.uv, 2]].map(([name, b, size]) => {
+      const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, bytes(b, Float32Array), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(loc[name]); gl.vertexAttribPointer(loc[name], size, gl.FLOAT, false, 0, 0); return buf; });
+    const idx = bytes(g.idx, Uint32Array), ib = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+    return {vao, buffers: [...buffers, ib], count: idx.length, tex: g.tex, color: g.color, mode: g.mode};
+  }).sort((a, b) => a.mode - b.mode);
+  gl.bindVertexArray(null);
+  scene = {groups, textures};
+}
+// column-major 4x4 matrices
+const mul = (a, b) => { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++)
+  o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3]; return o; };
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }, dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function camBasis() {
+  const cp = Math.cos(cam.pitch), back = [Math.sin(cam.yaw) * cp, Math.sin(cam.pitch), Math.cos(cam.yaw) * cp];
+  const eye = [cam.target[0] + back[0] * cam.dist, cam.target[1] + back[1] * cam.dist, cam.target[2] + back[2] * cam.dist];
+  const f = norm(sub(cam.target, eye)), r = norm(cross(f, Math.abs(f[1]) > 0.999 ? [0, 0, -1] : [0, 1, 0])), u = cross(r, f);
+  return {eye, f, r, u};
+}
+let MVP = new Float32Array(16);
+function updateMvp() {
+  const w = canvas.clientWidth, h = canvas.clientHeight, {eye, f, r, u} = camBasis();
+  const near = Math.max(0.1, cam.dist / 200), far = cam.dist * 20 + 2000, t = 1 / Math.tan(0.4);
+  const P = new Float32Array([t / (w / h), 0, 0, 0, 0, t, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0]);
+  const V = new Float32Array([r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, eye), -dot(u, eye), dot(f, eye), 1]);
+  // Unity's axes are left-handed: mirrored in x, so the stage is not shown as its mirror image
+  MVP = mul(mul(P, V), new Float32Array([-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+}
+const mirror = p => [-p[0], p[1], p[2]];          // a stage point in the view's (mirrored) space
+function project(p) {
+  const x = MVP[0] * p[0] + MVP[4] * p[1] + MVP[8] * p[2] + MVP[12], y = MVP[1] * p[0] + MVP[5] * p[1] + MVP[9] * p[2] + MVP[13],
+        w = MVP[3] * p[0] + MVP[7] * p[1] + MVP[11] * p[2] + MVP[15];
+  return w <= 0.01 ? null : [(x / w * 0.5 + 0.5) * canvas.clientWidth, (0.5 - y / w * 0.5) * canvas.clientHeight];
+}
+let frame = 0;
+function draw() { if (!frame) frame = requestAnimationFrame(render); }
+function render() {
+  frame = 0;
+  const dpr = window.devicePixelRatio || 1, w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  if (!w || !h) return;
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  gl.viewport(0, 0, w, h); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  updateMvp();
+  if (scene) {
+    gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.uniformMatrix4fv(loc.uMvp, false, MVP); gl.uniform1i(loc.uTex, 0);
+    for (const g of scene.groups) {
+      const t = g.tex >= 0 ? scene.textures[g.tex] : null;
+      gl.uniform1i(loc.uHasTex, t && t.ready ? 1 : 0); if (t && t.ready) gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.uniform4fv(loc.uColor, g.color); gl.uniform1i(loc.uMode, g.mode);
+      if (g.mode === 2) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); } else { gl.disable(gl.BLEND); gl.depthMask(true); }
+      gl.bindVertexArray(g.vao); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_INT, 0);
+    }
+    gl.depthMask(true); gl.bindVertexArray(null);
+  }
+  placeMarks(false);
+}
+let marks = [];
+function makeMarks() {
+  const box = $('marks'); box.textContent = ''; marks = [];
+  if (!data) return;
+  const add = (e, pos) => { e.classList.add('mk'); box.append(e); marks.push({e, pos}); };
+  if (data.start) { const s = el('div', 'tag start', 'S'); s.title = 'Start'; add(s, data.start); }
+  for (const g of data.goals) { const e = el('div', 'tag goal k' + g.kind, 'G'); e.title = 'Goal'; add(e, [g.pos[0], g.pos[1] + 6.2, g.pos[2]]); }
+  for (const b of data.bananas) {
+    const e = el('button', 'banana' + (b.kind ? ' bunch' : ''), b.kind ? '10' : '');
+    e.dataset.path = b.path; e.onclick = ev => { ev.stopPropagation(); setGold(b.path); };
+    add(e, b.pos);
+  }
+  placeMarks(true);
+}
+function placeMarks(restyle) {
+  const gold = stage && stageOv(stage.id).gold;
+  for (const m of marks) {
+    const p = project(m.pos);
+    m.e.style.transform = p ? `translate(${p[0].toFixed(1)}px, ${p[1].toFixed(1)}px)` : 'translate(-999px, -999px)';
+    if (restyle && m.e.dataset.path !== undefined) {
+      const on = m.e.dataset.path === gold;
+      m.e.classList.toggle('gold', on);
+      m.e.textContent = on ? '' : (m.e.classList.contains('bunch') ? '10' : '');
+      m.e.title = on ? 'The Golden Banana (click to remove)' : `${m.e.dataset.path.split('/').pop()}: click to make it the Golden Banana`;
+    }
+  }
+}
+function resetView(top) {
+  if (!data) return;
+  // frame where the play is (the bananas and the start), not everything the stage draws: some stages park
+  // things far below (Factory's goals)
+  let pts = data.bananas.map(b => b.pos); if (data.start) pts.push(data.start);
+  if (!pts.length) pts = [data.lo, data.hi];
+  const lo = [0, 1, 2].map(i => Math.max(Math.min(...pts.map(p => p[i])) - 8, data.lo[i]));
+  const hi = [0, 1, 2].map(i => Math.min(Math.max(...pts.map(p => p[i])) + 8, data.hi[i]));
+  const c = mirror([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]);
+  const size = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+  cam.target = c; cam.dist = Math.max(8, size * 0.95);
+  if (top) { cam.pitch = 1.5; } else cam.pitch = 0.75;
+  const s = data.start ? mirror(data.start) : null;      // look from behind the start towards the stage
+  cam.yaw = s && Math.hypot(s[0] - c[0], s[2] - c[2]) > 0.5 ? Math.atan2(s[0] - c[0], s[2] - c[2]) : 0;
+  draw();
+}
+let loading = 0;
+async function loadStage(s) {
+  const mine = ++loading;
+  $('busy').style.display = 'grid'; $('busy').textContent = 'Loading the stage …';
+  try {
+    const r = await fetch(`/api/stage/${s.id}`), d = await r.json();
+    if (mine !== loading) return;
+    if (!r.ok) throw new Error(d.error || r.status);
+    data = d;
+    buildScene(d); makeMarks(); resetView(false); fillStagePanel(); drawMocks();
+    $('busy').style.display = 'none';
+  } catch (e) { if (mine === loading) { $('busy').textContent = 'This stage could not be read: ' + e.message; data = null; makeMarks(); } }
+}
+// mouse: drag turns, right-drag or Shift-drag moves, wheel zooms
+let drag = null;
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointerdown', e => { drag = {x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey}; canvas.setPointerCapture(e.pointerId); canvas.style.cursor = 'grabbing'; });
+canvas.addEventListener('pointerup', () => { drag = null; canvas.style.cursor = 'grab'; });
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) {
+    const {r, u} = camBasis(), k = cam.dist * 0.0016;
+    for (let i = 0; i < 3; i++) cam.target[i] += (-r[i] * dx + u[i] * dy) * k;
+  } else { cam.yaw -= dx * 0.006; cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch + dy * 0.006)); }
+  draw();
+});
+canvas.addEventListener('wheel', e => { e.preventDefault(); cam.dist = Math.max(1.5, Math.min(5000, cam.dist * Math.exp(e.deltaY * 0.0012))); draw(); }, {passive: false});
+new ResizeObserver(draw).observe(canvas);
+
+// ------------------------------------------------------------------------------------------------ apply
+let poll = 0;
+async function applyStatus() {
+  const s = await (await fetch('/api/apply')).json();
+  if (s.log.length) { $('applylog').style.display = 'block'; $('applylog').textContent = s.log.join('\n'); $('applylog').scrollTop = 1e6; }
+  $('apply').disabled = s.running;
+  if (s.running) { $('applystate').textContent = 'Importing …'; clearTimeout(poll); poll = setTimeout(applyStatus, 1000); }
+  else if (s.code === 0) { $('applystate').textContent = dirty ? 'Changes not yet in the game' : 'The game is up to date with the editor'; }
+  else if (s.code != null) $('applystate').textContent = 'The import failed (see the log at the bottom right)';
+}
+$('apply').onclick = async () => {
+  clearTimeout(saveTimer); await save();
+  const r = await fetch('/api/apply', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}), j = await r.json();
+  if (!r.ok) { $('applystate').textContent = j.error; return; }
+  dirty = false; applyStatus();
+};
+
+// ------------------------------------------------------------------------------------------------ start
+for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => {
+  for (const x of document.querySelectorAll('#tabs button')) x.classList.toggle('on', x === b);
+  for (const v of document.querySelectorAll('.view')) v.classList.toggle('on', v.id === b.dataset.tab);
+  if (b.dataset.tab === 'v3d') draw(); else drawMocks();
+};
+$('course').onchange = () => pickCourse(+$('course').value);
+$('goldclear').onclick = () => { setOv('stages', stage.id, 'gold', undefined); refreshStage(); };
+$('reset').onclick = () => resetView(false); $('top').onclick = () => resetView(true);
+$('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'PageDown') { e.preventDefault(); step(1); } else if (e.key === 'PageUp') { e.preventDefault(); step(-1); }
+});
+numberField('time', 'time', false); numberField('perfect', 'time_perfect', false); numberField('bananas', 'bananas', true);
+worldField('missions', 'missions'); worldField('theme', 'theme'); worldField('thumbnail', 'thumbnail'); worldField('brochure', 'brochure');
+worldField('titlecard', 'title'); worldField('icon', 'icon');
+(async () => {
+  try {
+    initGl();
+    IDX = await (await fetch('/api/index')).json();
+    if (IDX.error) throw new Error(IDX.error);
+    OV = IDX.overrides; fillCourses();
+    let last = {}; try { last = JSON.parse(localStorage.getItem('mania-editor') || '{}'); } catch (e) {}
+    pickCourse(IDX.courses[last.course] ? last.course : 0, last.stage);
+    const tab = document.querySelector(`#tabs button[data-tab="${location.hash.slice(1)}"]`); if (tab) tab.click();
+    applyStatus();
+  } catch (e) { $('busy').style.display = 'grid'; $('busy').textContent = 'The editor could not start: ' + e.message; }
+})();
+</script>
+</body>
+</html>

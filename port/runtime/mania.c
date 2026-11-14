@@ -287,6 +287,19 @@ int rt_hook_449c770(Cpu *c) { return crm_imported(c, "UpdateBestTimeStatus"); }
 int rt_hook_449c8b0(Cpu *c) { return crm_imported(c, "StartTimeAttack"); }
 int rt_hook_449c9d0(Cpu *c) { return crm_imported(c, "FinishTimeAttack"); }
 
+// Wonder.Util.Mission.GetStageMissionCompletedNumOnWorld(course, ...) -> (completed, all) as two ints in x0.
+// An imported course can have Rumble's stage missions (mania\overrides.json). Its own count is shown with the
+// course as for any world, but the sum over all worlds (GetStageMissionCompletedNumOnAll: the percentage of the
+// mission list, the "every stage mission" conditions) stays the game's own: to that one caller an imported
+// course has none.
+int rt_hook_4451cd0(Cpu *c) {
+    if (c->x[30] != FN(0x4451118ull)) return 0;
+    if (g_ncourses < 0) load_courses();
+    if (!g_first_id || (uint32_t)c->x[0] < g_first_id) return 0;
+    c->x[0] = 0;
+    return 1;
+}
+
 // The world picker of local co-op and of online rooms lists the chain of worlds (Course.NextCourseID) from the
 // first one up to the "highest unlocked" one: UIChoicesItemData_Factory.getUnlockedCourseList(this, highest).
 // Online, `highest` is the lowest of the players' own values. Imported courses hang at the end of the chain and are

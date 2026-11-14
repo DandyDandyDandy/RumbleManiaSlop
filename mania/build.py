@@ -11,6 +11,8 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\Switch\\mania\\scene_<n>.bundle     one converted stage scene each (stage.py)
     mania\\Switch\\mania\\bg_<n>.bundle        per Mania background its scenery (200000 + n) and its lighting scene
                                             (210000 + n) (background.py)
+    mania\\Switch\\mania\\thumb_<name>.bundle  Banana Mania's thumbnail of each stage and course as a Rumble sprite
+                                            (sprites.py)
     mania\\Switch\\...                        changed copies of the game's table bundles (dbtable.py)
     mania\\catalog.json                      the game's Addressables catalog plus the new scenes
     mania\\mania_courses.txt                 per imported course: its stage list id, first row and length in the real list, and
@@ -37,6 +39,10 @@ How the stages become courses (docs/MANIA.md has the reasons):
 
 Banana Mania's bonus stages (stage kind Bonus: collect bananas against the clock) are not imported: the imported
 worlds are about reaching the goal and clear times.
+
+What the import cannot know is read from mania\\overrides.json (overrides.py; written by the editor, editor.py):
+each stage's Golden Banana and mission values, each world's graphics. A stage whose Golden Banana changed is
+converted again even with --no-stages.
 """
 import argparse
 import hashlib
@@ -51,6 +57,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'port'))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'port', 'assets'))
 
+import overrides  # noqa: E402
 import paths  # noqa: E402
 from aacatalog import Catalog  # noqa: E402
 from dbtable import LANGS, Database  # noqa: E402
@@ -87,6 +94,12 @@ WORLD_OF_BG = {
     'Smb2_Jungle': 1, 'Smb2_Lava': 4, 'Smb2_Water': 2, 'Smb2_Whale': 3, 'Smb2_Park': 5, 'Smb2_Pot': 8, 'Smb2_Bubble': 7,
     'Smb2_Gear': 9, 'Smb2_Space': 10, 'Smb2_Electric': 6,
 }
+# Mania's courses without a thumbnail of their own -> the course whose thumbnail they show
+THUMB_COURSE = {'Smb1Org_Shokyu': 'Smb1_Casual', 'Smb1Org_ShokyuEx': 'Smb1_Casual', 'Smb1Org_Chukyu': 'Smb1_Normal',
+                'Smb1Org_ChukyuEx': 'Smb1_Normal', 'Smb1Org_Jyokyu': 'Smb1_Expert', 'Smb1Org_JyokyuEx': 'Smb1_Expert',
+                'Smb1Org_JyokyuEx2': 'Smb1_Master', 'Smb2Org_Shokyu': 'Smb2_Casual', 'Smb2Org_ShokyuEx': 'Smb2_Casual',
+                'Smb2Org_Chukyu': 'Smb2_Normal', 'Smb2Org_ChukyuEx': 'Smb2_Normal', 'Smb2Org_Jyokyu': 'Smb2_Expert',
+                'Smb2Org_JyokyuEx': 'Smb2_Expert', 'Smb2Org_Master': 'Smb2_Master', 'Smb2Org_MasterEx': 'Smb2_Master'}
 SCENERY_FIELDS = ('LightSceneID', 'FarSceneID', 'SkySceneID', 'EffectSceneID', 'ScreenEffectAssetRef', 'LightSceneSplitScrenID',
                   'FarSceneSplitScreenID', 'SkySceneSplitScreenID', 'EffectSceneSplitScreenID', 'ScreenEffectSplitScreenAssetRef',
                   'MiniMapImageID')
@@ -105,8 +118,22 @@ def bundle_rel(stage_id):
     return f'Switch/mania/scene_{scene_id(stage_id)}.bundle'
 
 
+def course_thumb(mania, name):
+    """The path of the Mania thumbnail of an imported course ('' when Mania has none for it)."""
+    for n in (name, THUMB_COURSE.get(name)):
+        c = mania.courses.get(n)
+        if c and c.get('thumb'):
+            return c['thumb']
+    return ''
+
+
+def default_world(mania, stage_ids):
+    """The Rumble world an imported course borrows its graphics from when nobody chose one."""
+    return WORLD_OF_BG.get(mania.stages[stage_ids[0]]['bg'], 1)
+
+
 def _convert(job):
-    mania_dir, aa_switch, bundle, out, identity = job
+    mania_dir, aa_switch, bundle, out, identity, gold = job
     from stage import Converter
     global _CONV
     try:
@@ -114,7 +141,7 @@ def _convert(job):
     except NameError:
         conv = _CONV = Converter(mania_dir, aa_switch)
     try:
-        return bundle, conv.convert(bundle, out, identity), None
+        return bundle, conv.convert(bundle, out, identity, gold=gold), None
     except Exception as e:                      # one broken stage must not stop the import
         import traceback
         return bundle, None, f'{type(e).__name__}: {e} | {traceback.format_exc(limit=3).splitlines()[-2].strip()}'
@@ -188,13 +215,31 @@ def main():
         stage_ids += [i for i in ids if i not in stage_ids]
     print(f'{len(courses)} courses, {len(stage_ids)} stages', flush=True)
 
+    # what the tables and the catalog need to know about a converted stage (the stages of the game whose bundles it
+    # uses, its areas, what its bananas are worth, its Golden Banana): kept in a file, because --no-stages leaves
+    # the stage bundles of an earlier import in place
+    import json
+    ov = overrides.load()
+    extras_path, extras = os.path.join(out, 'stage_extras.json'), {}
+    if os.path.exists(extras_path):
+        with open(extras_path, encoding='utf-8') as f:
+            extras = {int(k): v for k, v in json.load(f).items()}
+
+    def fits(sid):
+        """Whether the stage's bundle of an earlier import is what this import would make."""
+        e = extras.get(sid)
+        return (os.path.exists(os.path.join(out, bundle_rel(sid).replace('/', os.sep))) and e is not None and 'banana_count' in e
+                and e.get('gold') == overrides.gold(ov, sid))
+
     # ---- stage scenes
     failed, reports = {}, {}
-    if not a.no_stages:
+    todo = [sid for sid in stage_ids if not (a.no_stages and fits(sid))]
+    if todo:
         jobs = []
-        for sid in stage_ids:
+        for sid in todo:
             ident = (f'mania_scene_{scene_id(sid)}', f'Assets/Mania/{scene_id(sid)}.unity', 'CAB-' + md5(f'mania scene {sid}'))
-            jobs.append((a.mania, aa_switch, mania.bundles[sid], os.path.join(out, bundle_rel(sid).replace('/', os.sep)), ident))
+            jobs.append((a.mania, aa_switch, mania.bundles[sid], os.path.join(out, bundle_rel(sid).replace('/', os.sep)), ident,
+                         overrides.gold(ov, sid)))
         done = 0
         with ProcessPoolExecutor(a.jobs) as pool:
             for bundle, stats, err in pool.map(_convert, jobs, chunksize=2):
@@ -211,20 +256,17 @@ def main():
     if not a.only and not a.no_levels:
         keep = {os.path.basename(bundle_rel(i)) for i in stage_ids}
         for name in os.listdir(os.path.join(out_switch, 'mania')):
-            if name.startswith('scene_') and name not in keep or name.startswith('bg_'):
+            if name.startswith('scene_') and name not in keep or name.startswith(('bg_', 'thumb_')):
                 os.remove(os.path.join(out_switch, 'mania', name))
     stage_ids = [i for i in stage_ids if os.path.exists(os.path.join(out, bundle_rel(i).replace('/', os.sep)))]
-    # what the tables and the catalog need to know about a converted stage (the stages of the game whose bundles it
-    # uses, its areas): kept in a file, because --no-stages leaves the stage bundles of an earlier import in place
-    import json
-    extras_path, extras = os.path.join(out, 'stage_extras.json'), {}
-    if os.path.exists(extras_path):
-        with open(extras_path, encoding='utf-8') as f:
-            extras = {int(k): v for k, v in json.load(f).items()}
     sid_of = {mania.bundles[i]: i for i in stage_ids}
     for bundle, st in reports.items():
         if bundle in sid_of:
-            extras[sid_of[bundle]] = {'donor_stages': st.get('donor_stages', []), 'areas': st.get('areas', [])}
+            sid = sid_of[bundle]
+            extras[sid] = {'donor_stages': st.get('donor_stages', []), 'areas': st.get('areas', []),
+                           'banana_count': st.get('banana_count', 0), 'gold': overrides.gold(ov, sid)}
+            if overrides.gold(ov, sid) and not st.get('gold'):
+                print(f'  st{sid}: overrides.json names a Golden Banana the stage does not have ({overrides.gold(ov, sid)})', flush=True)
     extras = {i: extras[i] for i in stage_ids if i in extras}
     with open(extras_path, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(extras, f, indent=0, sort_keys=True)
@@ -252,10 +294,11 @@ def main():
                     backgrounds[name] = info
         print(f'  {len(backgrounds)}/{len(names)} backgrounds converted', flush=True)
 
-    written, music_lines, lines = [], [], []
+    written, music_lines, lines, sprites = [], [], [], None
     cat = Catalog(os.path.join(aa, 'catalog.json'))
     if courses:
-        written, music_lines, lines = import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, backgrounds, extras)
+        written, music_lines, lines, sprites = import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds, extras,
+                                                              ov, cat)
         add_scenes(cat, stage_ids, out, extras)
         from background import add_to_catalog
         for info in backgrounds.values():
@@ -270,6 +313,7 @@ def main():
                 f.write(f'{ci}\t{si}\tst{i}\t{title}\t{mania.stage_name(i)}\n')
 
     # ---- classic characters
+    classic = False
     if not a.no_classic:
         sys.path.insert(0, os.path.join(HERE, 'classic'))
         import classic_chara
@@ -278,8 +322,12 @@ def main():
             print('classic characters:', flush=True)
             classic_outfit.configure(aa, a.mania, out, str(paths.BUILD / 'mania_work'))
             classic_outfit.build(cat)
+            classic = True
         else:
             print('classic characters: this Banana Mania install has no Classic Character Pack; skipped')
+    if sprites:         # after the Classic Outfit, which takes a row of the sprite table too (from the game's own table)
+        from sprites import TABLE_REL
+        sprites.write_table(out_switch, os.path.join(out_switch, TABLE_REL.replace('/', os.sep)) if classic else None)
     cat.save(os.path.join(out, 'catalog.json'))
 
     # what each stage has and what was left out, for whoever looks into a stage that plays wrong
@@ -304,12 +352,18 @@ def main():
     return 0
 
 
-def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, backgrounds, extras):
-    """The table rows and the music of the imported courses; returns (tables written, music lines, course lines).
+def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds, extras, ov, cat):
+    """The table rows, the pictures and the music of the imported courses; returns (tables written, music lines,
+    course lines, the Sprites object with the new pictures).
     backgrounds: {Mania background name: what background.py's convert returned} of the converted backgrounds;
-    extras: {stage id: {'areas': [[kind, x, y, z, radius]], ...}} from the stage converter."""
+    extras: {stage id: {'areas': [[kind, x, y, z, radius]], 'banana_count': n, ...}} from the stage converter;
+    ov: the overrides (overrides.py); cat: the catalog, which gets the new pictures."""
     from background import stage_fields
+    from sprites import ManiaThumbnails, Sprites
+    aa_switch = os.path.join(aa, 'Switch')
     db = Database(aa_switch, cache=str(paths.BUILD / 'mania_table_index.json'))
+    sprites, thumbs = Sprites(aa, cat, db), ManiaThumbnails(a.mania)
+    with_missions = {i for name, _, _, ids in courses if overrides.has_missions(ov, name, ids) for i in ids}
     stage_t = db.table('Stage')
     model = dict(stage_t.row(TEMPLATE_STAGE_ROW))
     scenery = {}
@@ -330,10 +384,19 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
         fields.update(scenery[WORLD_OF_BG.get(st['bg'], 1)])
         if st['bg'] in backgrounds:
             fields.update(stage_fields(backgrounds[st['bg']]))
-        fields.update(Name=rid, SceneID=str(scene_id(sid)), TimeLimit=mania.time_limit(sid), CaptionText=rid, ThumbnailSpriteID=0,
-                      MiniThumbnailSpriteID=0, MissionPoint=0, MissionPointMaster=0, MissionBanana=0, CheckpointStageAnimationFrame=0,
+        # the picture in Select Stage: Banana Mania's thumbnail of the stage (0 = "no image")
+        picture = thumbs.square(st.get('thumb'))
+        thumb = sprites.add(f'st{sid}', picture, out) if picture else 0
+        fields.update(Name=rid, SceneID=str(scene_id(sid)), TimeLimit=mania.time_limit(sid), CaptionText=rid, ThumbnailSpriteID=thumb,
+                      MiniThumbnailSpriteID=thumb, MissionPoint=0, MissionPointMaster=0, MissionBanana=0, CheckpointStageAnimationFrame=0,
                       CheckpointSwitchClass=-1, CheckpointSwitchAnimationSpeed=0, CheckpointSwitchAnimationFrame=0, AnimationType=0,
                       AnimationSpeedMultiplier=0.0)
+        # Rumble's three stage missions (clear within a time, collect so many bananas, take the Golden Banana), for
+        # the stages of a course that has them (overrides.json); the points are those of the game's own stages
+        if sid in with_missions:
+            t, perfect, count = overrides.missions(ov, sid, mania.time_limit(sid), extras.get(sid, {}).get('banana_count', 0))
+            fields.update(MissionTime=t, MissionTimeMaster=perfect, MissionBanana=count, MissionPoint=model['MissionPoint'],
+                          MissionPointMaster=model['MissionPointMaster'])
         stage_t.use(rid, **fields)
         # no sponsor logo under the start: a row as the game's own stages without one have it (the game reads the
         # row without a check, so there must be one)
@@ -368,14 +431,30 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
             group.rows.append({'_id': i, 'StageID': row_of[sid], 'NextStage': [0, 0], 'StageListID': 0, 'OverrideCourseID': 0,
                                '_empty': 0, '_order': i})
         lines.append(f'{LIST_BASE + k} {first} {len(ids)} {cid}')
-        world = WORLD_OF_BG.get(mania.stages[ids[0]]['bg'], 1)
-        look = course_t.row(world)
+        # The course's graphics are a Rumble world's (overrides.json; without a choice the world that stands in for
+        # the first stage's background): the picture beside the list, the title card of a loading stage, and when
+        # asked for the world icon. Its small picture is Banana Mania's thumbnail of the course when there is one.
+        co = ov['courses'].get(name, {})
+
+        def look(key, default):
+            r = by_id.get(co.get(key, default))
+            return r if r is not None and r['_id'] < first_course else None
+
+        theme = look('theme', None) or by_id[default_world(mania, ids)]
+        brochure, icon, card = look('brochure', theme['_id']) or theme, look('icon', 0), look('title', theme['_id'])
+        small = co.get('thumbnail', 'mania')
+        picture = thumbs.square(course_thumb(mania, name)) if small == 'mania' else None
+        if picture:
+            small = sprites.add('course_' + ''.join(ch if ch.isalnum() else '_' for ch in name), picture, out)
+        else:
+            small = (look('thumbnail', None) or theme)['ThumbnailSpriteID']
         course_t.use(cid, Name=cid, StageListID=LIST_BASE + k, CategoryID=COURSE_CATEGORY,
                      NextCourseID=cid + 1 if k + 1 < len(courses) else 0, PrevCourseID=0, SerialName=cid,
-                     ThumbnailSpriteID=look['ThumbnailSpriteID'], CaptionText=cid, AdventureTimerText=cid,
-                     BeginningTitle=list(look['BeginningTitle']), ClearMainMissionID=0, BrochureSpriteID=look['BrochureSpriteID'],
-                     AssistKind=2, IsEnabledCategory=[False, True, False, False, False, False, False], IsStageMissionEnabled=False,
-                     IconSpriteID=0)
+                     ThumbnailSpriteID=small, CaptionText=cid, AdventureTimerText=cid,
+                     BeginningTitle=list(card['BeginningTitle']) if card else ['', '', ''], ClearMainMissionID=0,
+                     BrochureSpriteID=brochure['BrochureSpriteID'], AssistKind=2,
+                     IsEnabledCategory=[False, True, False, False, False, False, False],
+                     IsStageMissionEnabled=overrides.has_missions(ov, name, ids), IconSpriteID=icon['IconSpriteID'] if icon else 0)
         for lang, t in ctext_t.items():
             t.use(cid, Name=title, SerialName=prefix, CaptionText=t.row(1)['CaptionText'], AdventureTimerText=title.upper())
         for i in range(len(ids)):
@@ -459,7 +538,7 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
         if classic_cues:
             print(f'Classic Soundtrack: {sum(1 for s in sheets if s.endswith("_dx"))} cue sheets, the original music is on offer')
     written = db.save(out_switch)
-    return written, music_lines, lines
+    return written, music_lines, lines, sprites
 
 
 def add_scenes(cat, stage_ids, out, extras):

@@ -45,6 +45,7 @@ MATERIAL_MODELS = {'opaque': ('w01', 'bg_stg_w01_island02'), 'cutout': ('w01', '
 # Mania's conveyor manager scrolls a belt's texture by its `m_uvSpeed` times a constant of the code; with this value
 # the texture of SMB1's Conveyers (uv speed 100, belt speed 3) moves as fast as the belt carries the ball
 BELT_UV_SPEED = 0.0075
+BUNCH = 10                      # what a banana bunch counts for
 WORMHOLE_DONOR = ('bg_stg_w06_215', 'wormhole_a1')      # a stage of the game with a wormhole, and the object's name
 BELT_DONOR = 'bg_stg_w02_006'                           # a stage that depends on the bundle of the belt shader
 GOAL_MODEL_NAME = 'mania_goal'  # the object under a goal that holds Mania's goal model (mania.c looks for it)
@@ -832,8 +833,11 @@ class Converter:
         self.template = os.path.join(aa_switch, f'scene_{TEMPLATE_STAGE}_scenes_all.bundle')
         self.materials = MaterialModels(aa_switch)
 
-    def convert(self, stage_bundle, out_path, identity=None, log=None):
+    def convert(self, stage_bundle, out_path, identity=None, log=None, gold=None):
         """Convert Mania's `stage_bundle` and write the Rumble bundle to out_path.
+
+        gold: the path below the stage root of the banana that becomes the stage's Golden Banana (the one of
+        Rumble's third stage mission; mania\overrides.json), or None for a stage without one.
 
         identity: None to keep the template's names (the result replaces World 1 Stage 1: a test aid), or
         (bundle name, scene path, internal file name) for a new stage. Returns a dict of facts about the stage."""
@@ -1095,7 +1099,7 @@ class Converter:
                 conveyors.append((n, go))
             banana = n.component('BananaPos')
             if banana and not visual:
-                bananas.append((go, banana[2]['m_Kind']))
+                bananas.append((go, banana[2]['m_Kind'], n.path(m.root)))
             for kind in kinds - {'Transform', 'MeshFilter', 'MeshRenderer', 'CollisionStagePart', 'BananaPos', 'Animator', 'GravityTilt',
                                  'MonoBehaviour', 'CollisionBumper', 'Bumper', 'LODGroup', 'MgStageSwitch', 'CollisionSwitchUpper',
                                  'MgTRSSync', 'StageMovObjManager', 'MgStageSwitchManager', 'MainGameStage', 'MgSeesaw', 'MgConveyer',
@@ -1525,8 +1529,15 @@ class Converter:
         centre, extent = (lo + hi) / 2, (hi - lo) / 2
         mgs['m_GoalColiList'] = goal_colis
         mgs['m_StageAnimators'] = [pptr(a) for a in animators]
-        mgs['m_BananaTransformList'] = [{'transform': pptr(sc.tr_of_go[g]), 'kind': int(k), 'isBotIgnore': 0, 'isNoShadow': 0}
-                                        for g, k in bananas if k in (0, 1)]
+        # kinds as in Mania: 0 single, 1 bunch, (2 rotten: left out,) 3 golden. Mania's stages have no golden banana;
+        # the one a person chose in the editor takes the place of a banana
+        mgs['m_BananaTransformList'] = [{'transform': pptr(sc.tr_of_go[g]), 'kind': 3 if p == gold else int(k), 'isBotIgnore': 0,
+                                         'isNoShadow': 0} for g, k, p in bananas if k in (0, 1)]
+        if len([e for e in mgs['m_BananaTransformList'] if e['kind'] == 3]) > 1:      # two bananas of one path: the first
+            first = next(i for i, e in enumerate(mgs['m_BananaTransformList']) if e['kind'] == 3)
+            for (g, k, p), e in list(zip([b for b in bananas if b[1] in (0, 1)], mgs['m_BananaTransformList']))[first + 1:]:
+                e['kind'] = int(k)
+        kinds = [e['kind'] for e in mgs['m_BananaTransformList']]
         mgs['m_MeshBounds'] = {'m_Center': v3(centre), 'm_Extent': v3(extent)}
         fb = m.info.get('m_FalloutBounds')
         ring = float(m.info.get('m_ringoutY', lo[1] - 10.0))
@@ -1552,7 +1563,8 @@ class Converter:
         size = sc.save(out_path, *(identity or (None, None, None)))
         stats.update(goals=len(goals), bananas=len(mgs['m_BananaTransformList']), textures=len(tex_ids), materials=len(mat_ids),
                      meshes=len(mesh_ids), bytes=size, bounds=(lo.round(2).tolist(), hi.round(2).tolist()), ringout=ring,
-                     has_start=start_node is not None, donor_stages=sorted(donors))
+                     has_start=start_node is not None, donor_stages=sorted(donors),
+                     banana_count=kinds.count(0) + BUNCH * kinds.count(1), gold=gold if 3 in kinds else None)
         say(stats)
         return stats
 

@@ -35,6 +35,7 @@
 449c770   Wonder.CRM.AdventureUtil::UpdateBestTimeStatus
 449c8b0   Wonder.CRM.AdventureUtil::StartTimeAttack
 449c9d0   Wonder.CRM.AdventureUtil::FinishTimeAttack
+4451cd0   Wonder.Util+Mission::GetStageMissionCompletedNumOnWorld   (imported courses' missions stay out of the total)
 46d8f20   Wonder.UI.MainMenu.MainGame.FlowCourseSelect+<SetupCourseSelect>d__19::MoveNext   (the Mania tab of Select World)
 46d8050   Wonder.UI.MainMenu.MainGame.FlowCourseSelect+FlowCourseSelectModeBase::onUpdateTabSelectedIdx
 443bc40   Wonder.Util+Adventure::GetCourseCategory()

@@ -77,7 +77,8 @@ class ManiaData:
                     e = {'id': r.i32(), 'prefab': r.text(), 'bg': r.text(), 'bgroot': r.text(), 'kind': r.text()}
                     e['limits'] = [r.i32() for _ in range(r.i32())]
                     e['light'], e['bgm'] = r.text(), r.text()
-                    for _ in range(4):
+                    e['thumb'] = r.text()                   # 'UI/thumbnail/Common/t_tmb_st1001.tga'
+                    for _ in range(3):                      # the guide assets
                         r.text()
                     e['anim_start'] = r.text()
                     e['anim_shift'] = r.i32()
@@ -88,7 +89,8 @@ class ManiaData:
                 c = {'kind': r.text(), 'name': r.text()}
                 r.pptr()
                 c['text_key'] = r.text()
-                r.text(); r.text(); r.text()
+                c['thumb'] = r.text()                       # 'UI/thumbnail/Common/t_tmb_world_01.tga', or empty
+                r.text(); r.text()
                 c['next'] = r.text()
                 c['stages'] = []
                 for _ in range(r.i32()):

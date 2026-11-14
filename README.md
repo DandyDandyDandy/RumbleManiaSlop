@@ -52,6 +52,14 @@ Afterwards `build` and the files in `input` are not needed (`setup.cmd --clean`)
 too: the imported stages are in `game\mania`. Deleting that folder turns the game back into plain Banana Rumble;
 `setup.cmd --only mania` makes it again.
 
+## The level editor
+
+Banana Mania's stages have no Golden Banana and no mission times, and its worlds none of Banana Rumble's menu
+graphics. `editor.cmd` opens a page in your browser where you set them: pick a stage, click one of its bananas to
+make it the Golden Banana, type the challenge time, choose which Rumble world an imported world borrows its
+pictures from, and look at a preview of Select World and Select Stage. Your choices are kept in
+`mania\overrides.json`; "Apply to game" puts them into the game (close the game first).
+
 ## Known problems
 
 Those of RumbleSlop, and for the imported stages:
