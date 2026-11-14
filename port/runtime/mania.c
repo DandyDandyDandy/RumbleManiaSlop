@@ -244,6 +244,29 @@ int rt_hook_43c37d0(Cpu *c) {
     return 1;
 }
 
+// Play statistics (Wonder.CRM: what the Switch game uploads to the publisher). AdventureSaveData keeps one flag
+// per stage in bool[Course.eID count * 10] arrays and one counter object per course in arrays of that count, and
+// the four AdventureUtil functions below index them with course * 10 + stage (or the course) without a check:
+// the game is built without array bounds checks. An imported course has an id past the enum, so finishing an
+// imported stage wrote a byte into whatever followed the array in the heap - usually the next array's class
+// pointer, which the engine's next unused-asset sweep (il2cpp's liveness walk between scenes) then followed
+// into unmapped memory. It only happened with a new best time (UpdateBestTimeStatus), hence "now and then".
+// The statistics are not sent anywhere on PC; for an imported course the call is dropped (BR_MANIA_LOG logs it).
+//   UpdateMissionStatus(course, stage, save), UpdateBestTimeStatus(course, stage, kind, save),
+//   StartTimeAttack(course, kind), FinishTimeAttack(course, kind)   (all static; x0 = course)
+static int crm_imported(Cpu *c, const char *what) {
+    static int on = -1;
+    if (g_ncourses < 0) load_courses();
+    if (!g_first_id || (uint32_t)c->x[0] < g_first_id) return 0;
+    if (on < 0) on = getenv("BR_MANIA_LOG") != NULL;
+    if (on) rt_log("mania: play statistics: %s dropped for imported course %u (second argument %d)", what, (unsigned)c->x[0], (int)c->x[1]);
+    return 1;
+}
+int rt_hook_446c3f0(Cpu *c) { return crm_imported(c, "UpdateMissionStatus"); }
+int rt_hook_446c4d0(Cpu *c) { return crm_imported(c, "UpdateBestTimeStatus"); }
+int rt_hook_446c610(Cpu *c) { return crm_imported(c, "StartTimeAttack"); }
+int rt_hook_446c730(Cpu *c) { return crm_imported(c, "FinishTimeAttack"); }
+
 // The world picker of local co-op and of online rooms lists the chain of worlds (Course.NextCourseID) from the
 // first one up to the "highest unlocked" one: UIChoicesItemData_Factory.getUnlockedCourseList(this, highest).
 // Online, `highest` is the lowest of the players' own values. Imported courses hang at the end of the chain and are

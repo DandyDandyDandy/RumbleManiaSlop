@@ -31,6 +31,10 @@
 426a5b0   Wonder.MainGameBg::Awake   (stages that move their background)
 45605b0   Wonder.UI.Choices.UIChoicesItemData_Factory::getUnlockedCourseList
 43c37d0   Wonder.SaveUserParam+AdventureParam::GetAdvModeHighestUnlockID
+446c3f0   Wonder.CRM.AdventureUtil::UpdateMissionStatus   (play statistics: no slot for an imported course)
+446c4d0   Wonder.CRM.AdventureUtil::UpdateBestTimeStatus
+446c610   Wonder.CRM.AdventureUtil::StartTimeAttack
+446c730   Wonder.CRM.AdventureUtil::FinishTimeAttack
 42ab070   Wonder.MainGameSequence::setState   (bonus stages)
 42aff20   Wonder.MainGameSequence::updateHurryUp   (bonus stages)
 4308520   Wonder.MgStageSwitchController::Request(eState, int, int, bool, float)   (BR_MANIA_LOG)

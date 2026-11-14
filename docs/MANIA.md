@@ -440,8 +440,16 @@ one for a test import).
   games with different imports do not meet;
 * the hooks described above for the highest unlocked world, the end of an imported world, bonus stages and the
   placement of a background;
+* play statistics: `Wonder.CRM.AdventureUtil.UpdateMissionStatus`, `UpdateBestTimeStatus`, `StartTimeAttack` and
+  `FinishTimeAttack` do nothing for an imported course. They keep flags and counters for the publisher's
+  statistics upload in arrays sized by the `Course.eID` enum (27 courses, 270 stages) and index them with
+  `course * 10 + stage` unchecked (the game has no array bounds checks), so a new best time on an imported stage
+  (course 27 and up) wrote into the object behind the array. The damage showed later and elsewhere: an access
+  violation in `il2cpp::vm::Liveness::FromRoot` on an engine worker thread during the next unused-asset sweep.
+  **Any other code of the game that indexes a fixed array by course or stage number has the same trap**; the
+  stress switch `BR_UNLOAD_EVERY` (`docs\TECHNICAL.md`) makes such damage show within one stage;
 * `BR_MANIA_LOG`: log lines for switch presses, seesaw touches, the BGM cue of a stage, the world picker's
-  list and bonus stage decisions.
+  list, bonus stage decisions and dropped statistics calls.
 
 ## Testing
 
