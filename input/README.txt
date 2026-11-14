@@ -17,6 +17,7 @@ Banana Mania (optional)
       path=C:\Program Files (x86)\Steam\steamapps\common\smbbm
       levels=no        do not import the stages
       music=no         import the stages without Banana Mania's music
+      backgrounds=no   import the stages without Banana Mania's backgrounds (they get a Rumble world's scenery)
       classic=no       do not import the classic characters
 
   Changing mania.txt and running setup.cmd again redoes only the import.

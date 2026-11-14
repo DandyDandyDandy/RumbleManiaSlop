@@ -48,8 +48,9 @@ material alpha below one. The time-dependent part of a scroll goes into `_UVscro
 the formerly lit materials becomes a constant per background multiplied into `_Color`.
 
 Not converted: particle systems, the collision twin, the flow-map wobble, mask textures, flip book animation, toon
-ramp / rim / specular / cube-map reflections, Mania's post-processing, the 29 stages that place the background
-somewhere else (`BgRoot`; `moved_stages` lists them).
+ramp / rim / specular / cube-map reflections, Mania's post-processing. The 29 stages that place the background
+somewhere else (`BgRoot`) are listed in the result's `moved_stages`; build.py hands them to the port, which moves
+the scenery's root (mania.c).
 
 Every number that may want tuning in the running game is a constant below; `BackgroundConverter.convert` takes each
 of them as a keyword argument in lower case (`convert('Smb1_Jungle', out, fog='volume', light_exposure=0.5)`).
@@ -88,12 +89,13 @@ FAR_TEMPLATE = 'wld05_w05_003'  # the Rumble far scene that is emptied and refil
 LIGHT_TEMPLATE = 'lgt01_w01_001'    # the Rumble lighting scene a background without an entry below is made from
 # Lighting scene template per background: what is kept of it is the post-processing Volume profile (Gradient,
 # ColorCurves, Beautify, SC Fog), the reflection cubemap (what the ball mirrors) and the shadow settings. The choice
-# follows build.py's WORLD_OF_BG (the Rumble world that stood in for the background so far). To judge Mania's own
+# follows build.py's WORLD_OF_BG (the Rumble world that stood in for the background so far), except Smb1_Masters:
+# world 9's bloom washes its bright sky and floor out. To judge Mania's own
 # colours without a world's grading on top, use one neutral template for all: light_template='lgt01_w01_001'.
 LIGHT_TEMPLATE_OF_BG = {
     'Smb1_Jungle': 'lgt01_w01_001', 'Smb1_Water': 'lgt02_w02_001', 'Smb1_Night': 'lgt06_w06_001', 'Smb1_Sunset': 'lgt04_w04_001',
     'Smb1_Space': 'lgt10_w10_001', 'Smb1_Sands': 'lgt05_w05_001', 'Smb1_Ice': 'lgt07_w07_001', 'Smb1_Storm': 'lgt08_w08_001',
-    'Smb1_Masters': 'lgt09_w09_001', 'Smb1_Bonus': 'lgt03_w03_001',
+    'Smb1_Masters': 'lgt01_w01_001', 'Smb1_Bonus': 'lgt03_w03_001',
     'Smb2_Jungle': 'lgt01_w01_001', 'Smb2_Lava': 'lgt04_w04_001', 'Smb2_Water': 'lgt02_w02_001', 'Smb2_Whale': 'lgt03_w03_001',
     'Smb2_Park': 'lgt05_w05_001', 'Smb2_Pot': 'lgt08_w08_001', 'Smb2_Bubble': 'lgt07_w07_001', 'Smb2_Gear': 'lgt09_w09_001',
     'Smb2_Space': 'lgt10_w10_001', 'Smb2_Electric': 'lgt06_w06_001', 'Smb2_Bonus': 'lgt03_w03_001',
@@ -122,13 +124,20 @@ COLOR_ALPHA_TO_VERTEX = True    # True: a blended material's colour alpha below 
 UV_SCROLL = True            # True: scrolling layers get `_UVscroll` 1 and `_Speed`. False: they stand still
 SCROLL_SCALE = (1.0, 1.0)   # multiplies `_Speed` (u, v), in UV units per second: the place to fix a scroll that runs
 #                             the wrong way round or at the wrong speed (assumed: uv + `_Speed` x seconds)
-LIGHT_BAKE = 'lights'       # what Mania's light on the formerly lit materials becomes, multiplied into `_Color`:
-#                             'lights' = ambient + Mania's `Bg` lights (the three constants below); a number or an
-#                             (r, g, b) in linear light = that constant for every background
+LIGHT_BAKE = 'vertex'       # what Mania's light on the formerly lit materials becomes:
+#                             'vertex' = computed per vertex from the normal (Mania's ambient light in that direction
+#                             + its `Bg` lights x N.L) and multiplied into the vertex colours of the mesh copy, so
+#                             the scenery has lit and shadowed sides as in Mania (no cast shadows; things that move
+#                             keep the light of their rest pose);
+#                             'lights' = one constant per background, multiplied into `_Color` (ambient + the `Bg`
+#                             lights, the three constants below): flat; also what a mesh gets whose layout is not
+#                             understood; a number or an (r, g, b) in linear light = that constant for every background
+LIGHT_VERTEX_RANGE = 2.0    # 'vertex': the brightest light a vertex colour can hold (8 bits: stored as light / this,
+#                             and `_Color` is multiplied by it)
 LIGHT_BAKE_OF_BG = {}       # per background name: a number or (r, g, b) that replaces LIGHT_BAKE for it
 LIGHT_BAKE_NDOTL = 0.5      # 'lights': the part of each `Bg` light that reaches a surface (the mean of N.L)
-LIGHT_BAKE_AMBIENT = 1.0    # 'lights': the part of Mania's ambient light that is added
-LIGHT_BAKE_GAIN = 1.0       # 'lights': multiplies the result
+LIGHT_BAKE_AMBIENT = 1.0    # 'lights', 'vertex': the part of Mania's ambient light that is added
+LIGHT_BAKE_GAIN = 1.0       # 'lights', 'vertex': multiplies the result
 LIGHT_BAKE_MAX = 1.0        # 'lights': the brightest channel is brought down to this, the hue kept (Mania's tone curve
 #                             folds light above one back; here an unlit colour above one just clips and blooms)
 FOG_ON_MATERIALS = True     # True: `_FogOn` 1 on the materials Mania fogs (not TextureVa, not FOG_OFF). False: 0 on all
@@ -142,6 +151,8 @@ FIND_MOVED_STAGES = True    # read the BgRoot of each stage of the background (t
 # ------------------------------------------------------------------------------------- tunables: lighting scene
 LIGHT_INTENSITY = 'mania'   # 'mania': intensities from Mania (below); 'template': keep the template's intensities and
 #                             take only colours and directions from Mania
+LIGHT_DIRECTIONS = 'mania'  # 'mania': the lights point as in Mania; 'template': as in the template
+LIGHT_COLORS = 'mania'      # 'mania' / 'template', likewise for the lights' colours
 LIGHT_GAMMA_INTENSITY = True    # Mania multiplies colour x intensity before the gamma decode (GraphicsSettings
 #                                 m_LightsUseLinearIntensity = 0), URP after it: a Mania intensity i is i^2.2 in URP
 LIGHT_EXPOSURE = 0.6        # multiplies all of Mania's light (the lights and the ambient colours): Mania renders
@@ -170,6 +181,9 @@ FOG = 'render_settings'     # 'render_settings': RenderSettings linear fog with 
 #                             'volume': the SC Post Effects Fog of the Volume profile in linear mode with Mania's
 #                             values, RenderSettings fog off (a screen effect: it fogs the domes too).
 #                             'template': leave both as the template has them. 'off': no fog at all
+FOG_DENSITY = 0.0001        # RenderSettings.m_FogDensity. Linear fog does not use it, but the game's shaders for bananas,
+#                             characters and stage objects do: with a template's 0.01 everything near the camera was
+#                             hazed in the fog colour. Keep it near zero
 FOG_DISTANCE_SCALE = 1.0    # multiplies Mania's fog start and end
 FOG_VOLUME_MIN_END = 0.0    # 'volume': the fog end is at least this far (push it past the sky dome, 1400 .. 30000)
 SKY_COLOR = 'fog'           # the flat colour of the skybox cubemap (seen only through gaps of the dome): 'fog' =
@@ -208,9 +222,10 @@ BLEND_ONE, BLEND_ZERO, BLEND_SRC_ALPHA, BLEND_ONE_MINUS_SRC_ALPHA = 1, 0, 5, 10
 SIGNATURES = [('CollisionStagePart', 'm_CollisionStage'), ('GravityTilt', 'm_IsEnableFixedUpdate'), ('PostProcessingHolder', 'm_ProfileSwitch'),
               ('KeyLightHolder', 'm_keyLight'), ('MgBgOptimizer', 'm_deactiveNameList')]
 VERTEX_FORMATS = {0: '<f4', 1: '<f2', 2: 'u1', 3: 'i1', 4: '<u2', 5: '<i2', 6: 'u1', 7: 'i1', 8: '<u2', 9: '<i2', 10: '<u4', 11: '<i4'}
-CHANNEL_COLOR, CHANNEL_UV0 = 3, 4
+CHANNEL_NORMAL, CHANNEL_COLOR, CHANNEL_UV0 = 1, 3, 4
 NO_STREAM = {'offset': 0, 'size': 0, 'path': ''}
 IDENTITY_UV = ((1.0, 1.0), (0.0, 0.0), (0.0, 0.0))
+PLAIN_OP = ('raw', 1.0, IDENTITY_UV, None)
 
 
 # ------------------------------------------------------------------------------------------------ small things
@@ -341,6 +356,20 @@ def ambient_colors(rs):
     return [c * rs.get('m_AmbientIntensity', 1.0) for c in cols]
 
 
+def ambient_at(rs, normals):
+    """Mania's ambient light (linear RGB, [n, 3]) on surfaces with the world normals `normals` ([n, 3], unit)."""
+    x, y, z = normals[:, 0], normals[:, 1], normals[:, 2]
+    if rs['m_AmbientMode'] in (1, 3):
+        sky, equator, ground = ambient_colors(rs)
+        up, down = np.clip(y, 0, 1)[:, None], np.clip(-y, 0, 1)[:, None]
+        return equator * (1 - up - down) + sky * up + ground * down
+    probe = rs['m_AmbientProbe']
+    sh = np.array([probe[f'sh[{i:2d}]'] for i in range(27)], dtype=np.float64).reshape(3, 9)
+    out = np.stack([c[3] * x + c[1] * y + c[2] * z + c[0] - c[6] + c[4] * x * y + c[5] * y * z + 3.0 * c[6] * z * z + c[7] * z * x
+                    + c[8] * (x * x - y * y) for c in sh], axis=1)
+    return np.maximum(out, 0) * rs.get('m_AmbientIntensity', 1.0)
+
+
 def mania_lights(bg):
     """The lights of the Light_ prefab by what they light: {'key': [...], 'back': [...], 'chara': [...], 'bg': [...]},
     each a dict {color (sRGB), intensity, rot (world quaternion), dir, shadows, strength, name}. Mania's layers: 15
@@ -444,21 +473,44 @@ def submesh_vertices(tree):
             for sm in tree['m_SubMeshes']]
 
 
-def edited_mesh(tree, ops):
+def with_color_channel(tree):
+    """A copy of the Mesh dict `tree` with a white vertex colour channel (four bytes at the end of stream 0), or None
+    when the layout is not understood."""
+    layout = mesh_layout(tree)
+    if layout is None:
+        return None
+    n, streams, chans = layout
+    vd = tree['m_VertexData']
+    data = np.frombuffer(bytes(vd['m_DataSize']), dtype=np.uint8)
+    out = bytearray()
+    for s, (off, stride) in enumerate(streams):
+        out += b'\0' * (-len(out) % 16)
+        block = data[off:off + n * stride].reshape(n, stride)
+        if s == 0:
+            block = np.concatenate([block, np.full((n, 4), 255, dtype=np.uint8)], axis=1)
+        out += block.tobytes()
+    new_chans = [dict(c) for c in chans]
+    new_chans[CHANNEL_COLOR] = dict(chans[CHANNEL_COLOR], stream=0, offset=streams[0][1], format=2, dimension=4)
+    return dict(tree, m_VertexData=dict(vd, m_Channels=new_chans, m_DataSize=bytes(out)))
+
+
+def edited_mesh(tree, ops, light=None):
     """A copy of the (Rumble-side) Mesh dict `tree` with vertex colours and UV0 rewritten.
 
-    ops: per sub-mesh (vertex colour rule, alpha factor, (uv scale, uv offset, uv.w factor)): the vertices of that
-    sub-mesh get colour' = rule(colour) with alpha x factor, and uv' = uv x scale + offset + uv.w x factor (uv.w is
-    1 where UV0 has fewer than four components, which is what the GPU feeds a shader that asks for it).
+    ops: per sub-mesh (vertex colour rule, alpha factor, (uv scale, uv offset, uv.w factor), light key): the vertices
+    of that sub-mesh get colour' = rule(colour) with alpha x factor, and uv' = uv x scale + offset + uv.w x factor
+    (uv.w is 1 where UV0 has fewer than four components, which is what the GPU feeds a shader that asks for it).
+    With a light key (not None) the colour is also multiplied by light(normals, key), an [n, 3] array in 0..1.
     Returns (dict, number of vertices two sub-meshes wanted differently), or None when the layout is not understood."""
     layout = mesh_layout(tree)
     if layout is None:
         return None
     data = np.frombuffer(bytes(tree['m_VertexData']['m_DataSize']), dtype=np.uint8).copy()
     col, uv = read_channel(data, layout, CHANNEL_COLOR), read_channel(data, layout, CHANNEL_UV0)
+    normals = read_channel(data, layout, CHANNEL_NORMAL)
     done = np.zeros(layout[0], dtype=bool)
     clash = 0
-    for verts, (rule, alpha, (scale, offset, wfac)) in zip(submesh_vertices(tree), ops):
+    for verts, (rule, alpha, (scale, offset, wfac), lit) in zip(submesh_vertices(tree), ops):
         verts = verts[verts < layout[0]]
         clash += int(done[verts].sum())
         verts = verts[~done[verts]]
@@ -473,6 +525,8 @@ def edited_mesh(tree, ops):
                 c[:] = 1.0
             if c.shape[1] >= 4:
                 c[:, 3] *= alpha
+            if lit is not None and light is not None and normals is not None and normals.shape[1] >= 3:
+                c[:, :3] *= light(normals[verts, :3], lit)
             col[verts] = c
         if uv is not None and uv.shape[1] >= 2:
             if uv.shape[1] >= 4:
@@ -831,6 +885,20 @@ class BackgroundConverter:
                  'queues': {}}
         bake = self.light_bake(info['name'], rs, lights, opt)
         stats['light_bake'] = [round(float(x), 3) for x in bake]
+        vertex_lit = opt.light_bake_of_bg.get(info['name'], opt.light_bake) == 'vertex'
+        bg_lights = [(np.asarray(x['dir'], dtype=np.float64), light_energy(x, opt)) for x in lights['bg']]
+        stats['vertex_lit'] = 0
+
+        def vertex_light(normals, rot):
+            """Mania's light on vertices with the mesh normals `normals` of a node with the world rotation `rot`, as
+            the factor that goes into the vertex colour (light / light_vertex_range, 0..1)."""
+            n = np.array([qrot(rot, (1.0, 0.0, 0.0)), qrot(rot, (0.0, 1.0, 0.0)), qrot(rot, (0.0, 0.0, 1.0))], dtype=np.float64)
+            world = normals @ n                 # rows of n are the images of the axes
+            world /= np.maximum(np.linalg.norm(world, axis=1, keepdims=True), 1e-9)
+            out = ambient_at(rs, world) * opt.light_bake_ambient
+            for direction, energy in bg_lights:
+                out = out + np.maximum(-(world @ direction), 0.0)[:, None] * energy
+            return np.clip(out * opt.light_bake_gain / opt.light_vertex_range, 0.0, 1.0)
         shader_cab, shader_pid = unlit_shader(self.aa)
         model = material_model(self.aa)
         tex_ids, mat_ids, mat_info, mesh_base, mesh_ids, clip_ids = {}, {}, {}, {}, {}, {}
@@ -957,10 +1025,11 @@ class BackgroundConverter:
             mat_info[key] = d
             return d
 
-        def material(d, alpha_to_vertex):
+        def material(d, alpha_to_vertex, light_in_vertex):
             """The bg_unlit_abd material for the Mania material described by `d`; its path id in the shared file.
-            alpha_to_vertex: the colour's alpha is in the mesh copy's vertex alpha, so the material's is one."""
-            key = (d['key'], alpha_to_vertex)
+            alpha_to_vertex: the colour's alpha is in the mesh copy's vertex alpha, so the material's is one.
+            light_in_vertex: Mania's light is in the mesh copy's vertex colours (divided by light_vertex_range)."""
+            key = (d['key'], alpha_to_vertex, light_in_vertex)
             if key in mat_ids:
                 return mat_ids[key]
             kind, rule = d['kind'], d['rule']
@@ -990,7 +1059,7 @@ class BackgroundConverter:
             tint = d['tint'].copy()
             lin = srgb_to_linear(tint[:3])
             if rule['lit']:
-                lin = lin * bake
+                lin = lin * (opt.light_vertex_range if light_in_vertex else bake)
                 stats['lit'] += 1
             alpha, cutoff = float(tint[3]), d['cutoff']
             if kind == 'additive' and d['src'] == BLEND_SRC_ALPHA:      # rgb x alpha is added: the alpha can be in the rgb
@@ -1017,12 +1086,13 @@ class BackgroundConverter:
             mat_ids[key] = sh.add('Material', new)
             return mat_ids[key]
 
-        def mesh(sf, ref, slots):
-            """The Mesh for a renderer; (path id, per material slot: is the colour alpha in the vertices).
-            slots: the renderer's materials as `describe` gives them."""
+        def mesh(sf, ref, slots, rot):
+            """The Mesh for a renderer; (path id, per material slot: is the colour alpha in the vertices, per slot: is
+            Mania's light in the vertices). slots: the renderer's materials as `describe` gives them; rot: the
+            node's world rotation."""
             got = m.get(sf, ref)
             if got is None:
-                return 0, [False] * len(slots)
+                return 0, [False] * len(slots), [False] * len(slots)
             key, t, msf, _ = got
             if key not in mesh_base:
                 new = overlay(sh.template('Mesh'), t)
@@ -1033,6 +1103,13 @@ class BackgroundConverter:
                 chans = vd['m_Channels']
                 mesh_base[key] = (new, bool(chans[CHANNEL_COLOR]['dimension'] & 15), bool(chans[CHANNEL_UV0]['dimension'] & 15))
             new, has_color, has_uv = mesh_base[key]
+            want_light = vertex_lit and any(d and d['rule']['lit'] for d in slots)
+            if want_light and not has_color:    # lit in Mania but without vertex colours: give it white ones
+                colored = with_color_channel(new)
+                if colored is not None:
+                    mesh_base[key] = (colored, True, has_uv)
+                    new, has_color, has_uv = mesh_base[key]
+            rot_key = tuple(round(float(x), 4) for x in rot)
             # a blended material's alpha goes into the vertices where the mesh has vertex colours (an additive
             # material's goes into its RGB, a cut-out's into the threshold: see `material`)
             in_vertex = [bool(d and opt.color_alpha_to_vertex and opt.bake_vertex_colors and has_color and d['tint'][3] != 1.0
@@ -1042,14 +1119,16 @@ class BackgroundConverter:
                 j = min(i, len(slots) - 1)
                 d = slots[j] if slots else None
                 if d is None:
-                    ops.append(('raw', 1.0, IDENTITY_UV))
+                    ops.append(PLAIN_OP)
                 else:
                     ops.append((d['rule']['vc'] if opt.bake_vertex_colors and has_color else 'raw', float(d['tint'][3]) if in_vertex[j] else 1.0,
-                                d['uv'] if opt.bake_uvs and has_uv else IDENTITY_UV))
+                                d['uv'] if opt.bake_uvs and has_uv else IDENTITY_UV,
+                                rot_key if want_light and has_color and d['rule']['lit'] else None))
             ops = tuple(ops)
+            lit = [bool(d) and ops[min(i, len(ops) - 1)][3] is not None if ops else False for i, d in enumerate(slots)]
             if (key, ops) not in mesh_ids:
-                plain = all(o == ('raw', 1.0, IDENTITY_UV) for o in ops)
-                edit = None if plain else edited_mesh(new, ops)
+                plain = all(o == PLAIN_OP for o in ops)
+                edit = None if plain else edited_mesh(new, ops, vertex_light)
                 if edit is None:                    # the mesh as it is (one object for all who want it so)
                     if not plain:
                         count('dropped', 'mesh layout not understood (colours / UVs not baked)')
@@ -1062,9 +1141,10 @@ class BackgroundConverter:
                     stats['color_baked'] += any(o[0] != 'raw' or o[1] != 1.0 for o in ops)
                     stats['uv_baked'] += any(o[2] != IDENTITY_UV for o in ops)
                     stats['alpha_to_vertex'] += any(o[1] != 1.0 for o in ops)
+                    stats['vertex_lit'] += any(o[3] is not None for o in ops)
                     mesh_ids[(key, ops)] = (sh.add('Mesh', edit[0]), True)
             pid, edited = mesh_ids[(key, ops)]
-            return pid, in_vertex if edited else [False] * len(slots)
+            return pid, in_vertex if edited else [False] * len(slots), lit if edited else [False] * len(slots)
 
         def controller(sf, ref):
             """Mania's AnimatorController (one layer, one state, one clip) with its clips, carried over as stage
@@ -1110,13 +1190,13 @@ class BackgroundConverter:
                 count('skipped', 'MeshRenderer without a mesh')
             if draws(n):
                 slots = [describe(m.main, x) for x in mr[2]['m_Materials']]
-                mesh_id, in_vertex = mesh(m.main, mf[2]['m_Mesh'], slots)
+                mesh_id, in_vertex, lit = mesh(m.main, mf[2]['m_Mesh'], slots, world_rotation(n))
                 sc.add_component(go, 'MeshFilter', {'m_Mesh': sc.shared_ref(mesh_id)})
                 r = s.template('MeshRenderer')
                 r.update(m_Enabled=bool(mr[2]['m_Enabled']), m_CastShadows=0, m_ReceiveShadows=0, m_StaticShadowCaster=0, m_LightProbeUsage=0,
                          m_ReflectionProbeUsage=0, m_LightmapIndex=65535, m_LightmapIndexDynamic=65535,
                          m_LightmapTilingOffset={'x': 1.0, 'y': 1.0, 'z': 0.0, 'w': 0.0}, m_LightmapTilingOffsetDynamic={'x': 1.0, 'y': 1.0, 'z': 0.0, 'w': 0.0},
-                         m_Materials=[sc.shared_ref(material(d, v)) if d else dict(NULL) for d, v in zip(slots, in_vertex)],
+                         m_Materials=[sc.shared_ref(material(d, v, l)) if d else dict(NULL) for d, v, l in zip(slots, in_vertex, lit)],
                          m_StaticBatchInfo={'firstSubMesh': 0, 'subMeshCount': 0}, m_StaticBatchRoot=dict(NULL), m_ProbeAnchor=dict(NULL),
                          m_LightProbeVolumeOverride=dict(NULL), m_SortingLayerID=0, m_SortingLayer=0, m_SortingOrder=int(mr[2].get('m_SortingOrder', 0)),
                          m_AdditionalVertexStreams=dict(NULL), m_EnlightenVertexStream=dict(NULL))
@@ -1202,8 +1282,10 @@ class BackgroundConverter:
             col, energy, rot = merged_light(src, opt)
             if opt.light_intensity == 'mania':
                 t['m_Intensity'] = float(min(energy * opt.light_exposure * getattr(opt, 'light_scale_' + role), opt.light_intensity_max))
-            t['m_Color'] = color(col, t['m_Color']['a'])
-            sc.set_world_rotation(go, rot)
+            if opt.light_colors == 'mania':
+                t['m_Color'] = color(col, t['m_Color']['a'])
+            if opt.light_directions == 'mania':
+                sc.set_world_rotation(go, rot)
             if role == 'key' and opt.shadow_strength != 'template':
                 t['m_Shadows']['m_Strength'] = float(src[0]['strength'] if opt.shadow_strength == 'mania' else opt.shadow_strength)
             stats['lights'][role] = {'from': [x['name'] for x in src], 'color': [round(float(x), 3) for x in col], 'intensity': round(t['m_Intensity'], 3),
@@ -1243,7 +1325,7 @@ class BackgroundConverter:
             stats['fog_note'] = f'{template} has no SC Fog in its Volume profile: RenderSettings fog instead'
         if mode != 'template':
             on = bool(rs['m_Fog']) and mode != 'off'
-            r.update(m_Fog=on and mode == 'render_settings', m_FogMode=1, m_FogColor=color(fog_color), m_LinearFogStart=float(start), m_LinearFogEnd=float(end))
+            r.update(m_Fog=on and mode == 'render_settings', m_FogMode=1, m_FogDensity=float(opt.fog_density), m_FogColor=color(fog_color), m_LinearFogStart=float(start), m_LinearFogEnd=float(end))
             for f in fog_parts:
                 f['active'] = int(on and mode == 'volume')
                 if on and mode == 'volume':

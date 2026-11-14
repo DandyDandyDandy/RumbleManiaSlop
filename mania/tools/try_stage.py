@@ -36,6 +36,7 @@ def main():
     ap.add_argument('--shots', default='18,26,34')
     ap.add_argument('--before', type=int, default=WORLDS_BEFORE)
     ap.add_argument('--profile', default='T', help='save profile: the folder save<profile> in the game folder')
+    ap.add_argument('--width', type=int, default=960, help='pictures are scaled down to this width')
     ap.add_argument('--input', help='live input lines sent once the stage has loaded, separated by ;')
     a = ap.parse_args()
     game = str(paths.GAME)
@@ -82,7 +83,7 @@ def main():
 
     def shot(tag):
         ps = os.path.join(HERE, '..', '..', 'port', 'tools', 'shot_window.ps1')
-        cmd = f"& ([scriptblock]::Create((Get-Content -Raw '{ps}'))) -Out '{os.path.join(a.out, tag)}' -At 0 -Process {paths.NAME} -MaxWidth 960"
+        cmd = f"& ([scriptblock]::Create((Get-Content -Raw '{ps}'))) -Out '{os.path.join(a.out, tag)}' -At 0 -Process {paths.NAME} -MaxWidth {a.width}"
         subprocess.run(['powershell', '-NoProfile', '-Command', cmd], capture_output=True, timeout=60)
         src = os.path.join(a.out, tag + '_0.png')
         if os.path.exists(src):

@@ -59,8 +59,10 @@ Those of RumbleSlop, and for the imported stages:
 - Wormholes do not teleport (17 stages), the two stages with sliding blocks ("jamabars") have them standing
   still, and the wave bonus stage does not wave. Switches, bumpers, seesaws, conveyors and moving parts work.
 - Every goal is Rumble's goal and ends the stage; green and red warp goals do not skip stages.
-- Stages borrow the scenery, lighting and sky of a Rumble world, not Banana Mania's backgrounds, and are drawn
-  with Rumble's stage shaders: colours and materials differ from the original, vertex colouring is lost.
+- Stages have Banana Mania's backgrounds, sky and lighting, but without their particle effects (waterfall spray,
+  fires, lightning, the stars of the SMB1 bonus stages), weather, reflections and Mania's colour grading; the
+  light on the scenery is baked into it (no shadows cast on it). The stages themselves are drawn with Rumble's stage shaders: colours and materials
+  differ from the original, vertex colouring is lost.
 - No stage pictures in *Select Stage*, no missions, no rankings for the imported worlds, and one generic intro
   camera move for every stage (`docs\ROADMAP.md` has the plan for an editor).
 - Only a sample of the 410 stages has been started in the game; see `docs\MANIA.md` for what was checked.

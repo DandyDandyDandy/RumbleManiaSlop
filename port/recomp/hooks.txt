@@ -28,6 +28,7 @@
 2e6be10   Framework.EnumRuntimeHelper<Int32Enum>::GetValue(string, T)
 43287d0   Wonder.StageList::Setup
 426a180   Wonder.MainGameBg::calcBgCue
+426a5b0   Wonder.MainGameBg::Awake   (stages that move their background)
 45605b0   Wonder.UI.Choices.UIChoicesItemData_Factory::getUnlockedCourseList
 43c37d0   Wonder.SaveUserParam+AdventureParam::GetAdvModeHighestUnlockID
 42ab070   Wonder.MainGameSequence::setState   (bonus stages)

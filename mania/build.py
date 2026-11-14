@@ -1,7 +1,7 @@
 """Import Banana Mania into the built game: makes the override folder game\\mania\\.
 
     python build.py <Banana Mania folder> [--no-levels] [--no-classic] [--no-music]
-                    [--only COURSE[,COURSE...]] [--jobs N] [--no-stages]
+                    [--only COURSE[,COURSE...]] [--jobs N] [--no-stages] [--no-backgrounds] [--bg-option KEY=VALUE ...]
 
 Two things are imported, each optional: the stages with their music (as extra Adventure courses) and the
 classic-style monkeys of the Classic Character Pack (as the "Classic Outfit" in the Style menu; classic\\).
@@ -9,10 +9,14 @@ classic-style monkeys of the Classic Character Pack (as the "Classic Outfit" in 
 What it writes (the game's own files are never changed; deleting game\\mania\\ undoes everything):
 
     mania\\Switch\\mania\\scene_<n>.bundle     one converted stage scene each (stage.py)
+    mania\\Switch\\mania\\bg_<n>.bundle        per Mania background its scenery (200000 + n) and its lighting scene
+                                            (210000 + n) (background.py)
     mania\\Switch\\...                        changed copies of the game's table bundles (dbtable.py)
     mania\\catalog.json                      the game's Addressables catalog plus the new scenes
     mania\\mania_courses.txt                 per imported course: its stage list id, first row and length in the real list, and
-                                            its course id; "bonus <stage row>" per bonus stage; "own <id> <previous id>"
+                                            its course id; "bonus <stage row>" per bonus stage; "bgroot <stage row>
+                                            <position> <rotation> <scale>" per stage that places its background
+                                            elsewhere; "own <id> <previous id>"
                                             for the game's Adventure worlds
                                             (read by port\\runtime\\mania.c)
     mania\\mania_music.txt                   per stage row: its BGM cue row, and the Classic Soundtrack's cue row (0: none)
@@ -69,7 +73,9 @@ COURSES = [
     ('SmbDx', 'DX', None), ('SpecialOriginal', 'ORG', None), ('SpecialReverse', 'REV', None),
     ('*', 'ETC', 'More Stages'),            # every stage that is in none of the courses above
 ]
-# Mania background -> the Rumble world whose scenery, sky, lighting (and, without imported music, BGM) the stage gets
+# Mania background -> the Rumble world that stands in for it: the look of the course in the world picker, the intro
+# graphics, without imported music the BGM, and without imported backgrounds (--no-backgrounds, or one that failed
+# to convert) the scenery, sky and lighting of the stage
 WORLD_OF_BG = {
     'Smb1_Jungle': 1, 'Smb1_Water': 2, 'Smb1_Night': 6, 'Smb1_Sunset': 4, 'Smb1_Space': 10, 'Smb1_Sands': 5, 'Smb1_Ice': 7,
     'Smb1_Storm': 8, 'Smb1_Masters': 9, 'Smb1_Bonus': 3,
@@ -109,6 +115,16 @@ def _convert(job):
         return bundle, None, f'{type(e).__name__}: {e} | {traceback.format_exc(limit=3).splitlines()[-2].strip()}'
 
 
+def _convert_bg(job):
+    mania_dir, aa_switch, name, out, tunables = job
+    from background import BackgroundConverter
+    try:
+        return name, BackgroundConverter(mania_dir, aa_switch).convert(name, out, **tunables), None
+    except Exception as e:                      # the stages of a broken background keep a Rumble world's scenery
+        import traceback
+        return name, None, f'{type(e).__name__}: {e} | {traceback.format_exc(limit=3).splitlines()[-2].strip()}'
+
+
 def plan_courses(mania, only=None):
     """[(Mania course name, prefix, display name, [stage ids])] in import order."""
     out, used = [], set()
@@ -143,6 +159,10 @@ def main():
     ap.add_argument('--no-levels', action='store_true', help='do not import the stages')
     ap.add_argument('--no-classic', action='store_true', help='do not import the classic characters')
     ap.add_argument('--no-music', action='store_true', help='leave the stages with the music of the Rumble world they borrow')
+    ap.add_argument('--no-backgrounds', action='store_true',
+                    help='leave the stages with the scenery, sky and lighting of the Rumble world they borrow')
+    ap.add_argument('--bg-option', action='append', default=[], metavar='KEY=VALUE',
+                    help='a tunable of background.py in lower case, the value as JSON (for testing): --bg-option light_exposure=0.5')
     a = ap.parse_args()
     game = a.game
     aa = os.path.join(game, f'{paths.NAME}_Data', 'StreamingAssets', 'aa')
@@ -182,11 +202,35 @@ def main():
     courses = [(n, p, t, [i for i in ids if i in stage_ids]) for n, p, t, ids in courses]
     courses = [c for c in courses if c[3]]
 
+    # ---- backgrounds: scenery and lighting scenes of the Mania backgrounds the stages use (always redone: seconds)
+    backgrounds, bg_failed = {}, {}
+    if stage_ids and not a.no_backgrounds:
+        import json
+        tunables = {}
+        for kv in a.bg_option:
+            k, _, v = kv.partition('=')
+            try:
+                tunables[k] = json.loads(v)
+            except ValueError:
+                tunables[k] = v
+        names = sorted({mania.stages[i]['bg'] for i in stage_ids})
+        with ProcessPoolExecutor(min(a.jobs, len(names))) as pool:
+            for name, info, err in pool.map(_convert_bg, [(a.mania, aa_switch, n, out, tunables) for n in names]):
+                if err:
+                    bg_failed[name] = err
+                    print(f'  FAILED background {name}: {err}', flush=True)
+                else:
+                    backgrounds[name] = info
+        print(f'  {len(backgrounds)}/{len(names)} backgrounds converted', flush=True)
+
     written, music_lines, lines = [], [], []
     cat = Catalog(os.path.join(aa, 'catalog.json'))
     if courses:
-        written, music_lines, lines = import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch)
+        written, music_lines, lines = import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, backgrounds)
         add_scenes(cat, stage_ids, out)
+        from background import add_to_catalog
+        for info in backgrounds.values():
+            add_to_catalog(cat, info, out)
     with open(os.path.join(out, 'mania_courses.txt'), 'w', newline='\n') as f:
         f.write(''.join(x + '\n' for x in lines))
     with open(os.path.join(out, 'mania_music.txt'), 'w', newline='\n') as f:
@@ -218,17 +262,23 @@ def main():
                 skipped[k] = skipped.get(k, 0) + 1
         for bundle, e in sorted(failed.items()):
             print(bundle, 'FAILED ' + e, sep='\t', file=f)
+        for name, info in sorted(backgrounds.items()):
+            print('background ' + name, info, sep='\t', file=f)
+        for name, e in sorted(bg_failed.items()):
+            print('background ' + name, 'FAILED ' + e, sep='\t', file=f)
     if skipped:
         print('not converted (stages that have it): ' + ', '.join(f'{k} {n}' for k, n in sorted(skipped.items(), key=lambda x: -x[1])))
-    print(f'imported {len(stage_ids)} stages in {len(courses)} courses ({len(failed)} stages failed), {len(written)} tables, '
-          f'{int(time.time() - t0)} s -> {out}')
+    print(f'imported {len(stage_ids)} stages in {len(courses)} courses ({len(failed)} stages failed), {len(backgrounds)} backgrounds'
+          f'{f" ({len(bg_failed)} failed)" if bg_failed else ""}, {len(written)} tables, {int(time.time() - t0)} s -> {out}')
     for b, e in failed.items():
         print('  failed:', b, e)
     return 0
 
 
-def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
-    """The table rows and the music of the imported courses; returns (tables written, music lines, course lines)."""
+def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, backgrounds):
+    """The table rows and the music of the imported courses; returns (tables written, music lines, course lines).
+    backgrounds: {Mania background name: what background.py's convert returned} of the converted backgrounds."""
+    from background import stage_fields
     db = Database(aa_switch, cache=str(paths.BUILD / 'mania_table_index.json'))
     stage_t = db.table('Stage')
     model = dict(stage_t.row(TEMPLATE_STAGE_ROW))
@@ -248,6 +298,8 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
         st = mania.stages[sid]
         fields = {k: v for k, v in model.items() if not k.startswith('_')}
         fields.update(scenery[WORLD_OF_BG.get(st['bg'], 1)])
+        if st['bg'] in backgrounds:
+            fields.update(stage_fields(backgrounds[st['bg']]))
         fields.update(Name=rid, SceneID=str(scene_id(sid)), TimeLimit=mania.time_limit(sid), CaptionText=rid, ThumbnailSpriteID=0,
                       MiniThumbnailSpriteID=0, MissionPoint=0, MissionPointMaster=0, MissionBanana=0, CheckpointStageAnimationFrame=0,
                       CheckpointSwitchClass=-1, CheckpointSwitchAnimationSpeed=0, CheckpointSwitchAnimationFrame=0, AnimationType=0,
@@ -299,6 +351,13 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch):
                        MovieIDEpilogue=0)
     if courses and last_vanilla is not None:
         last_vanilla['NextCourseID'] = first_course
+    # stages whose Mania original places the background elsewhere (BgRoot): the port moves the scenery's root
+    for info in backgrounds.values():
+        for sid, p in sorted((info.get('moved_stages') or {}).items()):
+            if sid in row_of:
+                pos = [a + b for a, b in zip(p['root'], p.get('pos', [0, 0, 0]))]
+                nums = pos + list(p.get('rot', [0, 0, 0, 1])) + list(p.get('scale', [1, 1, 1]))
+                lines.append(f'bgroot {row_of[sid]} ' + ' '.join(f'{x:g}' for x in nums))
     # bonus stages (cleared by taking every banana, by falling out or by the clock: mania.c)
     for sid in stage_ids:
         if mania.stages[sid]['kind'] == 'Bonus' and sid in row_of:

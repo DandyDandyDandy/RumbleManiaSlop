@@ -329,13 +329,14 @@ Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9
 | Written | Content |
 |---|---|
 | `Switch\mania\scene_<n>.bundle` | one per stage |
-| `Stage`, `Stage_Text_<lang>`, `Stage_DoleDisposition` | a new row per stage (ids from 705): scene name, name, 60 or 30 seconds, and the scenery, sky, lighting and effect scenes of the Rumble world that stands in for the Mania background (`WORLD_OF_BG`) |
+| `Switch\mania\bg_<n>.bundle` | two per Mania background: its scenery scene (200000 + n) and its lighting scene (210000 + n), see "Backgrounds" |
+| `Stage`, `Stage_Text_<lang>`, `Stage_DoleDisposition` | a new row per stage (ids from 705): scene name, name, 60 or 30 seconds, the converted scenery and lighting scenes of its Mania background, the game's empty sky scene `sky05_w05`, no effect scene and no screen effect. Without backgrounds (`--no-backgrounds`, `backgrounds=no` in `input\mania.txt`, or a background that failed to convert): the scenery, sky, lighting and effect scenes of the Rumble world that stands in for the Mania background (`WORLD_OF_BG`) |
 | `Stage_List_Group_wld97_wldtst` | every imported course's stages, one after the other |
 | `Course`, `Course_Text_<lang>` | a row per course (ids from 27), category 6, always unlocked, no missions, hung on the end of the game's chain of Adventure worlds (below) |
 | `MainGame_Story_Progress` | a row per stage that opens it |
 | `Sound_CueSheet`, `Sound_Cue`, `Sound\*.acb`, `*.awb` | Mania's cue sheets, copied unchanged, and a cue row per BGM; with the Classic Soundtrack add-on also its sheets (`<sheet>_dx`, same cue names) and a second cue row per BGM |
 | `catalog.json` | the game's catalog plus, per stage, the bundle and the scene (key = the scene number), depending on the bundles the template stage's scene depends on |
-| `mania_courses.txt`, `mania_music.txt` | for `port\runtime\mania.c`: course ranges and ids, bonus stage rows, the game's own worlds; per stage row its cue row and its Classic Soundtrack cue row |
+| `mania_courses.txt`, `mania_music.txt` | for `port\runtime\mania.c`: course ranges and ids, bonus stage rows, the placement of the background for the stages that move it (`bgroot` lines), the game's own worlds; per stage row its cue row and its Classic Soundtrack cue row |
 | `mania_stages.txt` | course number, stage number, Mania stage, course name, stage name (for people and `try_stage.py`) |
 | `import_report.txt` | per stage: counts, and the Mania components that were not converted |
 
@@ -396,6 +397,36 @@ rotation. Rumble's stages run towards +Z and Mania's towards -Z; the import keep
 the box to the stage's size and turns it half round, without which the fly-over looked away from the stage.
 It is still one generic camera move for every stage (see `docs\ROADMAP.md`).
 
+### Backgrounds (`mania\background.py`)
+
+Each of Mania's 21 backgrounds (`Bg_<name>` prefab, `Light_<name>` prefab, the `RenderSettings` of its lighting
+scene) becomes two Rumble scenes, each made from a copy of one of the game's own; the module's docstring has the
+details and every number that can be tuned is a named constant at its top (`build.py --bg-option key=value` sets
+one for a test import).
+
+* **Scenery** (`bg_2000NN.bundle`, from `wld05_w05_003`): Mania's drawn tree under the root with `MainGameBg`,
+  names unchanged, on layer 6, with its Animator when the clip moves something. All materials are on
+  `Shader Graphs/bg_unlit_abd` (unlit: texture x colour x vertex colour, blend state and queue from Mania). What
+  that shader cannot be told is baked into copies of the meshes: the gamma of vertex colours, constant UV
+  transforms, a colour's alpha, and Mania's light on its lit materials (four fifths of the scenery): per vertex,
+  Mania's ambient light in the direction of the normal plus its background lights x N.L, multiplied into the
+  vertex colour (a white colour channel is added to meshes without one). That is what gives the rocks their lit
+  and shadowed sides; without it the scenery looked flat and pale. No cast shadows; moving things keep the
+  light of their rest pose.
+  The sky is Mania's dome mesh; the skybox cubemap behind it is one flat colour.
+* **Lighting** (`bg_2100NN.bundle`, from the lighting scene of the Rumble world in `LIGHT_TEMPLATE_OF_BG`, whose
+  post-processing profile and reflection cubemap stay): the three Rumble lights get Mania's colours, directions
+  and (scaled) intensities, `RenderSettings` Mania's ambient colours and linear fog.
+* **Fog trap**: `RenderSettings.m_FogDensity` must be near zero although the fog is linear. The game's shaders for
+  bananas, characters and stage objects apply it as well; with a template's 0.01 everything near the camera was
+  hazed in the fog colour (washed-out bananas and player, a white Masters stage).
+* **Placement**: 29 stages move, turn or scale their background (Mania's `BgRoot` prefab). There is one scenery
+  scene per background, made at the origin; `MainGameBg.Awake` (0x426a5b0) is hooked and sets the root's local
+  position, rotation and scale from the stage's `bgroot` line.
+* Not converted: particle systems (stars of the SMB1 bonus background, storm fires and lightning, waterfall
+  spray, cloud puffs), camera weather, flow-map distortion, flip-book animation (city lights of Night), toon ramp,
+  rim light, specular and cube-map reflections, Mania's post-processing, the collision twin of four backgrounds.
+
 ### Runtime (`port\runtime\mania.c`, `classic.c`)
 
 * the override folder: bundles under `aa\Switch\` are taken from `mania\Switch\` when they exist there, the
@@ -407,7 +438,8 @@ It is still one generic camera move for every stage (see `docs\ROADMAP.md`).
 * the list of worlds offered in co-op and online rooms keeps the imported courses (they are not "unlocked"
   in the save's sense) and the online protocol number carries a tag made from the imported course ranges, so
   games with different imports do not meet;
-* the hooks described above for the highest unlocked world, the end of an imported world and bonus stages;
+* the hooks described above for the highest unlocked world, the end of an imported world, bonus stages and the
+  placement of a background;
 * `BR_MANIA_LOG`: log lines for switch presses, seesaw touches, the BGM cue of a stage, the world picker's
   list and bonus stage decisions.
 
@@ -441,8 +473,8 @@ What was checked in the running game (2.00, one PC):
   renderers and a text, so it wants a whole object tree brought over from one of the game's stages, not just
   a script.
 * Goal colours: every goal is Rumble's arch and ends the stage.
-* Mania's backgrounds and lighting (`bg_*` bundles, the `Light_*` prefabs): a stage uses the scenery scenes of the
-  Rumble world named in `WORLD_OF_BG`.
+* Of Mania's backgrounds: particles, weather, distortion and reflections (see "Backgrounds"). The stage intro
+  graphics and the course's look in the world picker are still those of the Rumble world in `WORLD_OF_BG`.
 * Materials are reduced to a texture, a tint and culling on three Rumble shaders. Vertex colours, second textures,
   rim light ramps, reflection cubes and scrolling textures are dropped.
 * Stage pictures, missions, the guide line, rotten / golden banana layouts, half-time and checkpoint flags of the

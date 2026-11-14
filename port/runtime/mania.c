@@ -129,6 +129,47 @@ int rt_hook_426a180(Cpu *c) {
     return 0;
 }
 
+// Stages that put their background somewhere else than the origin (Mania's BgRoot prefab): position, rotation
+// (quaternion) and scale of the far scenery's root for that stage row
+#define MAX_BGROOT 64
+static struct { uint32_t stage; float v[10]; } g_bgroot[MAX_BGROOT];
+static int g_nbgroot;
+
+// Wonder.MainGameBg.Awake(): the root object of a far scenery scene comes to life. For an imported stage whose
+// Mania original moves, turns or scales its background (29 stages; "bgroot" lines of mania_courses.txt), the root
+// is placed accordingly: the converted scenery scene is one per background, made at the origin.
+#define F_GET_TRANSFORM 0x3edc570ull        // UnityEngine.Component.get_transform
+#define F_SET_LOCAL_POSITION 0x3eecf80ull   // UnityEngine.Transform.set_localPosition(Vector3): floats in v0..v2
+#define F_SET_LOCAL_ROTATION 0x3eef030ull   // UnityEngine.Transform.set_localRotation(Quaternion): floats in v0..v3
+#define F_SET_LOCAL_SCALE 0x3eef8c0ull      // UnityEngine.Transform.set_localScale(Vector3)
+static void set_floats(Cpu *c, uint64_t fn, uint64_t tr, const float *f, int n) {
+    c->x[0] = tr; c->x[1] = 0;
+    for (int i = 0; i < n; i++) { uint32_t u; memcpy(&u, &f[i], 4); c->v[i] = u; }
+    rt_call_regs(c, FN(fn));
+}
+static void load_courses(void);
+int rt_hook_426a5b0(Cpu *c) {
+    if (g_ncourses < 0) load_courses();
+    if (!g_nbgroot) return 0;
+    uint64_t self = c->x[0], method = c->x[1], lr = c->x[30];
+    uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull), list = sel ? LD64(sel + SELECTOR_STAGELIST) : 0;
+    uint32_t stage = list ? (uint32_t)rt_call(c, FN(F_CURRENT_STAGE), 2, list, 0ull) : 0;
+    for (int i = 0; i < g_nbgroot; i++)
+        if (g_bgroot[i].stage == stage) {
+            const float *v = g_bgroot[i].v;
+            uint64_t tr = rt_call(c, FN(F_GET_TRANSFORM), 2, self, 0ull);
+            if (!tr) break;
+            set_floats(c, F_SET_LOCAL_POSITION, tr, v, 3);
+            set_floats(c, F_SET_LOCAL_ROTATION, tr, v + 3, 4);
+            set_floats(c, F_SET_LOCAL_SCALE, tr, v + 7, 3);
+            if (getenv("BR_MANIA_LOG"))
+                rt_log("mania: stage row %u: background at (%g, %g, %g), scale %g", stage, v[0], v[1], v[2], v[7]);
+            break;
+        }
+    c->x[0] = self; c->x[1] = method; c->x[30] = lr;
+    return 0;
+}
+
 #define MAX_BONUS 64
 static uint32_t g_bonus[MAX_BONUS];                        // Stage rows of the imported bonus stages
 static int g_nbonus;
@@ -138,7 +179,7 @@ static int g_nown;
 static uint32_t g_first_id;                               // the lowest course id of the import
 
 static void load_courses(void) {
-    char path[700], line[128];
+    char path[700], line[256];
     g_ncourses = 0;
     snprintf(path, sizeof path, "%smania\\mania_courses.txt", rt_exe_dir());
     FILE *f = fopen(path, "r");
@@ -146,7 +187,10 @@ static void load_courses(void) {
     while (fgets(line, sizeof line, f)) {
         unsigned list, id = 0, prev = 0;
         int first, count;
-        if (sscanf(line, "bonus %u", &id) == 1) {
+        float v[10];
+        if (sscanf(line, "bgroot %u %f %f %f %f %f %f %f %f %f %f", &id, v, v + 1, v + 2, v + 3, v + 4, v + 5, v + 6, v + 7, v + 8, v + 9) == 11) {
+            if (g_nbgroot < MAX_BGROOT) { g_bgroot[g_nbgroot].stage = id; memcpy(g_bgroot[g_nbgroot].v, v, sizeof v); g_nbgroot++; }
+        } else if (sscanf(line, "bonus %u", &id) == 1) {
             if (g_nbonus < MAX_BONUS) g_bonus[g_nbonus++] = id;
         } else if (sscanf(line, "own %u %u", &id, &prev) == 2) {
             if (g_nown < MAX_OWN) { g_own[g_nown].id = id; g_own[g_nown].prev = prev; g_nown++; }

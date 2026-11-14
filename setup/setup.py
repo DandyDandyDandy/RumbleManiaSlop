@@ -216,8 +216,9 @@ def step_dlc():
 
 
 def mania_config():
-    """input\\mania.txt: lines `path=<Banana Mania folder>`, `levels=yes|no`, `classic=yes|no`, `music=yes|no`."""
-    cfg = {'path': '', 'levels': 'yes', 'classic': 'yes', 'music': 'yes'}
+    """input\\mania.txt: lines `path=<Banana Mania folder>`, `levels=yes|no`, `classic=yes|no`, `music=yes|no`,
+    `backgrounds=yes|no`."""
+    cfg = {'path': '', 'levels': 'yes', 'classic': 'yes', 'music': 'yes', 'backgrounds': 'yes'}
     f = paths.INPUT / 'mania.txt'
     if f.exists():
         for line in f.read_text(encoding='utf-8', errors='replace').splitlines():
@@ -278,7 +279,8 @@ def step_mania():
         say('    path=<...\\steamapps\\common\\smbbm> and run setup.cmd --only mania')
         return
     say(f'    Banana Mania: {game}')
-    args = [a for a, on in (('--no-levels', not yes('levels')), ('--no-classic', not yes('classic')), ('--no-music', not yes('music'))) if on]
+    args = [a for a, on in (('--no-levels', not yes('levels')), ('--no-classic', not yes('classic')), ('--no-music', not yes('music')),
+                                ('--no-backgrounds', not yes('backgrounds'))) if on]
     run('mania', PY, paths.ROOT / 'mania' / 'build.py', game, *args)
     tail = (LOGS / 'mania.log').read_text(encoding='utf-8', errors='replace').splitlines()[-6:]
     for line in tail:
