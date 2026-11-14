@@ -14,7 +14,7 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\Switch\\...                        changed copies of the game's table bundles (dbtable.py)
     mania\\catalog.json                      the game's Addressables catalog plus the new scenes
     mania\\mania_courses.txt                 per imported course: its stage list id, first row and length in the real list, and
-                                            its course id; "bonus <stage row>" per bonus stage; "bgroot <stage row>
+                                            its course id; "bgroot <stage row>
                                             <position> <rotation> <scale>" per stage that places its background
                                             elsewhere; "own <id> <previous id>"
                                             for the game's Adventure worlds
@@ -34,6 +34,9 @@ How the stages become courses (docs/MANIA.md has the reasons):
     Course, Course_Text_<lang>      a row per imported course, with a virtual stage list id 1000 + n
     MainGame_Story_Progress         a row per (course, stage) that opens the stage from the start
     Sound_CueSheet, Sound_Cue       a row per copied cue sheet and per stage BGM cue
+
+Banana Mania's bonus stages (stage kind Bonus: collect bananas against the clock) are not imported: the imported
+worlds are about reaching the goal and clear times.
 """
 import argparse
 import hashlib
@@ -79,9 +82,9 @@ COURSES = [
 # to convert) the scenery, sky and lighting of the stage
 WORLD_OF_BG = {
     'Smb1_Jungle': 1, 'Smb1_Water': 2, 'Smb1_Night': 6, 'Smb1_Sunset': 4, 'Smb1_Space': 10, 'Smb1_Sands': 5, 'Smb1_Ice': 7,
-    'Smb1_Storm': 8, 'Smb1_Masters': 9, 'Smb1_Bonus': 3,
+    'Smb1_Storm': 8, 'Smb1_Masters': 9,
     'Smb2_Jungle': 1, 'Smb2_Lava': 4, 'Smb2_Water': 2, 'Smb2_Whale': 3, 'Smb2_Park': 5, 'Smb2_Pot': 8, 'Smb2_Bubble': 7,
-    'Smb2_Gear': 9, 'Smb2_Space': 10, 'Smb2_Electric': 6, 'Smb2_Bonus': 3,
+    'Smb2_Gear': 9, 'Smb2_Space': 10, 'Smb2_Electric': 6,
 }
 SCENERY_FIELDS = ('LightSceneID', 'FarSceneID', 'SkySceneID', 'EffectSceneID', 'ScreenEffectAssetRef', 'LightSceneSplitScrenID',
                   'FarSceneSplitScreenID', 'SkySceneSplitScreenID', 'EffectSceneSplitScreenID', 'ScreenEffectSplitScreenAssetRef',
@@ -102,7 +105,7 @@ def bundle_rel(stage_id):
 
 
 def _convert(job):
-    mania_dir, aa_switch, bundle, out, identity, bonus = job
+    mania_dir, aa_switch, bundle, out, identity = job
     from stage import Converter
     global _CONV
     try:
@@ -110,7 +113,7 @@ def _convert(job):
     except NameError:
         conv = _CONV = Converter(mania_dir, aa_switch)
     try:
-        return bundle, conv.convert(bundle, out, identity, bonus=bonus), None
+        return bundle, conv.convert(bundle, out, identity), None
     except Exception as e:                      # one broken stage must not stop the import
         import traceback
         return bundle, None, f'{type(e).__name__}: {e} | {traceback.format_exc(limit=3).splitlines()[-2].strip()}'
@@ -127,16 +130,20 @@ def _convert_bg(job):
 
 
 def plan_courses(mania, only=None):
-    """[(Mania course name, prefix, display name, [stage ids])] in import order."""
+    """[(Mania course name, prefix, display name, [stage ids])] in import order. Bonus stages are left out."""
     out, used = [], set()
+
+    def wanted(i):
+        return i in mania.stages and i in mania.bundles and mania.stages[i]['kind'] != 'Bonus'
+
     for name, prefix, title in COURSES:
         if name == '*':
-            ids = sorted(i for i in mania.stages if i not in used and i in mania.bundles)
+            ids = sorted(i for i in mania.stages if i not in used and wanted(i))
         else:
             c = mania.courses.get(name)
             if c is None:
                 continue
-            ids = [i for i in c['stages'] if i in mania.stages and i in mania.bundles]
+            ids = [i for i in c['stages'] if wanted(i)]
             title = title or mania.texts('en', 'maingame').get(c['text_key']) or name
             if name.startswith('Smb2_StoryWorld'):
                 title = f'SMB2 {title}'
@@ -186,8 +193,7 @@ def main():
         jobs = []
         for sid in stage_ids:
             ident = (f'mania_scene_{scene_id(sid)}', f'Assets/Mania/{scene_id(sid)}.unity', 'CAB-' + md5(f'mania scene {sid}'))
-            jobs.append((a.mania, aa_switch, mania.bundles[sid], os.path.join(out, bundle_rel(sid).replace('/', os.sep)), ident,
-                         mania.stages[sid]['kind'] == 'Bonus'))
+            jobs.append((a.mania, aa_switch, mania.bundles[sid], os.path.join(out, bundle_rel(sid).replace('/', os.sep)), ident))
         done = 0
         with ProcessPoolExecutor(a.jobs) as pool:
             for bundle, stats, err in pool.map(_convert, jobs, chunksize=2):
@@ -199,6 +205,13 @@ def main():
                     reports[bundle] = stats
                 if done % 25 == 0 or done == len(jobs):
                     print(f'  {done}/{len(jobs)} stages converted', flush=True)
+    # files of an earlier import that are not part of this one (the bonus stages and their two backgrounds, which
+    # older versions imported)
+    if not a.only and not a.no_levels:
+        keep = {os.path.basename(bundle_rel(i)) for i in stage_ids}
+        for name in os.listdir(os.path.join(out_switch, 'mania')):
+            if name.startswith('scene_') and name not in keep or name.startswith('bg_'):
+                os.remove(os.path.join(out_switch, 'mania', name))
     stage_ids = [i for i in stage_ids if os.path.exists(os.path.join(out, bundle_rel(i).replace('/', os.sep)))]
     courses = [(n, p, t, [i for i in ids if i in stage_ids]) for n, p, t, ids in courses]
     courses = [c for c in courses if c[3]]
@@ -361,10 +374,6 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
                 pos = [a + b for a, b in zip(p['root'], p.get('pos', [0, 0, 0]))]
                 nums = pos + list(p.get('rot', [0, 0, 0, 1])) + list(p.get('scale', [1, 1, 1]))
                 lines.append(f'bgroot {row_of[sid]} ' + ' '.join(f'{x:g}' for x in nums))
-    # bonus stages (cleared by taking every banana, by falling out or by the clock: mania.c)
-    for sid in stage_ids:
-        if mania.stages[sid]['kind'] == 'Bonus' and sid in row_of:
-            lines.append(f'bonus {row_of[sid]}')
     # the game's own Adventure worlds in display order with the world each one follows: the port works out the
     # "highest unlocked world" from these when the game's own answer is an imported course (mania.c)
     for r in own:

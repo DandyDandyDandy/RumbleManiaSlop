@@ -322,7 +322,7 @@ With `BR_MANIA_LOG` set the port logs each press (`mania: switch pressed: type, 
 The template's own stage geometry, checkpoint and guide arrows are removed; its goal, start, intro-camera bounds
 and initializer stay. Objects of the shared file that nothing refers to any more are dropped.
 
-Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9 GB for all 410).
+Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9 GB for the 392 that are imported).
 
 ### Courses, tables, catalog (`mania\build.py`)
 
@@ -336,13 +336,20 @@ Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9
 | `MainGame_Story_Progress` | a row per stage that opens it |
 | `Sound_CueSheet`, `Sound_Cue`, `Sound\*.acb`, `*.awb` | Mania's cue sheets, copied unchanged, and a cue row per BGM; with the Classic Soundtrack add-on also its sheets (`<sheet>_dx`, same cue names) and a second cue row per BGM |
 | `catalog.json` | the game's catalog plus, per stage, the bundle and the scene (key = the scene number), depending on the bundles the template stage's scene depends on |
-| `mania_courses.txt`, `mania_music.txt` | for `port\runtime\mania.c`: course ranges and ids, bonus stage rows, the placement of the background for the stages that move it (`bgroot` lines), the game's own worlds; per stage row its cue row and its Classic Soundtrack cue row |
+| `mania_courses.txt`, `mania_music.txt` | for `port\runtime\mania.c`: course ranges and ids, the placement of the background for the stages that move it (`bgroot` lines), the game's own worlds; per stage row its cue row and its Classic Soundtrack cue row |
 | `mania_stages.txt` | course number, stage number, Mania stage, course name, stage name (for people and `try_stage.py`) |
 | `import_report.txt` | per stage: counts, and the Mania components that were not converted |
 
 29 courses are made (`COURSES`): Super Monkey Ball 1 Beginner, Advanced, Expert with their Extra floors and
 Master; the ten worlds of Super Monkey Ball 2's story; its eight challenge difficulties; Deluxe; Original Stage
-Mode; Reverse Mode; and "More Stages" with every stage that is in none of them, so all 410 are reachable.
+Mode; Reverse Mode; and "More Stages" with every stage that is in none of them, so every imported stage is reachable.
+
+**Bonus stages are not imported.** 18 of Mania's 410 stages are bonus stages (stage kind `Bonus`): bananas
+against the clock, and for five of them no goal. They do not fit worlds that are about reaching the goal and
+clear times, so `plan_courses` leaves them out of every course, which leaves 392 stages. An earlier version
+imported them with rules of its own (a clear by taking every banana, by falling out or by the clock, through
+hooks on `MainGameSequence.setState` and `updateHurryUp`); that code is gone. A re-import deletes the stage and
+background bundles an earlier import left behind.
 
 **The chain of worlds.** `Course.NextCourseID` links the Adventure worlds: 1 .. 10, the EX worlds 12 .. 21, the
 two Ultimate EX worlds 25 and 26. World Tour, World Tour EX and the No Miss Challenge are on no chain. The world
@@ -364,28 +371,6 @@ clear). The last stage of a course was therefore followed by the first stage of 
 game went on into it with the wrong course's list. The virtual list built for a course ends with "no next
 stage", like the last stage of one of the game's own worlds: after it the game returns to the menu.
 
-**Bonus stages.** 18 of Mania's stages are bonus stages (stage kind `Bonus`): bananas, and for five of them no
-goal. In Rumble a stage is cleared when its result screen comes up (`FlowMaingameResultBase.calcClearCondition`
-reads nothing else), and the result screen follows the sequence state GOAL. On an imported bonus stage
-(`bonus <stage row>` lines):
-
-* when every banana is taken, the players are marked as having finished: `MgPlayer.isGoal` (+0x20), goal index
-  -1 (+0x24) and the goal time (+0xc8), which is what the pause menu's hidden "clear this stage" does. Done once
-  a frame in a hook on `MainGameSequence.updateHurryUp` (0x42aff20), which both the single player sequence and
-  the multiplayer one (`BrAdvSequence`, split screen and online) call while a stage is played. In multiplayer
-  each client marks its own players; the game's Goal event tells the others;
-* when everyone has fallen out or the clock has run out, the sequence would go to FALLOUT (5) or TIMEUP (9) and
-  retry; a hook on `MainGameSequence.setState` (0x42ab070) sends it to GOAL (6). Every client decides that by
-  itself from state the game already shares, so nothing is sent;
-* a bonus stage without a goal keeps one of Rumble's goals far to the side and below, its model switched off:
-  the multiplayer code looks up the nearest goal when a player finishes (`BrAdvPlayerExtension.OnGoal`,
-  0x418f850) and has no test for there being none.
-
-`MgPlayer.SetGoal` (0x42cda00) is not used: it needs a goal square and computes the time from the ball's
-position relative to it. `MainGame.eEvent.GoalByPauseMenu` is dead code (`MainGame.processEvent` skips events 1
-to 3). Checked in the game: single player by falling out and by the banana rule; online with two players by
-the banana rule. Not exercised: split screen, and falling out or running out of time online.
-
 **Fall-out boxes.** Five stages (Steps among them) have no fall-out box in Mania: `m_FalloutBounds` holds
 FLT_MAX / 2 on each side. Rumble takes the box literally and its arithmetic overflows: Fall Out on the first
 frame. Such a box is replaced by one around the stage, as for stages that have none.
@@ -399,7 +384,7 @@ It is still one generic camera move for every stage (see `docs\ROADMAP.md`).
 
 ### Backgrounds (`mania\background.py`)
 
-Each of Mania's 21 backgrounds (`Bg_<name>` prefab, `Light_<name>` prefab, the `RenderSettings` of its lighting
+Each of the 19 Mania backgrounds the imported stages use (all 21 but the two of the bonus stages; `Bg_<name>` prefab, `Light_<name>` prefab, the `RenderSettings` of its lighting
 scene) becomes two Rumble scenes, each made from a copy of one of the game's own; the module's docstring has the
 details and every number that can be tuned is a named constant at its top (`build.py --bg-option key=value` sets
 one for a test import).
@@ -420,10 +405,10 @@ one for a test import).
 * **Fog trap**: `RenderSettings.m_FogDensity` must be near zero although the fog is linear. The game's shaders for
   bananas, characters and stage objects apply it as well; with a template's 0.01 everything near the camera was
   hazed in the fog colour (washed-out bananas and player, a white Masters stage).
-* **Placement**: 29 stages move, turn or scale their background (Mania's `BgRoot` prefab). There is one scenery
+* **Placement**: 27 imported stages move, turn or scale their background (Mania's `BgRoot` prefab). There is one scenery
   scene per background, made at the origin; `MainGameBg.Awake` (0x426a5b0) is hooked and sets the root's local
   position, rotation and scale from the stage's `bgroot` line.
-* Not converted: particle systems (stars of the SMB1 bonus background, storm fires and lightning, waterfall
+* Not converted: particle systems (storm fires and lightning, waterfall
   spray, cloud puffs), camera weather, flow-map distortion, flip-book animation (city lights of Night), toon ramp,
   rim light, specular and cube-map reflections, Mania's post-processing, the collision twin of four backgrounds.
 
@@ -438,7 +423,7 @@ one for a test import).
 * the list of worlds offered in co-op and online rooms keeps the imported courses (they are not "unlocked"
   in the save's sense) and the online protocol number carries a tag made from the imported course ranges, so
   games with different imports do not meet;
-* the hooks described above for the highest unlocked world, the end of an imported world, bonus stages and the
+* the hooks described above for the highest unlocked world, the end of an imported world and the
   placement of a background;
 * play statistics: `Wonder.CRM.AdventureUtil.UpdateMissionStatus`, `UpdateBestTimeStatus`, `StartTimeAttack` and
   `FinishTimeAttack` do nothing for an imported course. They keep flags and counters for the publisher's
@@ -449,7 +434,7 @@ one for a test import).
   **Any other code of the game that indexes a fixed array by course or stage number has the same trap**; the
   stress switch `BR_UNLOAD_EVERY` (`docs\TECHNICAL.md`) makes such damage show within one stage;
 * `BR_MANIA_LOG`: log lines for switch presses, seesaw touches, the BGM cue of a stage, the world picker's
-  list, bonus stage decisions and dropped statistics calls.
+  list and dropped statistics calls.
 
 ## Testing
 
@@ -461,21 +446,21 @@ save profile `T` (`--profile`), not the real save, and ignores the real keyboard
 
 Live input commands that make checks possible without playing a stage (`port\runtime\test_aids.c`, see
 `docs\TECHNICAL.md`): `GOAL` (the local player's ball enters the goal: results, progress, what follows the last
-stage of a world), `BANANAS` (a bonus stage is told every banana was taken), `WHEEL`, `HOLD` / `MOVE` / `RELEASE`.
+stage of a world), `WHEEL`, `HOLD` / `MOVE` / `RELEASE`.
 
 What was checked in the running game (2.00, one PC):
 
 * stages: SMB1 Beginner 1 played to the goal; Diamond, Wide Bridge, Steps, Blocks (moving parts), Switches (both
-  switches, the bridge is crossed), Conveyers (the belt pushes the ball), Linear Seesaws (the plank tilts), Bonus
-  Basic; a 12-stage sample across courses loaded without a crash. Most of the 410 stages have never been started;
+  switches, the bridge is crossed), Conveyers (the belt pushes the ball), Linear Seesaws (the plank tilts);
+  a 12-stage sample across courses loaded without a crash. Most of the 392 stages have never been started;
 * the last stage of an imported world returns to the stage select of the next world;
 * online, two instances: the imported worlds are in the host's world picker, a locked Rumble world is not;
-  SMB1 Beginner stages 1 to 4 cleared in sequence by both players, then the bonus stage by the banana rule;
+  SMB1 Beginner stages 1 to 4 cleared in sequence by both players;
 * music: the right cue sheet and stream are opened for a stage, with either soundtrack (heard by nobody).
 
 ## What is not converted
 
-* Wormholes (17 stages), jamabars (2: st1024, st1035), the wave floor (1: st1092): the objects are drawn and
+* Wormholes (17 stages), jamabars (2: st1024, st1035): the objects are drawn and
   their collision is solid, but they do not act. Rumble has classes for wormholes and jamabars (`MgWormhole` /
   `CollisionWormholeGate`, `MgJamabar`); a wormhole there is a prefab of its own with a cubemap camera, particle
   renderers and a text, so it wants a whole object tree brought over from one of the game's stages, not just

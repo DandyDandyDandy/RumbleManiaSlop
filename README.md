@@ -18,13 +18,13 @@ port and the importer were written by an AI coding agent. Expect rough edges.
 Everything RumbleSlop does (display options, wide screens, keyboard and mouse, controller glyphs, online play by
 room code), plus, when Banana Mania is installed:
 
-- **All 410 Banana Mania stages in Adventure mode**, as 29 extra worlds after Rumble's own in *Select World*:
+- **Banana Mania's 392 goal stages in Adventure mode**, as 29 extra worlds after Rumble's own in *Select World*:
   Super Monkey Ball 1 (Beginner, Advanced, Expert, their Extra floors, Master), the ten story worlds of Super
   Monkey Ball 2, its challenge difficulties, Deluxe, Original Stage Mode, Reverse Mode and the remaining special
   stages. They are played with Rumble's ball, physics, goal, camera and rules; every stage is open from the start.
 - **Banana Mania's stage music** on those stages, and the original games' music when your Banana Mania has the
   Classic Soundtrack add-on (*Options > Display > Imported Stage Music*).
-- Bonus stages are cleared by collecting every banana, by falling out or when the time is up.
+- Banana Mania's 18 bonus stages are left out: the imported worlds are about reaching the goal and clear times.
 - **The classic monkeys** of the Classic Character Pack as the "Classic Outfit" in *Style > Outfit*, for AiAi,
   MeeMee, Baby, GonGon, YanYan and Doctor (needs that pack in your Banana Mania).
 - Co-op with the imported worlds. Online, a room only accepts players whose game has the same imported worlds:
@@ -57,15 +57,15 @@ too: the imported stages are in `game\mania`. Deleting that folder turns the gam
 Those of RumbleSlop, and for the imported stages:
 
 - Wormholes do not teleport (17 stages), the two stages with sliding blocks ("jamabars") have them standing
-  still, and the wave bonus stage does not wave. Switches, bumpers, seesaws, conveyors and moving parts work.
+  still. Switches, bumpers, seesaws, conveyors and moving parts work.
 - Every goal is Rumble's goal and ends the stage; green and red warp goals do not skip stages.
 - Stages have Banana Mania's backgrounds, sky and lighting, but without their particle effects (waterfall spray,
-  fires, lightning, the stars of the SMB1 bonus stages), weather, reflections and Mania's colour grading; the
+  fires, lightning), weather, reflections and Mania's colour grading; the
   light on the scenery is baked into it (no shadows cast on it). The stages themselves are drawn with Rumble's stage shaders: colours and materials
   differ from the original, vertex colouring is lost.
 - No stage pictures in *Select Stage*, no missions, no rankings for the imported worlds, and one generic intro
   camera move for every stage (`docs\ROADMAP.md` has the plan for an editor).
-- Only a sample of the 410 stages has been started in the game; see `docs\MANIA.md` for what was checked.
+- Only a sample of the 392 stages has been started in the game; see `docs\MANIA.md` for what was checked.
 - The Classic Outfit's face does not blink, and other body items do not show while it is worn.
 
 ## For developers

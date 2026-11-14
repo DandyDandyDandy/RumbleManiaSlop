@@ -170,9 +170,6 @@ int rt_hook_426a5b0(Cpu *c) {
     return 0;
 }
 
-#define MAX_BONUS 64
-static uint32_t g_bonus[MAX_BONUS];                        // Stage rows of the imported bonus stages
-static int g_nbonus;
 #define MAX_OWN 64
 static struct { uint32_t id, prev; } g_own[MAX_OWN];      // the game's Adventure worlds in display order
 static int g_nown;
@@ -190,8 +187,6 @@ static void load_courses(void) {
         float v[10];
         if (sscanf(line, "bgroot %u %f %f %f %f %f %f %f %f %f %f", &id, v, v + 1, v + 2, v + 3, v + 4, v + 5, v + 6, v + 7, v + 8, v + 9) == 11) {
             if (g_nbgroot < MAX_BGROOT) { g_bgroot[g_nbgroot].stage = id; memcpy(g_bgroot[g_nbgroot].v, v, sizeof v); g_nbgroot++; }
-        } else if (sscanf(line, "bonus %u", &id) == 1) {
-            if (g_nbonus < MAX_BONUS) g_bonus[g_nbonus++] = id;
         } else if (sscanf(line, "own %u %u", &id, &prev) == 2) {
             if (g_nown < MAX_OWN) { g_own[g_nown].id = id; g_own[g_nown].prev = prev; g_nown++; }
         } else if (g_ncourses < MAX_COURSES && sscanf(line, "%u %d %d %u", &list, &first, &count, &id) >= 3 && count > 0 && first >= 0) {
@@ -407,101 +402,4 @@ int rt_hook_43287d0(Cpu *c) {
     if (count > 0) rt_call(c, FN(F_STAGELIST_SET_INDEX), 3, self, 0ull, 0ull);
     c->x[30] = lr;
     return 1;
-}
-
-// ---- bonus stages
-// Banana Mania's bonus stages have bananas and, most of them, no goal. In Rumble a stage is cleared when its result
-// screen comes up (FlowMaingameResultBase.calcClearCondition looks at nothing else), and the result screen follows
-// the sequence state GOAL. So, on an imported bonus stage:
-//   * every banana taken: the players are marked as having reached the goal, the way the pause menu's "clear this
-//     stage" does it (MgPlayer.isGoal, goal time, goal index); the game's own goal handling takes it from there,
-//     online included (each client marks its own players, the Goal event tells the others);
-//   * everyone has fallen out, or the clock has run out: where the sequence would go to FALLOUT or TIMEUP (and
-//     retry), it goes to GOAL. Every client reaches that decision by itself from state the game already shares.
-#define F_SEQ_SET_STATE 0x42ab070ull        // MainGameSequence.setState(State, int subState); BrAdvSequence uses it too
-#define F_IS_LOADED_REPLAY 0x434ddf0ull     // ReplayManager.IsLoadedReplay() (static)
-#define F_TOTAL_BANANA_WORTH 0x4267e20ull   // MgBananaManager.GetTotalBananaWorth() (static)
-#define F_IS_TAKEN_ALL_BANANA 0x42a3ee0ull  // MainGame.IsTakenAllBanana() (static)
-#define F_PLAYER_LIST 0x42a1880ull          // MainGame.get_playerList() (static) -> List<MgPlayer>
-#define F_MAIN_GAME_STAGE 0x42a11f0ull      // MainGame.get_mainGameStage() (static)
-#define F_GET_BATTLE 0x43ad900ull           // RuntimeParam.get_battle() (static) -> BattleParam
-#define F_IS_BATTLE_MODE 0x43afe50ull       // BattleParam.get_isBattleMode(): split screen and online Adventure too
-#define F_CAN_CHANGE_STATE 0x42c7b80ull     // MgPlayer.get_canChangeState()
-#define SEQ_STATE 0x18                      // MainGameSequence.m_State: 4 GAME, 5 FALLOUT, 6 GOAL, 9 TIMEUP
-#define SEQ_TIME_LIMIT 0x2c                 // float m_TimeLimitSec
-#define SEQ_TIMER_FIXED 0x68                // int m_TimerFixed (ms left)
-#define PLAYER_IS_GOAL 0x20
-#define PLAYER_GOAL_IDX 0x24
-#define PLAYER_GOAL_TIME 0xc8               // float
-#define PLAYER_IS_LOCAL 0x1b8
-#define STAGE_GOAL_LIST 0x30                // MainGameStage.m_GoalColiList
-#define BATTLE_GAME_MASTER 0x20             // BattleParam -> game master {+0x18 int elapsed ms}
-
-static int bonus_stage(Cpu *c) {
-    if (g_ncourses < 0) load_courses();
-    if (!g_nbonus) return 0;
-    uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull), list = sel ? LD64(sel + SELECTOR_STAGELIST) : 0;
-    uint32_t stage = list ? (uint32_t)rt_call(c, FN(F_CURRENT_STAGE), 2, list, 0ull) : 0;
-    for (int i = 0; i < g_nbonus; i++)
-        if (g_bonus[i] == stage) return 1;
-    return 0;
-}
-
-// MainGameSequence.setState(State state, int subState)
-int rt_hook_42ab070(Cpu *c) {
-    uint32_t to = (uint32_t)c->x[1];
-    if ((to != 5 && to != 9) || !c->x[0]) return 0;
-    uint32_t now = LD32(c->x[0] + SEQ_STATE);
-    if (now != 4 && now != 6) return 0;
-    uint64_t x0 = c->x[0], x2 = c->x[2], x3 = c->x[3], lr = c->x[30];
-    int redirect = bonus_stage(c) && !(rt_call(c, FN(F_IS_LOADED_REPLAY), 1, 0ull) & 1);
-    c->x[0] = x0; c->x[2] = x2; c->x[3] = x3; c->x[30] = lr;
-    c->x[1] = redirect ? 6 : to;
-    if (redirect) rt_log("mania: bonus stage: %s counts as a clear", to == 5 ? "everyone out" : "time up");
-    return 0;
-}
-
-// MainGameSequence.updateHurryUp(): once a frame while a stage is being played, in both sequences
-int rt_hook_42aff20(Cpu *c) {
-    static int done;
-    uint64_t self = c->x[0];
-    if (!self || !g_nbonus) return 0;
-    if (LD32(self + SEQ_STATE) != 4) { done = 0; return 0; }
-    if (done) return 0;
-    uint64_t x1 = c->x[1], x2 = c->x[2], x3 = c->x[3], lr = c->x[30];
-    extern int test_aids_all_bananas(void);                 // test_aids.c: the live command BANANAS
-    int forced = test_aids_all_bananas();
-    if (bonus_stage(c) && (forced || ((int)rt_call(c, FN(F_TOTAL_BANANA_WORTH), 1, 0ull) > 0 && (rt_call(c, FN(F_IS_TAKEN_ALL_BANANA), 1, 0ull) & 1)))
-        && !(rt_call(c, FN(F_IS_LOADED_REPLAY), 1, 0ull) & 1)) {
-        uint64_t players = rt_call(c, FN(F_PLAYER_LIST), 1, 0ull), battle = rt_call(c, FN(F_GET_BATTLE), 1, 0ull);
-        uint64_t items = players ? LD64(players + LIST_ITEMS) : 0;
-        int n = players ? (int)LD32(players + LIST_SIZE) : 0, multi = battle && (rt_call(c, FN(F_IS_BATTLE_MODE), 2, battle, 0ull) & 1), marked = 0;
-        float t;
-        if (!multi) {
-            float limit;
-            uint32_t raw = LD32(self + SEQ_TIME_LIMIT);
-            memcpy(&limit, &raw, 4);
-            t = limit - (float)(int32_t)LD32(self + SEQ_TIMER_FIXED) / 1000.0f;
-        } else {
-            uint64_t gm = LD64(battle + BATTLE_GAME_MASTER);
-            t = gm ? (float)(int32_t)LD32(gm + 0x18) / 1000.0f : 0.0f;
-        }
-        uint64_t stage = rt_call(c, FN(F_MAIN_GAME_STAGE), 1, 0ull), goals = stage ? LD64(stage + STAGE_GOAL_LIST) : 0;
-        int has_goal = goals && (int)LD32(goals + LIST_SIZE) > 0;
-        for (int i = 0; items && i < n && (!multi || has_goal); i++) {
-            uint64_t p = LD64(items + ARR_DATA + 8 * (uint64_t)i);
-            if (!p || LD8(p + PLAYER_IS_GOAL)) continue;
-            if (multi && (!LD8(p + PLAYER_IS_LOCAL) || !(rt_call(c, FN(F_CAN_CHANGE_STATE), 2, p, 0ull) & 1))) continue;
-            uint32_t bits;
-            memcpy(&bits, &t, 4);
-            ST32(p + PLAYER_GOAL_TIME, bits);
-            ST32(p + PLAYER_GOAL_IDX, 0xffffffffu);
-            ST8(p + PLAYER_IS_GOAL, 1);
-            marked++;
-        }
-        done = 1;
-        rt_log("mania: bonus stage: every banana taken, %d player(s) marked as cleared (%s)", marked, multi ? "multiplayer" : "single player");
-    }
-    c->x[0] = self; c->x[1] = x1; c->x[2] = x2; c->x[3] = x3; c->x[30] = lr;
-    return 0;
 }

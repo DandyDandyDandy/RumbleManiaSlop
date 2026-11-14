@@ -35,8 +35,6 @@
 446c4d0   Wonder.CRM.AdventureUtil::UpdateBestTimeStatus
 446c610   Wonder.CRM.AdventureUtil::StartTimeAttack
 446c730   Wonder.CRM.AdventureUtil::FinishTimeAttack
-42ab070   Wonder.MainGameSequence::setState   (bonus stages)
-42aff20   Wonder.MainGameSequence::updateHurryUp   (bonus stages)
 4308520   Wonder.MgStageSwitchController::Request(eState, int, int, bool, float)   (BR_MANIA_LOG)
 430b0a0   Wonder.MgSwitch::OnTriggerEnterPlayer(PhysicsBall)   (BR_MANIA_LOG)
 4305d30   Wonder.MgSeesaw::OnPostCollide(GameObject)   (BR_MANIA_LOG)

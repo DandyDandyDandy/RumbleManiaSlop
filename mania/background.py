@@ -48,7 +48,7 @@ material alpha below one. The time-dependent part of a scroll goes into `_UVscro
 the formerly lit materials becomes a constant per background multiplied into `_Color`.
 
 Not converted: particle systems, the collision twin, the flow-map wobble, mask textures, flip book animation, toon
-ramp / rim / specular / cube-map reflections, Mania's post-processing. The 29 stages that place the background
+ramp / rim / specular / cube-map reflections, Mania's post-processing. The 27 imported stages that place the background
 somewhere else (`BgRoot`) are listed in the result's `moved_stages`; build.py hands them to the port, which moves
 the scenery's root (mania.c).
 
@@ -95,10 +95,10 @@ LIGHT_TEMPLATE = 'lgt01_w01_001'    # the Rumble lighting scene a background wit
 LIGHT_TEMPLATE_OF_BG = {
     'Smb1_Jungle': 'lgt01_w01_001', 'Smb1_Water': 'lgt02_w02_001', 'Smb1_Night': 'lgt06_w06_001', 'Smb1_Sunset': 'lgt04_w04_001',
     'Smb1_Space': 'lgt10_w10_001', 'Smb1_Sands': 'lgt05_w05_001', 'Smb1_Ice': 'lgt07_w07_001', 'Smb1_Storm': 'lgt08_w08_001',
-    'Smb1_Masters': 'lgt01_w01_001', 'Smb1_Bonus': 'lgt03_w03_001',
+    'Smb1_Masters': 'lgt01_w01_001',
     'Smb2_Jungle': 'lgt01_w01_001', 'Smb2_Lava': 'lgt04_w04_001', 'Smb2_Water': 'lgt02_w02_001', 'Smb2_Whale': 'lgt03_w03_001',
     'Smb2_Park': 'lgt05_w05_001', 'Smb2_Pot': 'lgt08_w08_001', 'Smb2_Bubble': 'lgt07_w07_001', 'Smb2_Gear': 'lgt09_w09_001',
-    'Smb2_Space': 'lgt10_w10_001', 'Smb2_Electric': 'lgt06_w06_001', 'Smb2_Bonus': 'lgt03_w03_001',
+    'Smb2_Space': 'lgt10_w10_001', 'Smb2_Electric': 'lgt06_w06_001',
 }
 UNLIT_SHADER = 'Shader Graphs/bg_unlit_abd'
 UNLIT_SHADER_BUNDLE = 'manual_additions_assets_design/shaders/bg_unlit_abd.shadergraph.bundle'
