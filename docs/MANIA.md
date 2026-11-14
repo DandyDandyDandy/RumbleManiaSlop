@@ -307,8 +307,13 @@ axis. Rumble has the class but no stage with a bar, so there is no type entry to
 makes one from the entry of `CollisionStagePart` plus a matrix field (the engine reads a MonoBehaviour through
 the stored type tree and matches the fields by name). Rumble also never hands the bar a gravity controller
 (the property has no caller left), and without one the bar stands still: the port's hook on `move` gives each
-bar the first local player's (`mania.c`). The drawn bar hangs under the collision bar (`MgJamabar.JamabarModel`).
-With several players every machine moves the bars by its own player's tilt.
+bar a local player's (`mania.c`). The drawn bar hangs under the collision bar (`MgJamabar.JamabarModel`).
+Online every machine moves the bars by its own player's tilt, so they stand differently on each machine (measured:
+after the host alone tilted, its bars had slid up to 2.3 while the guest's were at rest). That is only seen, as
+another player's ball standing in a bar: every ball is simulated on its own machine against its own bars. In
+split screen the players share one set of bars, and the hook hands the bar the next local player's controller
+each step, so the bars slide with the average of the tilts (each player alone moves them; before, only one
+player did). `BR_JAMABAR_LOG=1` logs twice a second where each bar is and whose tilt moved it.
 
 **Wormholes.** Rumble's wormhole is an object tree of its own: the gate model with a see-through surface, its
 collision, a trigger square with `MgWormhole` and `CollisionWormholeGate`, a cubemap camera rig and

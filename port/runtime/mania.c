@@ -607,7 +607,9 @@ int rt_hook_430cc30(Cpu *c) {
 // Wonder.CollisionJamabar.move(): a jamabar (the sliding bars of SMB1's Stoppers) takes a step. The bar slides with
 // the gravity of the player whose MgGravityController it was given (+0x168), and without one it does not move.
 // Nothing in Rumble's code gives it one (the game has the class but no stage with a bar), so the port does: the
-// first local player's. With several players each machine moves the bars by its own player.
+// local player's. Online each machine therefore moves the bars by its own player (they differ between machines;
+// every ball is simulated on its own machine). In split screen the local players share one set of bars: each
+// step the bar takes the next local player's controller, so it slides with the average of their tilts.
 #define F_PLAYER_LIST 0x42a1880ull          // Wonder.MainGame.get_playerList -> List<MgPlayer> (static, through the singleton)
 #define F_OBJ_ALIVE 0x3ee4c20ull            // UnityEngine.Object.op_Implicit (static)
 #define PLAYER_IS_LOCAL 0x1b8               // MgPlayer.m_IsLocal
@@ -615,19 +617,48 @@ int rt_hook_430cc30(Cpu *c) {
 #define JAMABAR_GRAVITY 0x168               // CollisionJamabar.<gravityController>k__BackingField
 int rt_hook_4282ca0(Cpu *c) {
     uint64_t self = c->x[0], x1 = c->x[1], lr = c->x[30];
-    uint64_t have = self ? LD64(self + JAMABAR_GRAVITY) : 0;
-    if (self && !(have && (rt_call(c, FN(F_OBJ_ALIVE), 2, have, 0ull) & 1))) {
-        uint64_t players = rt_call(c, FN(F_PLAYER_LIST), 1, 0ull), found = 0;
-        int n = list_n(players);
-        for (int i = 0; i < n && !found; i++) {
-            uint64_t p = list_at(players, i);
-            if (p && LD8(p + PLAYER_IS_LOCAL)) found = LD64(p + PLAYER_GRAVITY);
+    if (self) {
+        static uint64_t bars[64];           // the steps each bar has taken, to give the local players turns
+        static uint32_t steps[64];
+        uint64_t players = rt_call(c, FN(F_PLAYER_LIST), 1, 0ull), g[8];
+        int n = list_n(players), ng = 0, k = 0;
+        for (int i = 0; i < n && ng < 8; i++) {
+            uint64_t p = list_at(players, i), gc = p && LD8(p + PLAYER_IS_LOCAL) ? LD64(p + PLAYER_GRAVITY) : 0;
+            if (gc && (rt_call(c, FN(F_OBJ_ALIVE), 2, gc, 0ull) & 1)) g[ng++] = gc;
         }
-        if (found && (rt_call(c, FN(F_OBJ_ALIVE), 2, found, 0ull) & 1)) {
+        while (k < 63 && bars[k] && bars[k] != self) k++;
+        if (bars[k] != self) { bars[k] = self; steps[k] = 0; }
+        if (ng) {
             static int said;
-            ST64(self + JAMABAR_GRAVITY, found);
-            if (!said++ && getenv("BR_MANIA_LOG")) rt_log("mania: jamabars follow the local player's gravity");
-        } else if (have) ST64(self + JAMABAR_GRAVITY, 0);
+            ST64(self + JAMABAR_GRAVITY, g[steps[k]++ % (uint32_t)ng]);
+            if (!said++ && getenv("BR_MANIA_LOG")) rt_log("mania: jamabars follow the local players' gravity (%d)", ng);
+        } else if (LD64(self + JAMABAR_GRAVITY)) ST64(self + JAMABAR_GRAVITY, 0);
+    }
+    static int logit = -1;
+    if (logit < 0) logit = getenv("BR_JAMABAR_LOG") != 0;
+    if (logit && self) {                    // twice a second per bar: where it rests, how far it has slid, whose tilt
+        static uint64_t bar[32], when[32];
+        uint64_t now = GetTickCount64() / 500;
+        int k = 0;
+        while (k < 31 && bar[k] && bar[k] != self) k++;
+        if (bar[k] != self || when[k] != now) {
+            bar[k] = self; when[k] = now;
+            uint64_t players = rt_call(c, FN(F_PLAYER_LIST), 1, 0ull), g = LD64(self + JAMABAR_GRAVITY);
+            int n = list_n(players), who = -1, local = 0;
+            for (int i = 0; i < n; i++) {
+                uint64_t p = list_at(players, i);
+                if (p && LD8(p + PLAYER_IS_LOCAL)) local |= 1 << i;
+                if (p && g && LD64(p + PLAYER_GRAVITY) == g) who = i;
+            }
+            float f[3], r[3];
+            uint32_t u;
+            for (int i = 0; i < 3; i++) { u = LD32(self + 0x170 + 4 * i); memcpy(&f[i], &u, 4); }
+            for (int i = 0; i < 3; i++) { u = LD32(self + 0x188 + 4 * (12 + i)); memcpy(&r[i], &u, 4); }
+            SYSTEMTIME t;
+            GetSystemTime(&t);
+            rt_log("jamabar %02d:%02d.%03d rest (%.1f, %.1f, %.1f) slid %.3f by player %d of %d (local mask %d)",
+                   t.wMinute, t.wSecond, t.wMilliseconds, r[0], r[1], r[2], f[2], who, n, local);
+        }
     }
     c->x[0] = self; c->x[1] = x1; c->x[30] = lr;
     return 0;
