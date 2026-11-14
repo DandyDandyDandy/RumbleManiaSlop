@@ -622,6 +622,28 @@ its result).
   the picture, so a changed picture is another asset. A file that is missing is passed over with a line in the
   import's output.
 
+* **A stage picture "From the view" is taken in the game.** The editor's button keeps its own drawing of the
+  stage as a preview (`picture`) and, with it, where the view was (`view` in `overrides.json`: eye, point looked
+  at, both in stage coordinates, and the vertical field of view of the square, 45.8 degrees for a view wider
+  than high). The import (`mania\thumbshot.py`, called by `build.py`) then starts the built game for each new
+  view on the test save (profile `T`; the real save is not touched; no sound, the real keyboard and controllers
+  ignored), walks the menus into the stage as `try_stage.py` does and sets `BR_THUMB_VIEW` (`port\runtime\thumb.c`):
+  once the stage has started, the port begins the game's own free camera, View Stage of the pause menu
+  (`MgViewStageController.Begin`), without the menu; a hook on `MgViewStageCamera.updateTRS` sets its orbit
+  values (point looked at, distance, pitch, turn: the editor's orbit is the same construction, mirrored in x)
+  every frame and gives its cameras the field of view; the mode's markers and the players are switched off, and
+  so is every UI canvas (`rt_hide_ui` in `ultrawide.c`, through the CanvasScaler hook). "thumb: ready" in
+  `port.log` tells the importer to photograph the window (`PrintWindow`, so windows in front do not matter; the
+  middle square of the client area, scaled to 512). So the picture has the game's lighting, the stage's Mania
+  background and goal, and no ball or HUD. It is kept as `build\mania_views\st<id>_<hash of the view>.png` and
+  taken again only for another view (or `build.py --retake`); `--no-views` leaves the step out. With
+  `--no-stages` and the stage already in the game as this import would make it, the pictures are taken before
+  the import; otherwise after it, and the import runs once more with `--no-stages --no-views` to put them in.
+  A picture that could not be taken (the game is running, the menus were not reached) leaves the editor's
+  preview in the game, with a line in the output. One picture takes 70 s on the development machine, because
+  the game is started for each. The importing process must not declare itself aware of display scaling: then
+  `PrintWindow` gives the content smaller than the window rectangle.
+
 **The editor** (`editor.cmd`, `mania\editor.py` with the page `mania\editor.html`): a page in the browser, served
 on 127.0.0.1 only, that takes changes only from itself (the `Origin` header is checked). Left: the worlds and
 their stages. Middle: the stage as Mania has it, drawn with WebGL from the drawn meshes at rest (read from the
@@ -630,7 +652,8 @@ goals; a click on a banana makes it the Golden Banana. Two more tabs are mock-up
 World with the pictures and mission numbers the game will show. Right: the stage's mission values and the
 world's missions switch, theme and pictures; under each picture "Upload" takes an image file (PNG, JPEG, WebP,
 BMP, GIF) of one's own and "Remove" deletes it again, and a stage's thumbnail can also be taken "From the view"
-(the middle square of the 3D view on a sky). Every change is saved at once; "Apply to game" runs
+(the middle square of the 3D view on a sky, as a preview: the game draws the real one from that spot when the
+import runs, see above). Every change is saved at once; "Apply to game" runs
 `build.py --no-stages` (about a minute; it refuses while the game runs, because the game keeps the files open).
 Nothing of either game is copied into the repository: what the page reads is cached in
 `build\mania_work\editor\`.
@@ -640,7 +663,8 @@ completes the third mission on the result screen; Select Stage shows Mania's thu
 the set numbers; Select World shows Mania's course pictures and the chosen theme's big picture; the Missions menu
 lists the imported worlds that have missions with the set values, while its overall percentage stays the game's
 own; a world without a title card; uploaded pictures as a stage's thumbnail (a file and one taken from the
-view), a world's small picture and its big picture. A world icon, borrowed or uploaded, was not found on any
+view), a world's small picture and its big picture; a stage picture taken in the game from an editor view
+(st1008: same framing as the preview, Sunset background, shown in Select Stage). A world icon, borrowed or uploaded, was not found on any
 screen: the title cards seen (the theme of World 3) do not show one. Not looked at: the time and banana missions
 completed in play (only the golden one was), perfect marks, split screen and online with missions, other
 languages.

@@ -36,7 +36,9 @@ PICTURES = os.path.join(os.path.dirname(HERE), 'input', 'pictures')
 PICTURE_NAME = re.compile(r'[A-Za-z0-9_]{1,100}\.png')
 # the shapes the game shows them in: (width, height, with transparency)
 PICTURE_SHAPES = {'picture': (512, 512, False), 'big_picture': (804, 1004, False), 'icon_picture': (132, 132, True)}
-STAGE_KEYS = {'gold': str, 'time': (int, float), 'time_perfect': (int, float), 'bananas': int, 'picture': str}
+# 'view': where a stage's picture was taken from in the editor's 3D view, for the picture the import takes in the
+# game (thumbshot.py): eye x y z, point looked at x y z (stage coordinates), vertical field of view in degrees
+STAGE_KEYS = {'gold': str, 'time': (int, float), 'time_perfect': (int, float), 'bananas': int, 'picture': str, 'view': list}
 COURSE_KEYS = {'missions': bool, 'theme': int, 'thumbnail': (int, str), 'brochure': int, 'icon': int, 'title': int,
                'picture': str, 'big_picture': str, 'icon_picture': str}
 
@@ -56,6 +58,12 @@ def clean(data):
             kept = {}
             for k, v in entry.items():
                 if k not in keys or v is None or v == '':
+                    continue
+                if keys[k] is list:
+                    if not (isinstance(v, list) and len(v) == 7 and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                                                                         and abs(x) < 1e6 for x in v) and 1 <= v[6] <= 170):
+                        raise ValueError(f'overrides: {section}/{name}/{k} is not a view (seven numbers)')
+                    kept[k] = [round(float(x), 4) for x in v]
                     continue
                 if isinstance(v, bool) != (keys[k] is bool) or not isinstance(v, keys[k]):
                     raise ValueError(f'overrides: {section}/{name}/{k} has the wrong type')

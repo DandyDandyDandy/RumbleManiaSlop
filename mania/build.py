@@ -43,6 +43,11 @@ worlds are about reaching the goal and clear times.
 What the import cannot know is read from mania\\overrides.json (overrides.py; written by the editor, editor.py):
 each stage's Golden Banana and mission values, each world's graphics. A stage whose Golden Banana changed is
 converted again even with --no-stages.
+
+A stage whose picture was taken "From the view" in the editor gets its picture from the game itself: the import
+starts the game and photographs the stage from that point of view (thumbshot.py; about a minute and a half per
+new view, --no-views leaves it out, --retake takes all of them again). With --no-stages and an import already in
+the game this happens first; otherwise after the import, which then runs its table part once more.
 """
 import argparse
 import hashlib
@@ -58,6 +63,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'port'))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'port', 'assets'))
 
 import overrides  # noqa: E402
+import thumbshot  # noqa: E402
 import paths  # noqa: E402
 from aacatalog import Catalog  # noqa: E402
 from dbtable import LANGS, Database  # noqa: E402
@@ -199,6 +205,9 @@ def main():
                     help='leave the stages with the scenery, sky and lighting of the Rumble world they borrow')
     ap.add_argument('--bg-option', action='append', default=[], metavar='KEY=VALUE',
                     help='a tunable of background.py in lower case, the value as JSON (for testing): --bg-option light_exposure=0.5')
+    ap.add_argument('--no-views', action='store_true',
+                    help='do not start the game to take the stage pictures of the editor\'s views (they keep the editor\'s picture)')
+    ap.add_argument('--retake', action='store_true', help='take the stage pictures of all views again')
     a = ap.parse_args()
     game = a.game
     aa = os.path.join(game, f'{paths.NAME}_Data', 'StreamingAssets', 'aa')
@@ -230,6 +239,18 @@ def main():
         e = extras.get(sid)
         return (os.path.exists(os.path.join(out, bundle_rel(sid).replace('/', os.sep))) and e is not None and 'banana_count' in e
                 and e.get('gold') == overrides.gold(ov, sid))
+
+    # ---- stage pictures from the game, of the stages that are in the game as this import would make them
+    views = {sid: ov['stages'][str(sid)]['view'] for sid in stage_ids if ov['stages'].get(str(sid), {}).get('view')}
+    if a.retake:
+        for sid, v in views.items():
+            if os.path.exists(thumbshot.kept(sid, v)):
+                os.remove(thumbshot.kept(sid, v))
+    tried = set()
+    if views and not a.no_views and a.no_stages:
+        ready = {sid: v for sid, v in views.items() if fits(sid) and not os.path.exists(thumbshot.kept(sid, v))}
+        tried = set(ready)
+        thumbshot.take_all(ready, game=game)
 
     # ---- stage scenes
     failed, reports = {}, {}
@@ -349,6 +370,12 @@ def main():
           f'{f" ({len(bg_failed)} failed)" if bg_failed else ""}, {len(written)} tables, {int(time.time() - t0)} s -> {out}')
     for b, e in failed.items():
         print('  failed:', b, e)
+    # ---- stage pictures from the game of stages that were not in the game before this import
+    late = {sid: v for sid, v in views.items() if sid in stage_ids and sid not in tried}
+    if not a.no_views and thumbshot.take_all(late, game=game):
+        import subprocess
+        print('The new pictures go into the game:', flush=True)
+        return subprocess.call([sys.executable, '-u', os.path.abspath(__file__), *sys.argv[1:], '--no-stages', '--no-views'])
     return 0
 
 
@@ -361,6 +388,19 @@ def own_picture(entry, key):
             print(f'  picture {entry[key]} is not in input\\pictures: passed over', flush=True)
         return None
     return 'user_' + hashlib.md5(img.tobytes() + f'{img.size} {key}'.encode()).hexdigest()[:12], overrides.fit_picture(img, key)
+
+
+def view_picture(sid, entry):
+    """(name for the sprite, picture) of the picture the game took of the stage from the view its entry of the
+    overrides names (thumbshot.py), or None: no view, or not taken yet."""
+    view = entry.get('view')
+    path = thumbshot.kept(sid, view) if view else None
+    if not path or not os.path.exists(path):
+        return None
+    from PIL import Image
+    with Image.open(path) as f:
+        img = f.convert('RGB')
+    return 'view_' + hashlib.md5(img.tobytes()).hexdigest()[:12], overrides.fit_picture(img, 'picture')
 
 
 def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds, extras, ov, cat):
@@ -395,9 +435,11 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
         fields.update(scenery[WORLD_OF_BG.get(st['bg'], 1)])
         if st['bg'] in backgrounds:
             fields.update(stage_fields(backgrounds[st['bg']]))
-        # the picture in Select Stage: the user's (overrides.json), else Banana Mania's thumbnail of the stage
+        # the picture in Select Stage: the game's own of the user's view, else the user's (overrides.json), else
+        # Banana Mania's thumbnail of the stage
         # (0 = "no image")
-        picture = own_picture(ov['stages'].get(str(sid), {}), 'picture')
+        entry = ov['stages'].get(str(sid), {})
+        picture = view_picture(sid, entry) or own_picture(entry, 'picture')
         if picture:
             thumb = sprites.add(*picture, out)
         else:

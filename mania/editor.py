@@ -9,7 +9,9 @@ What a person sets with it (saved at once into mania\\overrides.json, which mani
     per world   whether it has stage missions, and the Rumble world whose graphics it borrows in the menus
     pictures    of one's own for a stage's thumbnail and a world's small picture, big picture and icon: uploaded
                 in the page (or, for a stage, taken from the 3D view), cut to the game's shape and kept as PNG
-                files in input\\pictures\\ (the user's folder, not part of the repo)
+                files in input\\pictures\\ (the user's folder, not part of the repo). A stage picture taken from
+                the 3D view is a preview: its point of view is kept too ("view"), and the import lets the game
+                itself draw the stage from there (thumbshot.py)
 
 The page shows the stage as Banana Mania has it (the drawn meshes at rest, read from the Mania install with
 maniastage.py; nothing is copied into the repo) and a mock-up of Select World and Select Stage with the pictures

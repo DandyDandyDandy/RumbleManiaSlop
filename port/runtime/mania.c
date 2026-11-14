@@ -236,8 +236,10 @@ static void load_courses(void) {
 // because it sets the content tag of online play
 static void goal_tick(Cpu *c);
 void mania_tick(Cpu *c) {
+    extern void thumb_tick(Cpu *c);
     if (g_ncourses < 0) load_courses();
     goal_tick(c);
+    thumb_tick(c);
 }
 
 // Wonder.SaveUserParam.AdventureParam.GetAdvModeHighestUnlockID(): the last world, in display order, whose previous

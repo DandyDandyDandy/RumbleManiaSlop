@@ -182,7 +182,9 @@ label { display: block; margin: 10px 0 4px; font-weight: 600; }
     <div class="note" id="banananote"></div>
     <label>Picture in Select Stage</label>
     <div class="pic" id="pic-stage"></div>
-    <div class="note">Without one of your own: Banana Mania's thumbnail. "From the view" takes the middle square of the stage view as it is now.</div>
+    <div class="note">Without one of your own: Banana Mania's thumbnail. "From the view" takes the middle square of the stage view as it is now:
+      what you see here is a preview, and "Apply to game" lets the game draw the stage from that same spot, with its lighting and
+      background (the game opens by itself for about a minute and a half per new view).</div>
   </section>
   <section>
     <h2>World · <span id="worldname"></span></h2>
@@ -341,24 +343,35 @@ function fillPics() {
     const box = $(id), name = section === 'stages' ? stage.id : course.name, file = (OV[section][name] || {})[key];
     box.textContent = '';
     if (file) { const im = el('img'); im.src = userUrl(file); im.alt = ''; box.append(im); }
-    box.append(el('span', 't', file ? 'Your picture' : 'No picture of your own'));
+    const viewed = section === 'stages' && file && (OV.stages[name] || {}).view;
+    box.append(el('span', 't', viewed ? 'Preview of your view (the game draws it)' : file ? 'Your picture' : 'No picture of your own'));
     const up = el('button', null, file ? 'Replace …' : 'Upload …');
     up.onclick = () => { $('file').value = ''; $('file').onchange = () => { const f = $('file').files[0]; if (!f) return;
       const r = new FileReader(); r.onload = () => sendPicture(section, name, key, r.result); r.readAsDataURL(f); }; $('file').click(); };
+    if (viewed) up.textContent = 'Upload instead …';
     box.append(up);
-    if (id === 'pic-stage') { const v = el('button', 'fromview', 'From the view'); v.onclick = () => { const d = snapshot(); if (d) sendPicture(section, name, key, d); }; box.append(v); }
+    if (id === 'pic-stage') { const v = el('button', 'fromview', 'From the view'); v.onclick = () => { const d = snapshot(); if (d) sendPicture(section, name, key, d, currentView()); }; box.append(v); }
     if (file) { const rm = el('button', 'remove', 'Remove'); rm.onclick = () => sendPicture(section, name, key, null); box.append(rm); }
   }
 }
-async function sendPicture(section, name, key, dataUrl) {
+// view: where a stage picture "From the view" was taken from; an uploaded or removed picture has none
+async function sendPicture(section, name, key, dataUrl, view) {
   try {
     const r = await fetch('/api/picture', {method: 'POST', headers: {'Content-Type': 'application/json'},
                                            body: JSON.stringify({section, name, key, data: dataUrl})});
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.status);
     picVer++; setOv(section, name, key, j.file || undefined);
+    if (section === 'stages') setOv(section, name, 'view', j.file && view ? view : undefined);
     fillStages(); fillPics(); drawMocks();
   } catch (e) { $('saved').textContent = 'Picture not taken: ' + e.message; $('saved').className = 'err'; }
+}
+// The view of the snapshot for the game (mania\\thumbshot.py): eye and point looked at in stage coordinates (the
+// 3D view is mirrored in x) and the vertical field of view of the middle square, in degrees.
+function currentView() {
+  const {eye} = camBasis(), w = canvas.clientWidth, h = canvas.clientHeight;
+  const fov = 2 * Math.atan(Math.tan(0.4) * Math.min(w, h) / h) * 180 / Math.PI;
+  return [...mirror(eye), ...mirror(cam.target), fov].map(x => Math.round(x * 1e4) / 1e4);
 }
 function snapshot() {          // the middle square of the stage view on a sky, as a PNG data URL
   if (!canvas.clientWidth) { $('saved').textContent = 'Open the Stage tab first: the picture is taken from its view'; $('saved').className = 'err'; return null; }
