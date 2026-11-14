@@ -249,7 +249,7 @@ What is built:
 | the `Collision` tree | the same hierarchy; each `CollisionStagePart` becomes Rumble's, with a new `CollisionStageData` (frames recomputed from the corners, boxes added, grid kept) |
 | `BananaPos` | the node's transform in `m_BananaTransformList` (single and bunch) |
 | `START` | the template's `START_NULL0`, moved there, turned by 180 degrees, lowered by the ball's radius |
-| `GOALnn` | the template's goal arch (first goal) or a copy of it, at the goal's place under the same parent, turned by 180 degrees |
+| `GOALnn` (`MgGoalColi`, and its `MgGoalModel` twin in the `Behavior` tree) | the template's goal object (first goal) or a copy of it under a new object with the Mania node's name and place, turned by 180 degrees; drawn and colliding as Mania's goal (below) |
 | the Animator of `Collision` | an Animator (update mode 1) and a ReplayTracker on the `Collision` copy, with the carried-over controller and clips, listed in `m_StageAnimators` |
 | `StageMovObjManager.m_info` (moving node -> its drawn twin), `MgTRSSync` (source -> targets) | Mania copies transforms every frame; here each target is hung **under** its source, keeping its place, so the one Animator moves the drawn parts and whatever rides on a moving part |
 | nothing (Mania moves every collision part it finds under an animated node) | the tag `StgMot` on every object the clips move and on everything below it (below) |
@@ -262,7 +262,6 @@ What is built:
 | `MgWormholeColi {m_PairedWormhole}` with its model, camera and collision | a copy of Rumble's wormhole object (below) |
 | `MgBlurFloor {m_LeadingFloor, m_CollisionHead, m_CollisionTail}` | its model under the head piece and a copy under the tail piece (below) |
 | `MainGameStageArea {m_AttributeToAreaList}` | `area` lines of `mania_courses.txt` (below) |
-| `MgGoalColi.m_GoalKind` | the colour of the goal arch (below) |
 | `LODGroup` | only the nearest detail level is drawn |
 | fall-out height and box | `m_RingoutY`, `m_FalloutBounds` |
 
@@ -323,7 +322,7 @@ bundle's resource file), adding the type entries the template stage lacks; the s
 that stage depends on (`stage_extras.json`, `add_scenes`). A copy stands at each Mania gate, turned half round
 (Mania's gate is entered from -Z, Rumble's from +Z), under the node the gate follows when that one moves; the two
 gates of a pair name each other (`m_PairedWormhole`, `m_WormholeFrom` / `m_WormholeTo`). The surfaces of the two
-games' gates have the same size (4.4 wide, 4.5 high); Mania's own gate model is not drawn.
+games' gates have the same size (4.4 wide, 4.5 high); Mania's own gate model is not drawn (the goal's is: below).
 
 **Blur floors** (SMB1's Blur Bridge, st1101). A floor slides to and fro, and two collision pieces follow it a
 quarter and half a second later: the floor's trail, which carries the ball too. Mania draws the trail with a
@@ -336,10 +335,35 @@ goals travel on a belt and are parked inside such a sphere): a goal standing ins
 `mania_courses.txt` as `area <stage row> goal|wormhole x y z radius` and are applied by the hooks on
 `MgGoalColi.OnTriggerEnterPlayer` and `MgWormhole.OnTriggerEnterPlayer`. `CameraDist` (st1110) is not carried over.
 
-**Goal colours.** Every goal is Rumble's arch and ends the stage, but the arch has the colour of Mania's goal
-(blue, green, red): a copy of the arch's material with its texture and toon colours moved to the goal's hue and
-made as mild as the classic goal's posts (`GOAL_HUES`, `GOAL_SATURATION`, `GOAL_BRIGHTNESS`; measured on pictures
-of the three goals).
+**Goals.** An imported stage has Banana Mania's goal: the ring gate with the star panel, the party ball and the
+tape, blue, green or red as in Mania (the model's own materials; `m_GoalKind` is not needed for that). Rumble's own
+stages are not touched: the model only exists in converted scenes. What plays the goal is still Rumble's goal
+object, a copy of World 1's `goal_arch`: its trigger (`CollisionSquare`), `MgGoalColi` and the goal effect are
+the game's, so results, replays and online play work as for any goal. Around it:
+
+* The arch's own meshes stay in the scene (the object's Animator and effect root refer to them) with their
+  renderers switched off.
+* Mania's model (`MgGoalModel` node: `goal_base`, `goal_glass`, `goal_base_ill`, `goal_tape`, `goal_sphere` with
+  its two halves) is converted like any drawn node and hung under the goal in an object `mania_goal`, turned back
+  by the 180 degrees the goal object is turned.
+* The arch's collision part (`model_col2`) gets a new `CollisionStageData` made from the triangles of Mania's
+  collision-side `goal_base` mesh (1320 triangles: the ring and the two posts, 2.35 to each side and 5.55 high,
+  the opening between the posts 1.75 wide), carried into that part's frame. `triangles_part()` builds the part:
+  every edge gets an id shared by its two triangles, none where they meet flat or in a valley, and the grid is one
+  cell. Mania does not use a triangle part for the goal (a script computes it); the party ball and the tape are
+  not solid here.
+* The goal object hangs under an object that has the Mania node's name. Factory (st1109) animates the goal nodes
+  themselves: thirty goals hang upside down from claws that carry them along a rail, and at the end of the rail the
+  claws open and the goal falls (the fall is keyframed in the stage's clip, down to y -1000). The clip finds its
+  nodes by name, so a goal object called `goal_arch` was never moved by it and stayed in the claws for ever; now
+  the goals are released and fall. A falling or parked goal does not count (the `InactiveGoal` areas, above).
+* When a ball goes through, the tape goes and the party ball opens: `mania.c` (`goal_entered`, from the hook on
+  `MgGoalColi.OnTriggerEnterPlayer`) hides `goal_tape` and swings `goal_sphere01` / `goal_sphere02` apart over
+  0.45 s. A retry does not load the scene again, so `goal_tick` closes the ball and brings the tape back when the
+  stage sequence returns to PREPARE / INTRO / READY / RETRY.
+
+Not done: what a green or red goal does in Mania (skipping stages; every goal ends the stage), the tape's cloth
+motion and the confetti of the party ball (Rumble's own goal effect plays), the party ball as a solid thing.
 
 **Script classes the template does not have.** World 1 Stage 1 has no bumper, switch, seesaw or conveyor. A script class is made
 usable in the new scene by copying two things from a stage of the game that uses it (`SCRIPT_DONORS`): the
@@ -546,7 +570,7 @@ What was checked in the running game (2.00, one PC):
 ## What is not converted
 
 * What a green or a red goal does (skipping stages): every goal ends the stage; only its colour is kept.
-* Mania's own models of the goal (party ball, tape) and of the wormhole: Rumble's stand there.
+* Mania's own model of the wormhole: Rumble's stands there.
 * A seesaw inside another seesaw (three stages), the camera distance area of st1110, the manager's scroll on
   the unlit belts of st1069.
 * Of Mania's backgrounds: particles, weather, distortion and reflections (see "Backgrounds"). The stage intro

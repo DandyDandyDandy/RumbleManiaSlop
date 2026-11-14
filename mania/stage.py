@@ -12,7 +12,8 @@ stage geometry removed and the Mania stage put in:
         mania               new: the Mania prefab's hierarchy
             Behavior        the drawn meshes (new Mesh / Material / Texture2D objects in the bundle's sharedAssets)
             Collision       collision parts, bananas, animated groups
-        goal_arch ...       the template's goal, moved to each Mania goal (cloned for further goals)
+        goal_arch ...       the template's goal, moved to each Mania goal (cloned for further goals), drawn and
+                            colliding as Mania's goal
         START_NULL0         the template's start transform, moved
         ...BeginningBounds  the template's intro-camera bounds, resized
     MainGameInitializer     template
@@ -44,19 +45,9 @@ MATERIAL_MODELS = {'opaque': ('w01', 'bg_stg_w01_island02'), 'cutout': ('w01', '
 # Mania's conveyor manager scrolls a belt's texture by its `m_uvSpeed` times a constant of the code; with this value
 # the texture of SMB1's Conveyers (uv speed 100, belt speed 3) moves as fast as the belt carries the ball
 BELT_UV_SPEED = 0.0075
-# Goal colours. Rumble's arch is orange and yellow; an imported goal gets the arch's texture and toon colours in the
-# colour of Mania's goal (m_GoalKind 1 blue, 2 green, 3 red). The hues, and how strong and bright the colour is, are
-# those of the classic goal's posts (measured on pictures: saturation 0.65, brightness 0.63, against the arch's
-# 1.0 and 0.8): every colour of the arch moves to the goal's hue, keeping a part of its distance from the arch's
-# orange so that panels and stripes stay apart, and loses saturation and brightness by the two factors.
-GOAL_BASE_HUE = 40.0
-GOAL_HUES = {1: 214.0, 2: 136.0, 3: 356.0}
-GOAL_HUE_SPREAD = 0.25
-GOAL_SATURATION = 0.66
-GOAL_BRIGHTNESS = 0.82
-GOAL_MATERIAL_COLORS = ('_ToonColor1', '_ToonColor2', '_SpecularColor', '_RimColor')
 WORMHOLE_DONOR = ('bg_stg_w06_215', 'wormhole_a1')      # a stage of the game with a wormhole, and the object's name
 BELT_DONOR = 'bg_stg_w02_006'                           # a stage that depends on the bundle of the belt shader
+GOAL_MODEL_NAME = 'mania_goal'  # the object under a goal that holds Mania's goal model (mania.c looks for it)
 AREA_KINDS = {'InactiveGoal': 'goal', 'DisableWormhole': 'wormhole'}    # Mania's area attribute -> mania_areas.txt
 # Script classes the template stage does not use are taken from a stage of the game that does (its type entry with
 # the type tree, and its MonoScript object): class -> stage scene
@@ -676,32 +667,6 @@ class MaterialModels:
             raise ValueError(f'template materials not found in the material caches: {sorted(missing)}')
 
 
-def goal_hsv(h, s, v, hue):
-    """A colour of Rumble's goal arch (h in degrees, s, v; numbers or arrays) in the goal colour `hue`."""
-    away = (h - GOAL_BASE_HUE + 180.0) % 360.0 - 180.0
-    return (hue + GOAL_HUE_SPREAD * away) % 360.0, s * GOAL_SATURATION, v * GOAL_BRIGHTNESS
-
-
-def goal_colored_image(img, hue):
-    """A PIL image of the arch's texture in the goal colour `hue`; alpha is kept."""
-    from PIL import Image
-    rgba = img.convert('RGBA')
-    hsv = np.array(rgba.convert('RGB').convert('HSV')).astype(np.float64)
-    h, s, v = goal_hsv(hsv[..., 0] * 360.0 / 256.0, hsv[..., 1], hsv[..., 2], hue)
-    out = np.stack([h * 256.0 / 360.0 % 256.0, s, v], axis=-1)
-    out = Image.fromarray(np.clip(np.rint(out), 0, 255).astype(np.uint8), 'HSV').convert('RGB').convert('RGBA')
-    out.putalpha(rgba.getchannel('A'))
-    return out
-
-
-def goal_colored(c, hue):
-    import colorsys
-    h, s, v = colorsys.rgb_to_hsv(c['r'], c['g'], c['b'])
-    h, s, v = goal_hsv(h * 360.0, s, v, hue)
-    r, g, b = colorsys.hsv_to_rgb(h / 360.0, s, v)
-    return {'r': r, 'g': g, 'b': b, 'a': c['a']}
-
-
 def rgba32_texture(tree, img):
     """The Texture2D tree `tree` holding the PIL image `img` as uncompressed RGBA with a full mip chain."""
     from PIL import Image, ImageOps
@@ -755,6 +720,52 @@ def merged_part(pieces):
         base += top + 1
     if not tris:
         lo = hi = np.zeros(3)
+    size = np.maximum(hi - lo, 1e-3)
+    return {'triangle': tris, 'gridTriangleList': {'X': [{'Y': [{'Z': [{'indexList': list(range(len(tris)))}]}]}]},
+            'gridMin': v3(lo), 'intervalX': float(size[0]), 'intervalY': float(size[1]), 'intervalZ': float(size[2]),
+            'gridSizeX': 1, 'gridSizeY': 1, 'gridSizeZ': 1}
+
+
+def triangles_part(corners):
+    """A Mania collision part from triangles (an array [n, 3 corners, xyz]): the shape collision_part() takes.
+
+    Each edge gets an id of its own, shared by the two triangles that meet there, and none (-1) where they meet
+    flat or in a valley: such an edge can not be hit, and testing it makes a ball catch on a smooth surface. The
+    grid is a single cell that lists every triangle."""
+    pts = np.round(np.asarray(corners, dtype=np.float64), 4)
+    e1, e2 = pts[:, 1] - pts[:, 0], pts[:, 2] - pts[:, 0]
+    nrm = np.cross(e1, e2)
+    ln, l1 = np.linalg.norm(nrm, axis=1), np.linalg.norm(e1, axis=1)
+    keep = (ln > 1e-9) & (l1 > 1e-6)
+    pts, e1, e2, nrm, ln, l1 = pts[keep], e1[keep], e2[keep], nrm[keep], ln[keep], l1[keep]
+    if not len(pts):
+        return None
+    nrm = nrm / ln[:, None]
+    edges = {}
+    for i, t in enumerate(pts):
+        for k in range(3):
+            a, b = tuple(t[k]), tuple(t[(k + 1) % 3])
+            edges.setdefault((a, b) if a <= b else (b, a), []).append((i, k))
+    ids, nxt = np.full((len(pts), 3), -1, dtype=np.int64), 0
+    for users in edges.values():
+        if len(users) == 2:
+            (i, k), (j, _) = users
+            other = [c for c in pts[j] if not any(np.array_equal(c, x) for x in (pts[i][k], pts[i][(k + 1) % 3]))]
+            flat = float(np.dot(nrm[i], nrm[j])) > 0.9999
+            valley = bool(other) and float(np.dot(nrm[i], other[0] - pts[i][k])) > 1e-5
+            if flat or valley:
+                continue
+        for i, k in users:
+            ids[i, k] = nxt
+        nxt += 1
+    tris = []
+    for i, t in enumerate(pts):
+        x = e1[i] / l1[i]
+        y = np.cross(nrm[i], x)
+        tris.append({'pos': v3(t[0]), 'rot': q4(quat_from_axes(x, y, nrm[i])), 'flag': 0,
+                     'lpos': [v2((float(l1[i]), 0.0)), v2((float(np.dot(e2[i], x)), float(np.dot(e2[i], y))))],
+                     'edgeIndices': [int(v) for v in ids[i]]})
+    lo, hi = pts.reshape(-1, 3).min(0), pts.reshape(-1, 3).max(0)
     size = np.maximum(hi - lo, 1e-3)
     return {'triangle': tris, 'gridTriangleList': {'X': [{'Y': [{'Z': [{'indexList': list(range(len(tris)))}]}]}]},
             'gridMin': v3(lo), 'intervalX': float(size[0]), 'intervalY': float(size[1]), 'intervalZ': float(size[2]),
@@ -982,6 +993,7 @@ class Converter:
         holder = sc.new_object('mania', root)
         lo, hi = np.full(3, np.inf), np.full(3, -np.inf)
         bananas, goals, start_node = [], [], None
+        goal_models = {}    # path below `Behavior` -> the node with MgGoalModel (its MgGoalColi has the same path below `Collision`)
         stats = {'renderers': 0, 'collision_parts': 0, 'triangles': 0, 'skipped': {}}
         donors = set()      # stages of the game whose assets this stage uses: it needs the bundles they depend on
 
@@ -1032,7 +1044,8 @@ class Converter:
         def copy_node(n, parent, visual):
             nonlocal lo, hi, start_node
             kinds = {c[0] for c in n.components}
-            if 'MgGoalModel' in kinds:              # Mania's goal model: Rumble's own goal stands there instead
+            if 'MgGoalModel' in kinds:              # Mania's goal model: drawn on Rumble's goal object (below)
+                goal_models[n.path().split('/', 2)[-1]] = n
                 return
             if 'MgGoalColi' in kinds:
                 goals.append((n, parent))
@@ -1390,50 +1403,98 @@ class Converter:
         if not np.isfinite(lo).all():
             lo, hi = np.zeros(3), np.zeros(3)
 
-        # ---- goals: the template's goal at each Mania goal
+        # ---- goals: Rumble's goal object at each Mania goal (its trigger, MgGoalColi and goal effect are the game's),
+        # drawn as Mania's goal and colliding like it. The arch's own meshes stay but are not drawn; the arch's
+        # collision part gets the triangles of Mania's goal frame (`goal_base` on the collision side).
         goal_colis = []
-        goal_mats = {}
-        gate0 = sc.descendant(goal0, 'gate')
-        rend0 = gate0 and sc.component(gate0, 'MeshRenderer')
-        goal_base = copy.deepcopy(s.get(rend0)['m_Materials'][0]) if rend0 else None
+        goal_data = {}
 
-        def goal_material(kind):
-            """The arch's material in the colour of Mania's goal kind (its path id in the sharedAssets file), or 0."""
-            if kind not in goal_mats:
-                goal_mats[kind] = 0
-                ref = goal_base
-                if ref and ref['m_FileID'] == sc.shared_fid and kind in GOAL_HUES:
-                    hue = GOAL_HUES[kind]
-                    new = copy.deepcopy(sh.get(ref['m_PathID']))
-                    new['m_Name'] += f'_mania{kind}'
-                    made, envs = {}, []
-                    for k, v in new['m_SavedProperties']['m_TexEnvs']:
-                        v = copy.deepcopy(v)
-                        tex = v['m_Texture']
-                        if k in ('_BaseMap', '_EmissiveMap') and tex['m_FileID'] == 0 and tex['m_PathID'] in sh.sf.objects:
-                            if tex['m_PathID'] not in made:
-                                tt = copy.deepcopy(sh.get(tex['m_PathID']))
-                                tt['m_Name'] += f'_mania{kind}'
-                                img = goal_colored_image(sh.sf.objects[tex['m_PathID']].read().image, hue)
-                                made[tex['m_PathID']] = sh.add('Texture2D', rgba32_texture(tt, img))
-                            v['m_Texture'] = pptr(made[tex['m_PathID']])
-                        envs.append((k, v))
-                    new['m_SavedProperties']['m_TexEnvs'] = envs
-                    new['m_SavedProperties']['m_Colors'] = [(k, goal_colored(v, hue) if k in GOAL_MATERIAL_COLORS else v)
-                                                            for k, v in new['m_SavedProperties']['m_Colors']]
-                    goal_mats[kind] = sh.add('Material', new)
-            return goal_mats[kind]
+        def local_matrix(go, stop):
+            mat = np.eye(4)
+            while go != stop:
+                t = s.get(sc.tr_of_go[go])
+                lp, lr, ls = t['m_LocalPosition'], t['m_LocalRotation'], t['m_LocalScale']
+                mat = trs_matrix((lp['x'], lp['y'], lp['z']), (lr['x'], lr['y'], lr['z'], lr['w']), (ls['x'], ls['y'], ls['z'])) @ mat
+                go = sc.go_of_tr[t['m_Father']['m_PathID']]
+            return mat
+
+        def goal_frame_data(n, to_part):
+            """The CollisionStageData (id in the sharedAssets file) of Mania goal n's frame, carried by `to_part`
+            from the goal's own space into the space of the collision part that will hold it; 0 when there is none."""
+            pieces = []
+            def walk(c):
+                if not c.active:                    # the party ball and the tape: not solid here
+                    return
+                mf = c.component('MeshFilter')
+                got = m.get(m.main, mf[2]['m_Mesh']) if mf and mf[2]['m_Mesh']['m_PathID'] else None
+                if got is not None:
+                    pieces.append((got, to_part @ world_matrix(c, n)))
+                for k in c.children:
+                    walk(k)
+            for c in n.children:
+                walk(c)
+            if not pieces:
+                return 0
+            key = tuple((got[0], np.round(mat, 4).tobytes()) for got, mat in pieces)
+            if key not in goal_data:
+                corners = []
+                for (_, t, msf, _), mat in pieces:
+                    vd = t['m_VertexData']
+                    raw = vd.get('m_DataSize') or m.resource(msf, t.get('m_StreamData', {}))
+                    layout = background.mesh_layout(dict(t, m_VertexData=dict(vd, m_DataSize=raw)))
+                    if layout is None:
+                        continue
+                    pos = background.read_channel(np.frombuffer(bytes(raw), dtype=np.uint8), layout, 0)[:, :3]
+                    pos = (np.c_[pos, np.ones(len(pos))] @ mat.T)[:, :3]
+                    idx = np.frombuffer(bytes(t['m_IndexBuffer']), dtype='<u4' if t['m_IndexFormat'] else '<u2').astype(np.int64)
+                    size = 4 if t['m_IndexFormat'] else 2
+                    flip = np.linalg.det(mat[:3, :3]) < 0
+                    for sm in t['m_SubMeshes']:
+                        if sm.get('topology', 0) != 0:
+                            continue
+                        tri = idx[sm['firstByte'] // size:sm['firstByte'] // size + sm['indexCount']].reshape(-1, 3) + sm['baseVertex']
+                        if flip:
+                            tri = tri[:, ::-1]
+                        corners.append(pos[tri])
+                part = triangles_part(np.concatenate(corners)) if corners else None
+                if part is None:
+                    goal_data[key] = 0
+                else:
+                    conv, _, _ = collision_part(part, sh.template('MonoBehaviour', 'CollisionStageData')['part'])
+                    d = sh.template('MonoBehaviour', 'CollisionStageData')
+                    d['m_Name'], d['part'] = 'mania_goal', conv
+                    goal_data[key] = sh.add('MonoBehaviour', d, 'CollisionStageData')
+                    stats['goal_triangles'] = len(conv['triangle'])
+            return goal_data[key]
 
         for i, (n, parent) in enumerate(goals):
             g = goal0 if i == 0 else sc.clone(goal0, root)
-            sc.set_transform(g, n.pos, qmul(n.rot, Y180), parent)
+            # The goal hangs under an object with the Mania node's name and place: a stage clip that moves the goal
+            # (Factory's claws carry goals along and let them fall) is bound by that name.
+            seat = sc.new_object(n.name, parent, n.pos, n.rot)
+            sc.set_transform(g, (0.0, 0.0, 0.0), Y180, seat)
             goal_colis.append(pptr(sc.component(g, 'MonoBehaviour', 'MgGoalColi')))
             kind = int(n.component('MgGoalColi')[2].get('m_GoalKind', 1))
             stats.setdefault('goal_kinds', []).append(kind)
-            mat = goal_material(kind)
-            gate = sc.descendant(g, 'gate')
-            if mat and gate:
-                s.get(sc.component(gate, 'MeshRenderer'))['m_Materials'][0] = sc.shared_ref(mat)
+            model = goal_models.get(n.path().split('/', 2)[-1])
+            if model is None:                       # no model to draw: Rumble's arch stays
+                stats['goals_without_model'] = stats.get('goals_without_model', 0) + 1
+                continue
+            for o in sc.subtree(g):
+                if s.sf.objects[o].type.name == 'MeshRenderer':
+                    s.get(o)['m_Enabled'] = False
+            # g is turned half round against Mania's goal (the trigger faces the other way): the model is turned back
+            draw = sc.new_object(GOAL_MODEL_NAME, g, (0.0, 0.0, 0.0), Y180, n.scale)
+            for c in model.children:
+                copy_node(c, draw, True)
+            col = sc.descendant(g, 'model_col2')
+            part = col and sc.component(col, 'MonoBehaviour', 'CollisionStagePart')
+            if part:
+                to_part = np.linalg.inv(local_matrix(col, g)) @ trs_matrix((0.0, 0.0, 0.0), Y180, n.scale)
+                data = goal_frame_data(n, to_part)
+                if data:
+                    s.get(part)['m_CollisionStage'] = sc.shared_ref(data)
+                    stats['goal_frames'] = stats.get('goal_frames', 0) + 1
         if not goals:
             sc.delete(goal0)
 

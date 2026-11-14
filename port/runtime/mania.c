@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "rt.h"
 
 #define FN(off) (GUEST_BASE + (off))
@@ -233,8 +234,10 @@ static void load_courses(void) {
 
 // called once per frame (display_opt.c): the course list is read at the start, before a room can be opened,
 // because it sets the content tag of online play
-void mania_tick(void) {
+static void goal_tick(Cpu *c);
+void mania_tick(Cpu *c) {
     if (g_ncourses < 0) load_courses();
+    goal_tick(c);
 }
 
 // Wonder.SaveUserParam.AdventureParam.GetAdvModeHighestUnlockID(): the last world, in display order, whose previous
@@ -585,11 +588,112 @@ static int in_area(Cpu *c, int kind, uint64_t component, const char *what) {
     return hit;
 }
 
+// Banana Mania's goal. On an imported stage the goal object is Rumble's (trigger, MgGoalColi, goal effect) but it is
+// drawn as Mania's goal: the converter hangs the model under it in an object "mania_goal" (stage.py). Two parts of
+// that model react to a ball going through, as in Mania: the tape across the gate goes, and the party ball above it
+// opens (its halves `goal_sphere01` / `goal_sphere02` hang from the point where they meet and swing apart).
+// Rumble's own stages have no "mania_goal", so nothing here touches them. A stage that is started again without
+// its scene being loaded anew (retry) gets tape and ball back when the stage sequence returns to its start.
+#define F_OBJ_ALIVE 0x3f10610ull            // UnityEngine.Object.op_Implicit (static)
+#define F_GET_GAMEOBJECT 0x3f07fb0ull       // UnityEngine.Component.get_gameObject
+#define F_SET_ACTIVE 0x3f0bd10ull           // UnityEngine.GameObject.SetActive(bool)
+#define F_OBJ_NAME 0x3f10820ull             // UnityEngine.Object.get_name
+#define F_CHILD_COUNT 0x3f1e1f0ull          // Transform.get_childCount
+#define F_GET_CHILD 0x3f1ea10ull            // Transform.GetChild(int)
+#define F_GCHANDLE_NEW 0x469da0ull          // il2cpp_gchandle_new(obj, pinned)
+#define F_GCHANDLE_TARGET 0x469df0ull
+#define F_GCHANDLE_FREE 0x469e10ull
+#define F_MAIN_GAME_STATE 0x42cfd10ull      // Wonder.MainGame.get_mainGameState (static) -> MainGameSequence.State
+#define STR_LEN 0x10
+#define STR_CHARS 0x14
+#define GOAL_OPEN_MS 450.0f                 // the party ball takes this long to open
+#define GOAL_OPEN_ANGLE 1.05f               // each half swings out by this much (radians)
+static struct { uint32_t goal, tape, half[2]; uint64_t t0; int done; } g_goal_open[40];
+
+static int obj_alive(Cpu *c, uint64_t o) { return o && (rt_call(c, FN(F_OBJ_ALIVE), 2, o, 0ull) & 1); }
+static uint64_t handle_target(Cpu *c, uint32_t h) {
+    uint64_t o = h ? rt_call(c, FN(F_GCHANDLE_TARGET), 1, (uint64_t)h) : 0;
+    return obj_alive(c, o) ? o : 0;
+}
+static int tr_name_is(Cpu *c, uint64_t tr, const char *name) {
+    uint64_t s = rt_call(c, FN(F_OBJ_NAME), 2, rt_call(c, FN(F_GET_GAMEOBJECT), 2, tr, 0ull), 0ull);
+    int len = s ? (int)LD32(s + STR_LEN) : 0, k = 0;
+    for (; k < len && name[k] && LD16(s + STR_CHARS + 2 * (uint64_t)k) == (uint8_t)name[k]; k++) {}
+    return k == len && !name[k];
+}
+static uint64_t tr_find(Cpu *c, uint64_t tr, const char *name, int depth) {     // first descendant with that name
+    int n = tr ? (int)rt_call(c, FN(F_CHILD_COUNT), 2, tr, 0ull) : 0;
+    for (int i = 0; i < n; i++) {
+        uint64_t ch = rt_call(c, FN(F_GET_CHILD), 3, tr, (uint64_t)i, 0ull);
+        uint64_t hit = tr_name_is(c, ch, name) ? ch : depth > 0 ? tr_find(c, ch, name, depth - 1) : 0;
+        if (hit) return hit;
+    }
+    return 0;
+}
+static void goal_halves(Cpu *c, int slot, float angle) {
+    for (int k = 0; k < 2; k++) {
+        uint64_t tr = handle_target(c, g_goal_open[slot].half[k]);
+        float a = (k ? angle : -angle) / 2, q[4] = {0.0f, sinf(a), 0.0f, cosf(a)};      // about the axis through the gate
+        if (tr) set_floats(c, F_SET_LOCAL_ROTATION, tr, q, 4);
+    }
+}
+static void goal_slot_free(Cpu *c, int slot) {
+    uint32_t *h[4] = {&g_goal_open[slot].goal, &g_goal_open[slot].tape, &g_goal_open[slot].half[0], &g_goal_open[slot].half[1]};
+    for (int k = 0; k < 4; k++) {
+        if (*h[k]) rt_call(c, FN(F_GCHANDLE_FREE), 1, (uint64_t)*h[k]);
+        *h[k] = 0;
+    }
+}
+
+// a ball went through the goal `self` (an MgGoalColi)
+static void goal_entered(Cpu *c, uint64_t self) {
+    int n = (int)(sizeof g_goal_open / sizeof *g_goal_open), slot = -1;
+    for (int i = 0; i < n; i++) {
+        if (!g_goal_open[i].goal) { if (slot < 0) slot = i; continue; }
+        if (handle_target(c, g_goal_open[i].goal) == self) return;                  // already open
+    }
+    uint64_t model = tr_find(c, rt_call(c, FN(F_GET_TRANSFORM), 2, self, 0ull), "mania_goal", 0);
+    if (!model || slot < 0) return;
+    uint64_t tape = tr_find(c, model, "goal_tape", 4), h0 = tr_find(c, model, "goal_sphere01", 4), h1 = tr_find(c, model, "goal_sphere02", 4);
+    g_goal_open[slot].goal = (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, self, 0ull);
+    g_goal_open[slot].tape = tape ? (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, tape, 0ull) : 0;
+    g_goal_open[slot].half[0] = h0 ? (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, h0, 0ull) : 0;
+    g_goal_open[slot].half[1] = h1 ? (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, h1, 0ull) : 0;
+    g_goal_open[slot].t0 = GetTickCount64();
+    g_goal_open[slot].done = 0;
+    if (tape) rt_call(c, FN(F_SET_ACTIVE), 3, rt_call(c, FN(F_GET_GAMEOBJECT), 2, tape, 0ull), 0ull, 0ull);
+    if (getenv("BR_MANIA_LOG")) rt_log("mania: goal: the tape goes and the party ball opens (tape %d, halves %d %d)", !!tape, !!h0, !!h1);
+}
+
+static void goal_tick(Cpu *c) {
+    int n = (int)(sizeof g_goal_open / sizeof *g_goal_open), any = 0;
+    for (int i = 0; i < n; i++) any |= g_goal_open[i].goal != 0;
+    if (!any) return;
+    int state = (int)rt_call(c, FN(F_MAIN_GAME_STATE), 1, 0ull);
+    int restart = state == 1 || state == 2 || state == 3 || state == 12;            // PREPARE, INTRO, READY, RETRY
+    for (int i = 0; i < n; i++) {
+        if (!g_goal_open[i].goal) continue;
+        if (!handle_target(c, g_goal_open[i].goal)) { goal_slot_free(c, i); continue; }     // the stage is gone
+        if (restart) {
+            uint64_t tape = handle_target(c, g_goal_open[i].tape);
+            if (tape) rt_call(c, FN(F_SET_ACTIVE), 3, rt_call(c, FN(F_GET_GAMEOBJECT), 2, tape, 0ull), 1ull, 0ull);
+            goal_halves(c, i, 0.0f);
+            goal_slot_free(c, i);
+            if (getenv("BR_MANIA_LOG")) rt_log("mania: goal: closed again for the restart");
+        } else if (!g_goal_open[i].done) {
+            float t = (float)(GetTickCount64() - g_goal_open[i].t0) / GOAL_OPEN_MS;
+            if (t >= 1.0f) { t = 1.0f; g_goal_open[i].done = 1; }
+            goal_halves(c, i, GOAL_OPEN_ANGLE * (1.0f - (1.0f - t) * (1.0f - t)));     // fast at first, settling
+        }
+    }
+}
+
 // Wonder.MgGoalColi.OnTriggerEnterPlayer(PhysicsBall): a ball enters a goal. Not when the goal stands in an
 // "inactive goal" area of an imported stage (Factory's goals travel on a belt and are parked in such an area).
 int rt_hook_4330e70(Cpu *c) {
     uint64_t self = c->x[0], ball = c->x[1], x2 = c->x[2], lr = c->x[30];
     int skip = in_area(c, AREA_GOAL, self, "a goal");
+    if (!skip) goal_entered(c, self);
     c->x[0] = self; c->x[1] = ball; c->x[2] = x2; c->x[30] = lr;
     return skip;
 }
@@ -611,7 +715,6 @@ int rt_hook_433bd10(Cpu *c) {
 // every ball is simulated on its own machine). In split screen the local players share one set of bars: each
 // step the bar takes the next local player's controller, so it slides with the average of their tilts.
 #define F_PLAYER_LIST 0x42cf6c0ull          // Wonder.MainGame.get_playerList -> List<MgPlayer> (static, through the singleton)
-#define F_OBJ_ALIVE 0x3f10610ull            // UnityEngine.Object.op_Implicit (static)
 #define PLAYER_IS_LOCAL 0x1c0               // MgPlayer.m_IsLocal
 #define PLAYER_GRAVITY 0x68                 // MgPlayer.m_GravityController
 #define JAMABAR_GRAVITY 0x168               // CollisionJamabar.<gravityController>k__BackingField

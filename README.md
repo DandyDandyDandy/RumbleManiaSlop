@@ -59,8 +59,8 @@ Those of RumbleSlop, and for the imported stages:
 - Switches, bumpers, seesaws, conveyors, wormholes, sliding bars ("jamabars") and moving parts work. A wormhole
   is Rumble's own gate, not Banana Mania's model. With several players the sliding bars move by each machine's
   own player.
-- Every goal is Rumble's goal in the colour of Banana Mania's (blue, green, red) and ends the stage; green and
-  red warp goals do not skip stages.
+- Imported stages have Banana Mania's goal (gate, party ball and tape, in blue, green or red); every goal ends the
+  stage: green and red warp goals do not skip stages.
 - Stages have Banana Mania's backgrounds, sky and lighting, but without their particle effects (waterfall spray,
   fires, lightning), weather, reflections and Mania's colour grading; the
   light on the scenery is baked into it (no shadows cast on it). The stages themselves are drawn with Rumble's stage shaders: colours and materials
