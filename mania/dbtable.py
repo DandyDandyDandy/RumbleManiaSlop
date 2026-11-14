@@ -42,6 +42,7 @@ SCHEMAS = {
     'Course_Text': [('Name', 's'), ('SerialName', 's'), ('CaptionText', 's'), ('AdventureTimerText', 's')],
     'MainGame_Story_Progress': [('CourseID', 'i'), ('IsDefaultOpen', 'b'), ('UnlockProgress', '[i]'), ('StageIndex', 'i'),
                                 ('MovieIDPrologue', 'i'), ('MovieIDEpilogue', 'i')],
+    'MainGame_Adventure_Type': [('DisplayName', 'u')],
     'MainGame_Adventure_Type_Text': [('DisplayName', '[s]')],
     'Sound_CueSheet': [('acbPath', 's'), ('awbPath', 's'), ('cueSheetName', 's')],
     'Sound_Cue': [('cueSheet', 'i'), ('innerCueName', 's'), ('title', 'u'), ('displayOrderInGallery', 'u'), ('innerCueId', 'i'),

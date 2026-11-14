@@ -334,6 +334,7 @@ Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9
 | `Stage_List_Group_wld97_wldtst` | every imported course's stages, one after the other |
 | `Course`, `Course_Text_<lang>` | a row per course (ids from 27), category 6, always unlocked, no missions, hung on the end of the game's chain of Adventure worlds (below) |
 | `MainGame_Story_Progress` | a row per stage that opens it |
+| `MainGame_Adventure_Type`, `MainGame_Adventure_Type_Text_<lang>` | a third row, "Mania": the tab of *Select World* that holds the imported courses (below) |
 | `Sound_CueSheet`, `Sound_Cue`, `Sound\*.acb`, `*.awb` | Mania's cue sheets, copied unchanged, and a cue row per BGM; with the Classic Soundtrack add-on also its sheets (`<sheet>_dx`, same cue names) and a second cue row per BGM |
 | `catalog.json` | the game's catalog plus, per stage, the bundle and the scene (key = the scene number), depending on the bundles the template stage's scene depends on |
 | `mania_courses.txt`, `mania_music.txt` | for `port\runtime\mania.c`: course ranges and ids, the placement of the background for the stages that move it (`bgroot` lines), the game's own worlds; per stage row its cue row and its Classic Soundtrack cue row |
@@ -350,6 +351,34 @@ clear times, so `plan_courses` leaves them out of every course, which leaves 392
 imported them with rules of its own (a clear by taking every banana, by falling out or by the clock, through
 hooks on `MainGameSequence.setState` and `updateHurryUp`); that code is gone. A re-import deletes the stage and
 background bundles an earlier import left behind.
+
+**The Mania tab.** *Select World* has a tab per row of `MainGame_Adventure_Type` (Story, Special). A tab holds
+the `MainGame_Category` rows of its type (Story: the plain game; Special: the time attacks and rule variants),
+and each of those the courses whose `IsEnabledCategory` entry is set. The import adds a third row, but no
+category of its own: the category id is the game mode to everything that reads it (rules, save slots, arrays
+with one entry per category), so a new one would be a new mode. Instead `port\runtime\mania.c` rearranges the
+lists the game has built (`tab <row id>` in `mania_courses.txt`):
+
+* A hook on the set-up coroutine (`<SetupCourseSelect>d__19.MoveNext`, 0x46a17d0) lets each step run and then,
+  when the lists are new, makes a second list item of the plain category under the new tab and moves the imported
+  courses from the Story tab's list into it. A course chosen there starts exactly as it did from the Story tab.
+  The tab and row the screen opens on are set from the course last played, so leaving an imported stage returns
+  to the Mania tab.
+* The tab bar is a prefab with two buttons at fixed places (`ui_PartView_WorldSelect_TabGroup`, a
+  `UIPartViewTabGroup_Explicit`). The same hook copies the second button (`Object.Instantiate`), adds it to the
+  view's button list before the game builds its tab module from that list, and scales and places the three in
+  the room the two had. The copy is registered for mouse clicks like the others.
+* `FlowCourseSelectModeBase.onUpdateTabSelectedIdx` (0x46a08b0) starts the plain picker for type 1 and the time
+  attack picker for type 2, and for any other type leaves the previous tab's picker running. For the new tab the
+  record carries id 1 for the length of that call. The same hook remembers the cursor's row per side (the new
+  tab shares no world with the other two, so the game's "same world, else same row" rule would land anywhere).
+* A tab's name is an array indexed by the category of the focused course (the first tab reads Story, Extra or
+  Ultimate). Imported courses are category 6, so the first tab would read "Ultimate" while the cursor is in the
+  Mania tab; `Util.Adventure.GetCourseCategory()` (0x440c2f0) answers 1 for an imported course to the two callers
+  that name the tabs (told apart by return address).
+
+The world pickers of co-op and online rooms have no tabs and list the imported worlds after the game's own, as
+before.
 
 **The chain of worlds.** `Course.NextCourseID` links the Adventure worlds: 1 .. 10, the EX worlds 12 .. 21, the
 two Ultimate EX worlds 25 and 26. World Tour, World Tour EX and the No Miss Challenge are on no chain. The world

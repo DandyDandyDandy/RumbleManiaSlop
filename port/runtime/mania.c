@@ -25,8 +25,11 @@
 //     is cleared. The imported courses are always open and come last, so every course before them would be
 //     offered, also worlds the player has not reached. The hook on getUnlockedCourseList takes those out again.
 //
-// Without the mania folder none of this changes anything: no stage row has a numeric scene name and no course has
-// a virtual list.
+//  5. The "Mania" tab of Select World. The import adds a third tab next to Story and Special; the hooks on the
+//     course picker's set-up fill it with the imported courses (taken out of the Story tab) and add its button.
+//
+// Without the mania folder none of this changes anything: no stage row has a numeric scene name, no course has
+// a virtual list and there is no third tab.
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -174,6 +177,7 @@ int rt_hook_426a5b0(Cpu *c) {
 static struct { uint32_t id, prev; } g_own[MAX_OWN];      // the game's Adventure worlds in display order
 static int g_nown;
 static uint32_t g_first_id;                               // the lowest course id of the import
+static uint32_t g_tab;                                    // MainGame.Adventure.Type row of the "Mania" tab, 0 = none
 
 static void load_courses(void) {
     char path[700], line[256];
@@ -189,6 +193,8 @@ static void load_courses(void) {
             if (g_nbgroot < MAX_BGROOT) { g_bgroot[g_nbgroot].stage = id; memcpy(g_bgroot[g_nbgroot].v, v, sizeof v); g_nbgroot++; }
         } else if (sscanf(line, "own %u %u", &id, &prev) == 2) {
             if (g_nown < MAX_OWN) { g_own[g_nown].id = id; g_own[g_nown].prev = prev; g_nown++; }
+        } else if (sscanf(line, "tab %u", &id) == 1) {
+            g_tab = id;
         } else if (g_ncourses < MAX_COURSES && sscanf(line, "%u %d %d %u", &list, &first, &count, &id) >= 3 && count > 0 && first >= 0) {
             g_courses[g_ncourses].list = list;
             g_courses[g_ncourses].first = first;
@@ -311,6 +317,200 @@ int rt_hook_45605b0(Cpu *c) {
     c->x[0] = all;
     c->x[30] = lr;
     return 1;
+}
+
+// The "Mania" tab of Select World. The tabs are the rows of the table MainGame_Adventure_Type (Story, Special); each
+// tab holds the MainGame_Category rows of its type (Story: the plain game; Special: the time attacks and rules), and
+// each of those the courses enabled for it. The import adds a third row (mania\build.py; "tab <row id>" in
+// mania_courses.txt) but no category: a new category id would be a new game mode to everything that reads it.
+// Instead, once the game has built its lists, the imported courses are taken out of the Story tab's list and put
+// into a second item of the same category under the new tab, so a course chosen there starts exactly as before.
+//   FlowCourseSelect: +0x48 m_AdvTypeDataList, +0x68 m_SelectedTabIndex, +0x6c m_SelectedCourseIndex
+//   UiMainGameAdvTypeItemData: +0x28 record, +0x30 categoryList     UiMainGameCategoryItemData: +0x20 record, +0x28 courseList
+//   CourseData: +0x20 record                                         IDRecord: +0x18 id
+#define F_COURSE_SETUP_NEXT 0x46a17d0ull    // FlowCourseSelect.<SetupCourseSelect>d__19.MoveNext (+0x20: the FlowCourseSelect)
+#define F_TAB_SELECTED 0x46a08b0ull         // FlowCourseSelectModeBase.onUpdateTabSelectedIdx(int, UIChoicesItemData, button)
+#define F_OBJECT_NEW 0x44c4a0ull            // il2cpp_codegen_object_new(class)
+#define F_CATEGORY_ITEM_CTOR 0x469ed70ull   // UiMainGameCategoryItemData..ctor(MainGame.Category.Record)
+#define F_LIST_ADD 0x3397800ull             // List<object>.AddWithResize(item), method from the list class's rgctx
+#define REC_ID 0x18
+#define SELECTOR_CATEGORY 0x10              // SelectorParam: the MainGame.Category and the course last chosen
+#define SELECTOR_COURSE 0x20
+static uint64_t g_tab_class;                // class of UiMainGameAdvTypeItemData (seen on the first build)
+static int g_row_mania, g_row_own;          // the cursor's row in the new tab and in the game's own (see the tab hook)
+
+static int list_n(uint64_t list) { return list ? (int)LD32(list + LIST_SIZE) : 0; }
+static uint64_t list_at(uint64_t list, int i) { return LD64(LD64(list + LIST_ITEMS) + ARR_DATA + 8 * (uint64_t)i); }
+static uint32_t rec_id(uint64_t item, int off) { uint64_t r = item ? LD64(item + off) : 0; return r ? LD32(r + REC_ID) : 0; }
+static void list_add(Cpu *c, uint64_t list, uint64_t item) {
+    // as the game's own inlined List.Add does it: the method is an entry of the list class's generic context
+    rt_call(c, FN(F_LIST_ADD), 3, list, item, LD64(LD64(LD64(list) + 0xc0) + 0x70));
+}
+
+static void fill_mania_tab(Cpu *c, uint64_t flow) {
+    uint64_t tabs = flow ? LD64(flow + 0x48) : 0, story = 0, tab = 0;
+    int ntabs = list_n(tabs), tab_index = -1;
+    for (int i = 0; i < ntabs; i++) {
+        uint64_t t = list_at(tabs, i);
+        uint32_t id = rec_id(t, 0x28);
+        if (id == 1) story = t;
+        if (id == g_tab) { tab = t; tab_index = i; }
+    }
+    if (!tab || !story || list_n(LD64(tab + 0x30))) return;          // not built yet, or already filled
+    g_tab_class = LD64(tab);
+    uint64_t cats = LD64(story + 0x30), cat = 0;
+    for (int i = 0; i < list_n(cats) && !cat; i++)
+        if (rec_id(list_at(cats, i), 0x20) == 1) cat = list_at(cats, i);
+    uint64_t courses = cat ? LD64(cat + 0x28) : 0;
+    int n = list_n(courses), imported = 0;
+    for (int i = 0; i < n; i++) imported += rec_id(list_at(courses, i), 0x20) >= g_first_id;
+    if (!imported) {                                                 // nothing to show: no tab (it is the last one)
+        if (tab_index == ntabs - 1) {
+            ST64(LD64(tabs + LIST_ITEMS) + ARR_DATA + 8 * (uint64_t)tab_index, 0);
+            ST32(tabs + LIST_SIZE, (uint32_t)(ntabs - 1));
+            ST32(tabs + LIST_VERSION, LD32(tabs + LIST_VERSION) + 1);
+        }
+        return;
+    }
+    uint64_t item = rt_call(c, FN(F_OBJECT_NEW), 1, LD64(cat));
+    rt_call(c, FN(F_CATEGORY_ITEM_CTOR), 3, item, LD64(cat + 0x20), 0ull);
+    list_add(c, LD64(tab + 0x30), item);                             // reachable from here on
+    uint64_t mine = LD64(item + 0x28), items = LD64(courses + LIST_ITEMS);
+    uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull);
+    uint32_t sel_course = sel && LD32(sel + SELECTOR_CATEGORY) == 1 ? LD32(sel + SELECTOR_COURSE) : 0;
+    int kept = 0, moved = 0;
+    g_row_mania = g_row_own = 0;
+    for (int i = 0; i < n; i++) {
+        uint64_t cd = LD64(items + ARR_DATA + 8 * (uint64_t)i);
+        uint32_t id = rec_id(cd, 0x20);
+        if (id >= g_first_id) {
+            if (id == sel_course) { ST32(flow + 0x68, (uint32_t)tab_index); ST32(flow + 0x6c, (uint32_t)moved); }
+            list_add(c, mine, cd);
+            moved++;
+        } else {
+            if (id == sel_course) ST32(flow + 0x6c, (uint32_t)kept);
+            ST64(items + ARR_DATA + 8 * (uint64_t)kept++, cd);
+        }
+    }
+    for (int i = kept; i < n; i++) ST64(items + ARR_DATA + 8 * (uint64_t)i, 0);
+    ST32(courses + LIST_SIZE, (uint32_t)kept);
+    ST32(courses + LIST_VERSION, LD32(courses + LIST_VERSION) + 1);
+    if (getenv("BR_MANIA_LOG"))
+        rt_log("mania: Select World: %d imported worlds moved to tab %d, %d stay under Story; opens on tab %d, world %d", moved, tab_index, kept,
+               (int)LD32(flow + 0x68), (int)LD32(flow + 0x6c));
+}
+
+// The tab bar of Select World (ui_PartView_WorldSelect_TabGroup, a UIPartViewTabGroup_Explicit) has two buttons at
+// fixed places (its layout group does not move them). A button for the third tab is a copy of the second one, and
+// all three are made smaller and spread over the room the two had, between the L and R marks. The button images
+// are plain sprites (not sliced), so a button is scaled as a whole; its text is scaled back up to stay readable.
+//   UIStateMainGameSelect +0xd0 -> +0x10 -> +0xa0: the world select view; +0x48 its tab group; +0x58 the buttons
+#define F_INSTANTIATE 0x3ee5e00ull          // UnityEngine.Object.Instantiate(Object original, Transform parent)
+#define F_GET_PARENT 0x3eee6b0ull           // Transform.get_parent
+#define F_GET_ANCHORED_POS 0x3eec8d0ull     // RectTransform.get_anchoredPosition -> Vector2 in v0, v1
+#define F_SET_ANCHORED_POS 0x3eec9a0ull     // RectTransform.set_anchoredPosition(Vector2)
+#define TAB_DRAWN_WIDTH 280.0f              // ImageBackGround of a tab button
+static const float g_tab_gap = 22.0f, g_tab_margin = 12.0f, g_tab_text = 0.85f;    // between buttons; added room at each end; text size
+
+static void get_floats(Cpu *c, uint64_t fn, uint64_t tr, float *f, int n) {
+    c->x[0] = tr; c->x[1] = 0;
+    rt_call_regs(c, FN(fn));
+    for (int i = 0; i < n; i++) { uint32_t u = (uint32_t)c->v[i]; memcpy(&f[i], &u, 4); }
+}
+
+static void fit_tab_buttons(Cpu *c, uint64_t flow) {
+    uint64_t tabs = flow ? LD64(flow + 0x48) : 0, state = flow ? LD64(flow + 0x40) : 0, acc = state ? LD64(state + 0xd0) : 0;
+    uint64_t views = acc ? LD64(acc + 0x10) : 0, view = views ? LD64(views + 0xa0) : 0;
+    uint64_t group = view && LD64(view + 0x10) ? LD64(view + 0x48) : 0, buttons = group ? LD64(group + 0x58) : 0;
+    int want = list_n(tabs), have = list_n(buttons);
+    if (have < 2 || have >= want) return;
+    uint64_t rgctx = LD64(LD64(buttons) + 0xc0), last = list_at(buttons, have - 1);
+    if (!last || !LD64(last + 0x10) || !rgctx || !LD64(rgctx + 0x70)) return;
+    uint64_t parent = rt_call(c, FN(F_GET_PARENT), 2, rt_call(c, FN(F_GET_TRANSFORM), 2, last, 0ull), 0ull);
+    while (have < want) {
+        uint64_t copy = rt_call(c, FN(F_INSTANTIATE), 3, last, parent, 0ull);
+        if (!copy) return;
+        list_add(c, buttons, copy);
+        have++;
+    }
+    // the two buttons' centres give the room there is: from the left end of the first to the right end of the second
+    float first[2], second[2];
+    get_floats(c, F_GET_ANCHORED_POS, rt_call(c, FN(F_GET_TRANSFORM), 2, list_at(buttons, 0), 0ull), first, 2);
+    get_floats(c, F_GET_ANCHORED_POS, rt_call(c, FN(F_GET_TRANSFORM), 2, list_at(buttons, 1), 0ull), second, 2);
+    float left = first[0] - TAB_DRAWN_WIDTH / 2 - g_tab_margin, room = second[0] + TAB_DRAWN_WIDTH / 2 + g_tab_margin - left;
+    float s = (room - (float)(have - 1) * g_tab_gap) / ((float)have * TAB_DRAWN_WIDTH);
+    if (s > 1.0f) s = 1.0f;
+    for (int i = 0; i < have; i++) {
+        uint64_t button = list_at(buttons, i), tr = rt_call(c, FN(F_GET_TRANSFORM), 2, button, 0ull);
+        float pos[2] = {left + s * TAB_DRAWN_WIDTH * ((float)i + 0.5f) + g_tab_gap * (float)i, first[1]};
+        float scale[3] = {s, s, 1.0f}, text_scale[3] = {g_tab_text / s, g_tab_text / s, 1.0f};
+        set_floats(c, F_SET_ANCHORED_POS, tr, pos, 2);
+        set_floats(c, F_SET_LOCAL_SCALE, tr, scale, 3);
+        uint64_t text = LD64(button + 0x68);                         // UIPartViewSelectableButton.m_Text
+        if (text && g_tab_text > s) set_floats(c, F_SET_LOCAL_SCALE, rt_call(c, FN(F_GET_TRANSFORM), 2, text, 0ull), text_scale, 3);
+    }
+    rt_log("mania: Select World: the tab bar has %d buttons now (scale %.2f)", have, s);
+}
+
+// the coroutine that builds the lists and then the views: after each step, move the courses if the lists are new
+int rt_hook_46a17d0(Cpu *c) {
+    static __thread int inside;
+    if (inside) return 0;
+    if (g_ncourses < 0) load_courses();
+    if (!g_tab || !g_first_id) return 0;
+    uint64_t lr = c->x[30], self = c->x[0], x1 = c->x[1];
+    fit_tab_buttons(c, LD64(self + 0x20));          // the view can turn up in the very step that reads the buttons
+    inside = 1;
+    uint64_t more = rt_call(c, FN(F_COURSE_SETUP_NEXT), 2, self, x1);
+    inside = 0;
+    fill_mania_tab(c, LD64(self + 0x20));
+    fit_tab_buttons(c, LD64(self + 0x20));
+    c->x[0] = more;
+    c->x[30] = lr;
+    return 1;
+}
+
+// A tab was chosen. The game starts the plain course picker for type 1 (Story) and the time attack one for type 2,
+// and for any other type leaves the picker of the tab before it running. The new tab is a second Story tab: its
+// record carries Story's id for the length of the call.
+//
+// The game keeps the cursor on the same world when the tab changes (Story and Special list the same worlds) and
+// otherwise on the same row. The new tab shares no world with the others, so the row is remembered per side:
+// going back to Story returns to the world the cursor was on, not to row n of a list that may be locked there.
+int rt_hook_46a08b0(Cpu *c) {
+    static __thread int inside;
+    uint64_t self = c->x[0], item = c->x[2], flow = self ? LD64(self + 0x38) : 0;
+    if (inside || !g_tab || !flow || !item || LD64(item) != g_tab_class) return 0;
+    uint64_t tabs = LD64(flow + 0x48);
+    int from = (int)LD32(flow + 0x68), to_mania = rec_id(item, 0x28) == g_tab;
+    int from_mania = from >= 0 && from < list_n(tabs) && rec_id(list_at(tabs, from), 0x28) == g_tab;
+    if (from_mania != to_mania) {
+        *(from_mania ? &g_row_mania : &g_row_own) = (int)LD32(flow + 0x6c);
+        ST32(flow + 0x6c, (uint32_t)(to_mania ? g_row_mania : g_row_own));
+    }
+    if (!to_mania) return 0;
+    uint64_t lr = c->x[30], rec = LD64(item + 0x28);
+    inside = 1;
+    ST32(rec + REC_ID, 1);
+    rt_call(c, FN(F_TAB_SELECTED), 5, self, c->x[1], item, c->x[3], c->x[4]);
+    ST32(rec + REC_ID, g_tab);
+    inside = 0;
+    c->x[30] = lr;
+    return 1;
+}
+
+// Wonder.Util.Adventure.GetCourseCategory(): the Course.Category of the course last chosen. The tab names are
+// arrays indexed by it (the first tab reads Story, Extra or Ultimate with the world under the cursor), and the
+// imported courses are listed as Ultimate ones. For the two callers that name the tabs an imported course counts
+// as a Story one, so the tabs read Story / Special / Mania while the cursor is in the new tab.
+int rt_hook_440c2f0(Cpu *c) {
+    uint64_t lr = c->x[30], x0 = c->x[0];
+    if (!g_tab || (lr != FN(0x469dc30ull) && lr != FN(0x469dfb8ull))) return 0;     // onUpdateCourseFocusIndex, onInitTabGroupSelectableButton
+    uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull);
+    int imported = sel && LD32(sel + SELECTOR_COURSE) >= g_first_id;
+    c->x[0] = imported ? 1 : x0;
+    c->x[30] = lr;
+    return imported;
 }
 
 // Wonder.MgStageSwitchController.Request(eState switchType, int classId, int serialId, bool playSound, float time):

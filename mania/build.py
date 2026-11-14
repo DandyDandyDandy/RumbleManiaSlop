@@ -61,6 +61,7 @@ SCENE_BASE = 100000             # scene id of a stage = SCENE_BASE + Mania stage
 LIST_BASE = 1000                # virtual stage list id of imported course n = LIST_BASE + n
 REAL_LIST_TABLE = 'Stage_List_Group_wld97_wldtst'
 COURSE_CATEGORY = 6             # Course.Category the imported courses are listed under
+TAB_NAME = 'Mania'              # the tab of Select World that holds the imported courses
 TEMPLATE_STAGE_ROW = 8          # World 1 Stage 1: the model for new stage rows
 
 # (Mania course, numbering prefix, name; None = the course's own name in Mania's text)
@@ -367,6 +368,18 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
                        MovieIDEpilogue=0)
     if courses and last_vanilla is not None:
         last_vanilla['NextCourseID'] = first_course
+    # A tab of their own in Select World, after Story and Special. The tabs are the rows of MainGame_Adventure_Type;
+    # a row's name is an array indexed by the category of the focused course. The game fills a tab with the
+    # MainGame_Category rows of its type and has none for this one: the port moves the imported courses from the
+    # Story tab into it ("tab" line, mania.c).
+    if courses:
+        type_t = db.table('MainGame_Adventure_Type')
+        tab_id = len(type_t.rows)
+        type_t.use(tab_id, DisplayName=tab_id)
+        for lang in LANGS:
+            t = db.table(f'MainGame_Adventure_Type_Text_{lang}')
+            t.use(tab_id, DisplayName=[TAB_NAME] * len(t.row(1)['DisplayName']))
+        lines.append(f'tab {tab_id}')
     # stages whose Mania original places the background elsewhere (BgRoot): the port moves the scenery's root
     for info in backgrounds.values():
         for sid, p in sorted((info.get('moved_stages') or {}).items()):

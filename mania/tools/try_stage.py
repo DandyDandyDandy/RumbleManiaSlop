@@ -24,7 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', '..', 'port'))
 import paths  # noqa: E402
 
-WORLDS_BEFORE = 2       # entries above the first imported course in Select World on the test save (World 1, locked World 2)
+WORLDS_BEFORE = 0       # entries above the first imported course in the Mania tab of Select World
 
 
 def main():
@@ -100,6 +100,8 @@ def main():
         time.sleep(6)
     if ok:
         time.sleep(7)                                    # Select World
+        press('L')                                       # one tab to the left of Story: the Mania tab
+        time.sleep(2)
         press(*['DOWN'] * (a.before + a.course))
         press('A')
         time.sleep(6)                                    # Select Stage
