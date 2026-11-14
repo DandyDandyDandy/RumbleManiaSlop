@@ -27,13 +27,13 @@
 #include "rt.h"
 
 #define FN(off) (GUEST_BASE + (off))
-#define F_STRING_NEW_UTF16 0x456994ull   // il2cpp::vm::String::NewUtf16(const Il2CppChar *, int32_t)
-#define F_GET_RENDERER_LIST 0x4831d20ull // Wonder.CharaComponentReference::get_rendererList -> List<Renderer>
-#define F_GET_GAMEOBJECT 0x3edc5c0ull    // UnityEngine.Component::get_gameObject
-#define F_OBJ_ALIVE 0x3ee4c20ull         // UnityEngine.Object::op_Implicit (static)
-#define F_OBJ_NAME 0x3ee4e30ull          // UnityEngine.Object::get_name
-#define F_SMR_GET_MESH 0x3eacad0ull      // UnityEngine.SkinnedMeshRenderer::get_sharedMesh
-#define F_SMR_SET_MESH 0x3eacb20ull      // UnityEngine.SkinnedMeshRenderer::set_sharedMesh
+#define F_STRING_NEW_UTF16 0x45af94ull   // il2cpp::vm::String::NewUtf16(const Il2CppChar *, int32_t)
+#define F_GET_RENDERER_LIST 0x486d350ull // Wonder.CharaComponentReference::get_rendererList -> List<Renderer>
+#define F_GET_GAMEOBJECT 0x3f07fb0ull    // UnityEngine.Component::get_gameObject
+#define F_OBJ_ALIVE 0x3f10610ull         // UnityEngine.Object::op_Implicit (static)
+#define F_OBJ_NAME 0x3f10820ull          // UnityEngine.Object::get_name
+#define F_SMR_GET_MESH 0x3ed84c0ull      // UnityEngine.SkinnedMeshRenderer::get_sharedMesh
+#define F_SMR_SET_MESH 0x3ed8510ull      // UnityEngine.SkinnedMeshRenderer::set_sharedMesh
 
 static int is_file(const char *p) { DWORD a = GetFileAttributesA(p); return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY); }
 static int g_have = -1;                  // <exe dir>mania\catalog.json exists
@@ -75,7 +75,7 @@ void classic_fs_override(char *path, size_t cap) {
 }
 
 // UnityEngine.AssetBundle::LoadFromFileAsync_Internal(string path, uint crc, ulong offset) and the public overloads
-int rt_hook_3e75c40(Cpu *c) {
+int rt_hook_3ea1630(Cpu *c) {
     uint64_t s = c->x[0];
     if (!s || !have()) return 0;
     char path[1200], cand[1400];
@@ -97,8 +97,8 @@ int rt_hook_3e75c40(Cpu *c) {
     if (ns) rt_log("classic: loads %s", rel);
     return 0;
 }
-int rt_hook_3e75ca0(Cpu *c) { return rt_hook_3e75c40(c); }
-int rt_hook_3e75d00(Cpu *c) { return rt_hook_3e75c40(c); }
+int rt_hook_3ea1690(Cpu *c) { return rt_hook_3ea1630(c); }
+int rt_hook_3ea16f0(Cpu *c) { return rt_hook_3ea1630(c); }
 
 // ---- 2. hiding Rumble's own parts under the classic mesh
 #define NCHARA 64
@@ -213,6 +213,6 @@ void classic_tick(Cpu *c) {   // once per frame; the caller preserves the regist
 }
 
 // Wonder.CharaCustomizeAssetAssign::Set / Revert / RevertAll: a costume part is about to change
-int rt_hook_4831f40(Cpu *c) { (void)c; g_gen++; return 0; }
-int rt_hook_48322d0(Cpu *c) { (void)c; g_gen++; return 0; }
-int rt_hook_4832480(Cpu *c) { (void)c; g_gen++; return 0; }
+int rt_hook_486d570(Cpu *c) { (void)c; g_gen++; return 0; }
+int rt_hook_486d900(Cpu *c) { (void)c; g_gen++; return 0; }
+int rt_hook_486dab0(Cpu *c) { (void)c; g_gen++; return 0; }

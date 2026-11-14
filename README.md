@@ -7,7 +7,7 @@ This is a fork of RumbleSlop, which is the PC port on its own. It is called Slop
 port and the importer were written by an AI coding agent. Expect rough edges.
 
 > **No game files are in this repository, and none may be added.** You need your own copy of Banana Rumble,
-> dumped from your own console (the base game and the 2.0.0 update), and, for the import, your own Steam install of
+> dumped from your own console (the base game and the 2.2.0 update), and, for the import, your own Steam install of
 > Banana Mania. The setup builds the game on your machine from your files, so the result contains both games'
 > content. It is for your own use. Do not share it.
 >
@@ -37,7 +37,7 @@ RumbleSlop.
 
 - Everything RumbleSlop needs: Windows 10 or 11 (64-bit), a CPU with AVX2, a GPU with Vulkan,
   [Python](https://www.python.org/downloads/windows/) 3.10 or newer, about 25 GB free while the setup runs, and
-  your own `prod.keys`, base game (`.xci` or `.nsp`) and 2.0.0 update (`.nsp`).
+  your own `prod.keys`, base game (`.xci` or `.nsp`) and 2.2.0 update (`.nsp`).
 - Super Monkey Ball Banana Mania installed through Steam (about 1 GB more disk space for the import). The setup
   finds it by itself; if it does not, name its folder in `input\mania.txt`.
 

@@ -16,14 +16,14 @@ has a last step `mania` (`setup\setup.py`), the runtime has `classic.c` and `man
 
 # RumbleSlop: technical guide
 
-A native Windows build of Super Monkey Ball Banana Rumble (Switch, Unity 2022.3.30f1, IL2CPP, version 2.0.0) made
+A native Windows build of Super Monkey Ball Banana Rumble (Switch, Unity 2022.3.30f1, IL2CPP, version 2.2.0) made
 on the user's PC from the user's own dump. This file is for whoever works on the port. It records how the port is
 put together, how to build and run it, and the traps already found. The player-facing instructions are in
 `README.md`.
 
 Nothing in the repository contains game code or data. Everything game-derived is made by `setup.cmd` under `build\`
 and `game\`, both ignored by git. The address tables in `port\recomp\tables\` and the offsets in the runtime's
-sources are facts about the 2.0.0 executable (where functions start and end), not its code.
+sources are facts about the 2.2.0 executable (where functions start and end), not its code.
 
 ## Design in one paragraph
 
@@ -41,7 +41,7 @@ what the Windows Vulkan player accepts.
 | `setup.cmd`, `setup\` | The one-time setup. `setup.py` runs the steps; `nx.py` reads XCI / NSP / NCA with the user's keys (pure Python); `fetch.py` downloads and unpacks the tools; `nsis.py` takes Unity's player out of Unity's installer without running it; `assemble.py` builds `game\`. |
 | `input\` | The user's `prod.keys` and dumps. Never committed. |
 | `port\paths.py` | Every folder and tool location, in one place. Scripts never name a machine path. |
-| `port\recomp\` | The lifter front end. `gen_il2cpp.py` generates C, `ehtab.py` reads exception tables, `hooks.txt` lists entry hooks, `tables\` holds the address tables for game version 2.0.0 (lift set, boundary targets, il2cpp API map). |
+| `port\recomp\` | The lifter front end. `gen_il2cpp.py` generates C, `ehtab.py` reads exception tables, `hooks.txt` lists entry hooks, `tables\` holds the address tables for game version 2.2.0 (lift set, boundary targets, il2cpp API map). |
 | `port\build.py` | Compiles the generated C to objects (ninja, clang). |
 | `port\runtime\` | Host runtime: loader, dispatcher, threads, exception unwinding, GC support, icall/API glue, and the `imports_*.c` Nintendo SDK implementations. `build_runtime.py` builds it and links `GameAssembly.dll`. |
 | `port\runtime\include\` | Contract shared by generated code and runtime: `cpu.h` (CPU state), `eh.h` (exception unwinding). |
@@ -87,7 +87,7 @@ The names come from the user's own game files and are never committed.
 
 ### How the version-specific tables were made
 
-`port\recomp\tables\` is for the 2.0.0 executable (build id in `port\paths.py`):
+`port\recomp\tables\` is for the 2.2.0 executable (build id in `port\paths.py`):
 
 * `lift_functions.tsv.gz`: start and end of every function that is lifted, from `tools\closure_build.py`
   (reachability from the managed method table over direct branches and address-taken functions, within the
@@ -101,6 +101,28 @@ The names come from the user's own game files and are never committed.
   signatures.
 
 Another game version needs these tables, `hooks.txt` and the `0x...ull` offsets in `port\runtime\*.c` redone.
+That was done once, from 2.0.0 to 2.2.0, like this:
+
+1. The tables are regenerated from the new executable, not carried over: the region constants at the top of
+   `tools\closure_build.py` and `port\recomp\extra_lift.py` are set for the new image, then `closure_build.py`,
+   `tools\make_tables.py` and `extra_lift.py` are run.
+2. An address map old -> new is built for every function (matched by method name from the metadata where there is
+   one, by code shape after masking addresses elsewhere, and confirmed by who calls whom) and for the data the
+   port names (class and method pointers). Native code (engine, CRIWARE, libil2cpp) moved as a block; the
+   generated managed code did not: generic instances were reordered, so `old + constant` is wrong there.
+3. `hooks.txt`, `il2cpp_api_map.tsv`, every `0x...ull` constant, `rt_hook_<address>` name and
+   `CONTEXT_HOOK(<address>` argument are rewritten through the map. A constant that is not an address (a mask, a
+   size) must be left alone: read the diff.
+4. Every hooked or called function whose body differs between the versions is read again (in 2.2.0: the button
+   glyph functions, which now go through `UIStandingSpriteManager`; the hooks kept working unchanged), and the
+   field offsets the port reads are compared between the two versions' type layouts (in 2.2.0 `MgPlayer` fields
+   from +0x1b0 moved by 8: `m_IsLocal` is at +0x1c0).
+5. As a cross-check the regenerated lift set must equal the old one carried through the map plus the functions the
+   new version added.
+
+`gen_il2cpp.py` guards against one weakness of the function-start search: an address that an unrelated
+ADRP + ADD pair seems to build is not taken for a start when it lies between a call and that call's landing pad
+(2.2.0 has one such address; splitting there would cut the function off from its exception handler).
 
 ## Run
 
@@ -594,6 +616,6 @@ Texture facts found the hard way:
   Screen Mode row's text following the port's mode when the game's save disagrees, the firmware-name detection,
   the 16:10 entries of the Resolution list beyond 1280x800.
 * The opening movie cannot be skipped with the buttons tried so far.
-* Only game version 2.0.0 is supported (base game plus the 2.0.0 update). The base game alone, or another
+* Only game version 2.2.0 is supported (base game plus the 2.2.0 update). The base game alone, or another
   update, has a different executable: the setup stops with a message.
 * Linux and Android builds are not started. The fixed load address is the main risk for Android.

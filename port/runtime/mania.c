@@ -37,8 +37,8 @@
 #include "rt.h"
 
 #define FN(off) (GUEST_BASE + (off))
-#define F_STAGELIST_SETUP 0x43287d0ull      // Wonder.StageList.Setup(Stage.List.eID, Course.eID, bool isForce)
-#define F_STAGELIST_SET_INDEX 0x4328c90ull  // Wonder.StageList.SetIndex(int)
+#define F_STAGELIST_SETUP 0x43564b0ull      // Wonder.StageList.Setup(Stage.List.eID, Course.eID, bool isForce)
+#define F_STAGELIST_SET_INDEX 0x4356970ull  // Wonder.StageList.SetIndex(int)
 #define STAGELIST_ID 0x10                   // StageList.m_StageListID
 #define STAGELIST_ITEMS 0x18                // StageList.m_StageList: List<StageListItem>
 #define STAGELIST_INDEX 0x20
@@ -54,8 +54,8 @@
 static struct { uint32_t list; int first, count; } g_courses[MAX_COURSES];
 static int g_ncourses = -1;
 
-#define F_GET_SELECTOR 0x43ad880ull         // Wonder.RuntimeParam.get_selector (static) -> SelectorParam
-#define F_CURRENT_STAGE 0x4329320ull        // Wonder.StageList.GetCurrentStage() -> Stage.eID
+#define F_GET_SELECTOR 0x43dbad0ull         // Wonder.RuntimeParam.get_selector (static) -> SelectorParam
+#define F_CURRENT_STAGE 0x4357000ull        // Wonder.StageList.GetCurrentStage() -> Stage.eID
 #define SELECTOR_STAGELIST 0x28             // SelectorParam.m_StageList
 #define MAX_MUSIC 1024
 static struct { uint32_t stage, cue, classic; } g_music[MAX_MUSIC];   // classic: the Classic Soundtrack's cue row, 0 = none
@@ -111,7 +111,7 @@ int mania_has_classic_music(void) {
     return g_have_classic;
 }
 
-int rt_hook_426a180(Cpu *c) {
+int rt_hook_4297f10(Cpu *c) {
     if (g_nmusic < 0) load_music();
     if (!g_nmusic) return 0;
     uint64_t self = c->x[0], lr = c->x[30];
@@ -141,17 +141,17 @@ static int g_nbgroot;
 // Wonder.MainGameBg.Awake(): the root object of a far scenery scene comes to life. For an imported stage whose
 // Mania original moves, turns or scales its background (29 stages; "bgroot" lines of mania_courses.txt), the root
 // is placed accordingly: the converted scenery scene is one per background, made at the origin.
-#define F_GET_TRANSFORM 0x3edc570ull        // UnityEngine.Component.get_transform
-#define F_SET_LOCAL_POSITION 0x3eecf80ull   // UnityEngine.Transform.set_localPosition(Vector3): floats in v0..v2
-#define F_SET_LOCAL_ROTATION 0x3eef030ull   // UnityEngine.Transform.set_localRotation(Quaternion): floats in v0..v3
-#define F_SET_LOCAL_SCALE 0x3eef8c0ull      // UnityEngine.Transform.set_localScale(Vector3)
+#define F_GET_TRANSFORM 0x3f07f60ull        // UnityEngine.Component.get_transform
+#define F_SET_LOCAL_POSITION 0x3f18970ull   // UnityEngine.Transform.set_localPosition(Vector3): floats in v0..v2
+#define F_SET_LOCAL_ROTATION 0x3f1aa20ull   // UnityEngine.Transform.set_localRotation(Quaternion): floats in v0..v3
+#define F_SET_LOCAL_SCALE 0x3f1b2b0ull      // UnityEngine.Transform.set_localScale(Vector3)
 static void set_floats(Cpu *c, uint64_t fn, uint64_t tr, const float *f, int n) {
     c->x[0] = tr; c->x[1] = 0;
     for (int i = 0; i < n; i++) { uint32_t u; memcpy(&u, &f[i], 4); c->v[i] = u; }
     rt_call_regs(c, FN(fn));
 }
 static void load_courses(void);
-int rt_hook_426a5b0(Cpu *c) {
+int rt_hook_4298340(Cpu *c) {
     if (g_ncourses < 0) load_courses();
     if (!g_nbgroot) return 0;
     uint64_t self = c->x[0], method = c->x[1], lr = c->x[30];
@@ -241,15 +241,15 @@ void mania_tick(void) {
 // world is cleared. An imported course has no previous world, which counts as cleared, so with an import the answer
 // was always the last imported course; the world pickers and the value sent to other players in a room then
 // treated every one of the game's worlds as open. The answer is worked out over the game's own worlds instead.
-#define F_IS_COURSE_CLEARED 0x43c3530ull    // AdventureParam.IsCourseCleared(Course.eID)
-int rt_hook_43c37d0(Cpu *c) {
+#define F_IS_COURSE_CLEARED 0x43f2500ull    // AdventureParam.IsCourseCleared(Course.eID)
+int rt_hook_43f27a0(Cpu *c) {
     static __thread int inside;
     if (inside) return 0;
     if (g_ncourses < 0) load_courses();
     if (!g_ncourses || !g_first_id || !g_nown) return 0;
     uint64_t lr = c->x[30], self = c->x[0], x1 = c->x[1];
     inside = 1;
-    uint32_t best = (uint32_t)rt_call(c, FN(0x43c37d0ull), 2, self, x1);
+    uint32_t best = (uint32_t)rt_call(c, FN(0x43f27a0ull), 2, self, x1);
     inside = 0;
     if (best >= g_first_id) {
         best = g_own[0].id;
@@ -279,21 +279,21 @@ static int crm_imported(Cpu *c, const char *what) {
     if (on) rt_log("mania: play statistics: %s dropped for imported course %u (second argument %d)", what, (unsigned)c->x[0], (int)c->x[1]);
     return 1;
 }
-int rt_hook_446c3f0(Cpu *c) { return crm_imported(c, "UpdateMissionStatus"); }
-int rt_hook_446c4d0(Cpu *c) { return crm_imported(c, "UpdateBestTimeStatus"); }
-int rt_hook_446c610(Cpu *c) { return crm_imported(c, "StartTimeAttack"); }
-int rt_hook_446c730(Cpu *c) { return crm_imported(c, "FinishTimeAttack"); }
+int rt_hook_449c690(Cpu *c) { return crm_imported(c, "UpdateMissionStatus"); }
+int rt_hook_449c770(Cpu *c) { return crm_imported(c, "UpdateBestTimeStatus"); }
+int rt_hook_449c8b0(Cpu *c) { return crm_imported(c, "StartTimeAttack"); }
+int rt_hook_449c9d0(Cpu *c) { return crm_imported(c, "FinishTimeAttack"); }
 
 // The world picker of local co-op and of online rooms lists the chain of worlds (Course.NextCourseID) from the
 // first one up to the "highest unlocked" one: UIChoicesItemData_Factory.getUnlockedCourseList(this, highest).
 // Online, `highest` is the lowest of the players' own values. Imported courses hang at the end of the chain and are
 // never anyone's highest (GetAdvModeHighestUnlockID wants the course before it cleared, and they have none), so
 // the picker never reached them. The hook lets the game answer as before and adds the imported courses.
-#define F_UNLOCKED_COURSES 0x45605b0ull     // UIChoicesItemData_Factory.getUnlockedCourseList(this, Course.eID highest) -> List<Course.Record>
-#define F_COURSE_STAGELIST 0x4797890ull     // Course.Record.StageListID()
+#define F_UNLOCKED_COURSES 0x45a6ea0ull     // UIChoicesItemData_Factory.getUnlockedCourseList(this, Course.eID highest) -> List<Course.Record>
+#define F_COURSE_STAGELIST 0x47d11d0ull     // Course.Record.StageListID()
 #define LIST_BASE 1000                      // virtual stage list ids start here (mania\build.py)
 
-int rt_hook_45605b0(Cpu *c) {
+int rt_hook_45a6ea0(Cpu *c) {
     static __thread int inside;
     if (inside) return 0;
     if (g_ncourses < 0) load_courses();
@@ -344,11 +344,11 @@ int rt_hook_45605b0(Cpu *c) {
 //   FlowCourseSelect: +0x48 m_AdvTypeDataList, +0x68 m_SelectedTabIndex, +0x6c m_SelectedCourseIndex
 //   UiMainGameAdvTypeItemData: +0x28 record, +0x30 categoryList     UiMainGameCategoryItemData: +0x20 record, +0x28 courseList
 //   CourseData: +0x20 record                                         IDRecord: +0x18 id
-#define F_COURSE_SETUP_NEXT 0x46a17d0ull    // FlowCourseSelect.<SetupCourseSelect>d__19.MoveNext (+0x20: the FlowCourseSelect)
-#define F_TAB_SELECTED 0x46a08b0ull         // FlowCourseSelectModeBase.onUpdateTabSelectedIdx(int, UIChoicesItemData, button)
-#define F_OBJECT_NEW 0x44c4a0ull            // il2cpp_codegen_object_new(class)
-#define F_CATEGORY_ITEM_CTOR 0x469ed70ull   // UiMainGameCategoryItemData..ctor(MainGame.Category.Record)
-#define F_LIST_ADD 0x3397800ull             // List<object>.AddWithResize(item), method from the list class's rgctx
+#define F_COURSE_SETUP_NEXT 0x46d8f20ull    // FlowCourseSelect.<SetupCourseSelect>d__19.MoveNext (+0x20: the FlowCourseSelect)
+#define F_TAB_SELECTED 0x46d8050ull         // FlowCourseSelectModeBase.onUpdateTabSelectedIdx(int, UIChoicesItemData, button)
+#define F_OBJECT_NEW 0x450aa0ull            // il2cpp_codegen_object_new(class)
+#define F_CATEGORY_ITEM_CTOR 0x46d65b0ull   // UiMainGameCategoryItemData..ctor(MainGame.Category.Record)
+#define F_LIST_ADD 0x33bfab0ull             // List<object>.AddWithResize(item), method from the list class's rgctx
 #define REC_ID 0x18
 #define SELECTOR_CATEGORY 0x10              // SelectorParam: the MainGame.Category and the course last chosen
 #define SELECTOR_COURSE 0x20
@@ -421,10 +421,10 @@ static void fill_mania_tab(Cpu *c, uint64_t flow) {
 // all three are made smaller and spread over the room the two had, between the L and R marks. The button images
 // are plain sprites (not sliced), so a button is scaled as a whole; its text is scaled back up to stay readable.
 //   UIStateMainGameSelect +0xd0 -> +0x10 -> +0xa0: the world select view; +0x48 its tab group; +0x58 the buttons
-#define F_INSTANTIATE 0x3ee5e00ull          // UnityEngine.Object.Instantiate(Object original, Transform parent)
-#define F_GET_PARENT 0x3eee6b0ull           // Transform.get_parent
-#define F_GET_ANCHORED_POS 0x3eec8d0ull     // RectTransform.get_anchoredPosition -> Vector2 in v0, v1
-#define F_SET_ANCHORED_POS 0x3eec9a0ull     // RectTransform.set_anchoredPosition(Vector2)
+#define F_INSTANTIATE 0x3f117f0ull          // UnityEngine.Object.Instantiate(Object original, Transform parent)
+#define F_GET_PARENT 0x3f1a0a0ull           // Transform.get_parent
+#define F_GET_ANCHORED_POS 0x3f182c0ull     // RectTransform.get_anchoredPosition -> Vector2 in v0, v1
+#define F_SET_ANCHORED_POS 0x3f18390ull     // RectTransform.set_anchoredPosition(Vector2)
 #define TAB_DRAWN_WIDTH 280.0f              // ImageBackGround of a tab button
 static const float g_tab_gap = 22.0f, g_tab_margin = 12.0f, g_tab_text = 0.85f;    // between buttons; added room at each end; text size
 
@@ -469,7 +469,7 @@ static void fit_tab_buttons(Cpu *c, uint64_t flow) {
 }
 
 // the coroutine that builds the lists and then the views: after each step, move the courses if the lists are new
-int rt_hook_46a17d0(Cpu *c) {
+int rt_hook_46d8f20(Cpu *c) {
     static __thread int inside;
     if (inside) return 0;
     if (g_ncourses < 0) load_courses();
@@ -493,7 +493,7 @@ int rt_hook_46a17d0(Cpu *c) {
 // The game keeps the cursor on the same world when the tab changes (Story and Special list the same worlds) and
 // otherwise on the same row. The new tab shares no world with the others, so the row is remembered per side:
 // going back to Story returns to the world the cursor was on, not to row n of a list that may be locked there.
-int rt_hook_46a08b0(Cpu *c) {
+int rt_hook_46d8050(Cpu *c) {
     static __thread int inside;
     uint64_t self = c->x[0], item = c->x[2], flow = self ? LD64(self + 0x38) : 0;
     if (inside || !g_tab || !flow || !item || LD64(item) != g_tab_class) return 0;
@@ -519,9 +519,9 @@ int rt_hook_46a08b0(Cpu *c) {
 // arrays indexed by it (the first tab reads Story, Extra or Ultimate with the world under the cursor), and the
 // imported courses are listed as Ultimate ones. For the two callers that name the tabs an imported course counts
 // as a Story one, so the tabs read Story / Special / Mania while the cursor is in the new tab.
-int rt_hook_440c2f0(Cpu *c) {
+int rt_hook_443bc40(Cpu *c) {
     uint64_t lr = c->x[30], x0 = c->x[0];
-    if (!g_tab || (lr != FN(0x469dc30ull) && lr != FN(0x469dfb8ull))) return 0;     // onUpdateCourseFocusIndex, onInitTabGroupSelectableButton
+    if (!g_tab || (lr != FN(0x46d53fcull) && lr != FN(0x46d57e8ull))) return 0;     // onUpdateCourseFocusIndex, onInitTabGroupSelectableButton
     uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull);
     int imported = sel && LD32(sel + SELECTOR_COURSE) >= g_first_id;
     c->x[0] = imported ? 1 : x0;
@@ -531,7 +531,7 @@ int rt_hook_440c2f0(Cpu *c) {
 
 // Wonder.MgStageSwitchController.Request(eState switchType, int classId, int serialId, bool playSound, float time):
 // a switch was pressed. BR_MANIA_LOG=1 logs it (a test aid for imported switch stages).
-int rt_hook_4308520(Cpu *c) {
+int rt_hook_4337600(Cpu *c) {
     static int on = -1;
     if (on < 0) on = getenv("BR_MANIA_LOG") != NULL;
     if (on) rt_log("mania: switch request: state %d, class %d, serial %d", (int)c->x[1], (int)c->x[2], (int)c->x[3]);
@@ -540,7 +540,7 @@ int rt_hook_4308520(Cpu *c) {
 
 // Wonder.MgSwitch.OnTriggerEnterPlayer(PhysicsBall): a ball has rolled onto a switch. Outside battles the switch
 // queues its request on the controller itself, so this is the one place every press passes.
-int rt_hook_430b0a0(Cpu *c) {
+int rt_hook_433a180(Cpu *c) {
     static int on = -1;
     if (on < 0) on = getenv("BR_MANIA_LOG") != NULL;
     if (on && c->x[0]) rt_log("mania: switch pressed: type %d, class %d, serial %d", (int)LD32(c->x[0] + 0x20), (int)LD32(c->x[0] + 0x24), (int)LD32(c->x[0] + 0x28));
@@ -548,7 +548,7 @@ int rt_hook_430b0a0(Cpu *c) {
 }
 
 // Wonder.MgSeesaw.OnPostCollide(GameObject sphereGO): a ball touches a seesaw's collision part (BR_MANIA_LOG)
-int rt_hook_4305d30(Cpu *c) {
+int rt_hook_4334e10(Cpu *c) {
     static int on = -1, calls;
     if (on < 0) on = getenv("BR_MANIA_LOG") != NULL;
     if (on && c->x[0] && calls++ % 15 == 0) {
@@ -562,7 +562,7 @@ int rt_hook_4305d30(Cpu *c) {
 }
 
 // Is the object `component` (anything with a Transform) of the stage being played inside an area of this kind?
-#define F_GET_POSITION 0x3eee800ull         // UnityEngine.Transform.get_position -> Vector3 in v0..v2
+#define F_GET_POSITION 0x3f1a1f0ull         // UnityEngine.Transform.get_position -> Vector3 in v0..v2
 static int in_area(Cpu *c, int kind, uint64_t component, const char *what) {
     if (g_ncourses < 0) load_courses();
     int any = 0;
@@ -587,7 +587,7 @@ static int in_area(Cpu *c, int kind, uint64_t component, const char *what) {
 
 // Wonder.MgGoalColi.OnTriggerEnterPlayer(PhysicsBall): a ball enters a goal. Not when the goal stands in an
 // "inactive goal" area of an imported stage (Factory's goals travel on a belt and are parked in such an area).
-int rt_hook_4301e40(Cpu *c) {
+int rt_hook_4330e70(Cpu *c) {
     uint64_t self = c->x[0], ball = c->x[1], x2 = c->x[2], lr = c->x[30];
     int skip = in_area(c, AREA_GOAL, self, "a goal");
     c->x[0] = self; c->x[1] = ball; c->x[2] = x2; c->x[30] = lr;
@@ -596,7 +596,7 @@ int rt_hook_4301e40(Cpu *c) {
 
 // Wonder.MgWormhole.OnTriggerEnterPlayer(PhysicsBall): a ball touches a wormhole. Not when the ball is in a
 // "no wormhole" area of an imported stage.
-int rt_hook_430cc30(Cpu *c) {
+int rt_hook_433bd10(Cpu *c) {
     uint64_t self = c->x[0], ball = c->x[1], x2 = c->x[2], lr = c->x[30];
     int skip = in_area(c, AREA_WORMHOLE, ball, "a ball at a wormhole");
     if (!skip && getenv("BR_MANIA_LOG")) rt_log("mania: a ball enters a wormhole (pair %d)", (int)LD32(self + 0x54));
@@ -610,12 +610,12 @@ int rt_hook_430cc30(Cpu *c) {
 // local player's. Online each machine therefore moves the bars by its own player (they differ between machines;
 // every ball is simulated on its own machine). In split screen the local players share one set of bars: each
 // step the bar takes the next local player's controller, so it slides with the average of their tilts.
-#define F_PLAYER_LIST 0x42a1880ull          // Wonder.MainGame.get_playerList -> List<MgPlayer> (static, through the singleton)
-#define F_OBJ_ALIVE 0x3ee4c20ull            // UnityEngine.Object.op_Implicit (static)
-#define PLAYER_IS_LOCAL 0x1b8               // MgPlayer.m_IsLocal
+#define F_PLAYER_LIST 0x42cf6c0ull          // Wonder.MainGame.get_playerList -> List<MgPlayer> (static, through the singleton)
+#define F_OBJ_ALIVE 0x3f10610ull            // UnityEngine.Object.op_Implicit (static)
+#define PLAYER_IS_LOCAL 0x1c0               // MgPlayer.m_IsLocal
 #define PLAYER_GRAVITY 0x68                 // MgPlayer.m_GravityController
 #define JAMABAR_GRAVITY 0x168               // CollisionJamabar.<gravityController>k__BackingField
-int rt_hook_4282ca0(Cpu *c) {
+int rt_hook_42b09f0(Cpu *c) {
     uint64_t self = c->x[0], x1 = c->x[1], lr = c->x[30];
     if (self) {
         static uint64_t bars[64];           // the steps each bar has taken, to give the local players turns
@@ -665,7 +665,7 @@ int rt_hook_4282ca0(Cpu *c) {
 }
 
 // Framework.EnumRuntimeHelper<Int32Enum>.GetValue(string name, T defaultValue) (static, shared by every enum)
-int rt_hook_2e6be10(Cpu *c) {
+int rt_hook_2e90660(Cpu *c) {
     uint64_t s = c->x[0];
     if (!s) return 0;
     int n = (int)LD32(s + 0x10);
@@ -682,7 +682,7 @@ int rt_hook_2e6be10(Cpu *c) {
 
 #define ITEM_NEXT 0x20                      // StageListItem.m_NextStage -> StageListNextArray {+0x10 Stage.eID[]}
 // Wonder.StageList.Setup(Stage.List.eID stageListID, Course.eID courseID, bool isForce)
-int rt_hook_43287d0(Cpu *c) {
+int rt_hook_43564b0(Cpu *c) {
     static __thread int inside;
     if (inside) return 0;
     if (g_ncourses < 0) load_courses();

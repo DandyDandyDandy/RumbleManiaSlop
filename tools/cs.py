@@ -307,7 +307,7 @@ def dis(a, mx=4000):
             if ins.mnemonic != 'ldr':
                 continue    # metadata-initialised flag bytes
             v = q(ad) if ad + 8 <= len(img) else 0
-            us = usage(q(v)) if 0x5dd4000 <= v < len(img) - 8 else usage(v)
+            us = usage(q(v)) if 0x5e22000 <= v < len(img) - 8 else usage(v)
             if us:
                 slots[m.group(1)] = us
                 note = '   ; &' + us
@@ -330,7 +330,7 @@ def dis(a, mx=4000):
             tg = int(m3.group(2), 16)
             if not lo <= tg < hi:
                 nm = names.get(tg, '')
-                if tg in (0x44c0d0,):
+                if tg in (0x4506d0,):
                     continue
                 note = '   ; ' + (nm or '?')
         if ins.mnemonic in ('strb',) and re.search(r'\[x\d+, #0x[0-9a-f]+\]$', t) and any(r in t for r in pages) and 'w8' in t:
@@ -342,7 +342,7 @@ def dis(a, mx=4000):
         m4 = re.match(r'mov w2, (wzr|#(0x[0-9a-f]+|\d+))$', t)
         if m4:
             pend = 0 if m4.group(1) == 'wzr' else int(m4.group(2), 0)
-        if t.startswith('bl #0x45561c'):
+        if t.startswith('bl #0x459c1c'):
             note = '   ; interface-slot lookup (slot in w2 above, interface class in x1)'
         print('   %x  %s%s' % (ins.address, t, note))
 
@@ -376,9 +376,9 @@ if __name__ == '__main__':
                 print('%#x %s' % (a, n))
     elif cmd == 'got':          # got <regex>: metadata-usage pointer slots whose usage matches
         rx = re.compile(sys.argv[2])
-        for ad in range(0x5dd4000, min(len(img) - 8, 0x6200000), 8):
+        for ad in range(0x5e22000, min(len(img) - 8, 0x6200000), 8):
             v = q(ad)
-            if 0x5dd4000 <= v < len(img) - 8:
+            if 0x5e22000 <= v < len(img) - 8:
                 us = usage(q(v))
                 if us and rx.search(us):
                     print('%#x -> %#x %s' % (ad, v, us))

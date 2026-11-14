@@ -124,7 +124,7 @@ and the game copies the motion over at run time (`StageMovObjManager.m_info`, `M
 ## Banana Rumble's side
 
 Unity 2022.3.30f1. What follows was read from the game's files and code (`tools\cs.py`); offsets are NSO offsets
-of game version 2.0.0.
+of game version 2.2.0.
 
 ### A stage is a scene
 

@@ -14,14 +14,14 @@
 #include "rt.h"
 
 #define FN(off) (GUEST_BASE + (off))
-#define F_MAIN_GAME_STAGE 0x42a11f0ull      // Wonder.MainGame::get_mainGameStage (through the singleton; null outside a stage)
-#define F_PLAYER_LIST 0x42a1880ull          // Wonder.MainGame::get_playerList -> List<MgPlayer>
-#define F_GOAL_COLI_LIST 0x42f0680ull       // Wonder.MainGameStage::get_goalColiList -> List<MgGoalColi>
-#define F_PLAYER_BALL 0x42c80b0ull          // Wonder.MgPlayer::get_ball -> PhysicsBall
-#define F_GOAL_ENTER 0x4301e40ull           // Wonder.MgGoalColi::OnTriggerEnterPlayer(PhysicsBall)
-#define F_OBJ_ALIVE 0x3ee4c20ull            // UnityEngine.Object::op_Implicit (static)
-#define F_UNLOAD_UNUSED 0x3eda530ull        // UnityEngine.Resources::UnloadUnusedAssets (static)
-#define PLAYER_IS_LOCAL 0x1b8               // MgPlayer.m_IsLocal
+#define F_MAIN_GAME_STAGE 0x42cf030ull      // Wonder.MainGame::get_mainGameStage (through the singleton; null outside a stage)
+#define F_PLAYER_LIST 0x42cf6c0ull          // Wonder.MainGame::get_playerList -> List<MgPlayer>
+#define F_GOAL_COLI_LIST 0x431f2e0ull       // Wonder.MainGameStage::get_goalColiList -> List<MgGoalColi>
+#define F_PLAYER_BALL 0x42f6a40ull          // Wonder.MgPlayer::get_ball -> PhysicsBall
+#define F_GOAL_ENTER 0x4330e70ull           // Wonder.MgGoalColi::OnTriggerEnterPlayer(PhysicsBall)
+#define F_OBJ_ALIVE 0x3f10610ull            // UnityEngine.Object::op_Implicit (static)
+#define F_UNLOAD_UNUSED 0x3f05f20ull        // UnityEngine.Resources::UnloadUnusedAssets (static)
+#define PLAYER_IS_LOCAL 0x1c0               // MgPlayer.m_IsLocal
 #define LIST_ITEMS 0x10
 #define LIST_SIZE 0x18
 #define ARR_DATA 0x20
@@ -40,7 +40,7 @@ static int start_stage(void) {
     return start;
 }
 
-int rt_hook_4665e40(Cpu *c) {               // online
+int rt_hook_4690da0(Cpu *c) {               // online
     int start = start_stage();
     if (start && (uint32_t)c->x[1] == 0) {
         rt_log("test: BR_START_STAGE: course %u starts at stage %d", (uint32_t)c->x[0], start);
@@ -53,20 +53,20 @@ int rt_hook_4665e40(Cpu *c) {               // online
 // which puts the stage list on its first stage, and then asks for the scene of the first stage
 // (UIStateArgTransitionToMainGameScene..ctor(kind, scene, ...)). Between the two, the list is moved to stage n and
 // the scene asked for becomes that stage's.
-#define F_GET_SELECTOR 0x43ad880ull         // Wonder.RuntimeParam::get_selector (static) -> SelectorParam
-#define F_STAGE_COUNT 0x43284c0ull          // Wonder.StageList::get_stageCount
-#define F_SET_INDEX 0x4328c90ull            // Wonder.StageList::SetIndex(int)
-#define F_CURRENT_RECORD 0x4328690ull       // Wonder.StageList::get_currentStageRecord -> Stage.Record
-#define F_RECORD_SCENE 0x477a3e0ull         // Wonder.DB.Stage.Record::SceneID
+#define F_GET_SELECTOR 0x43dbad0ull         // Wonder.RuntimeParam::get_selector (static) -> SelectorParam
+#define F_STAGE_COUNT 0x43561a0ull          // Wonder.StageList::get_stageCount
+#define F_SET_INDEX 0x4356970ull            // Wonder.StageList::SetIndex(int)
+#define F_CURRENT_RECORD 0x4356370ull       // Wonder.StageList::get_currentStageRecord -> Stage.Record
+#define F_RECORD_SCENE 0x47b3b50ull         // Wonder.DB.Stage.Record::SceneID
 #define SELECTOR_STAGELIST 0x28             // SelectorParam.m_StageList
 static int g_confirming;
 
-int rt_hook_46cb950(Cpu *c) {
+int rt_hook_47042b0(Cpu *c) {
     g_confirming = start_stage() > 0;
     return 0;
 }
 
-int rt_hook_451bd90(Cpu *c) {
+int rt_hook_454d230(Cpu *c) {
     if (!g_confirming) return 0;
     g_confirming = 0;
     uint64_t r[8], lr = c->x[30];

@@ -334,12 +334,16 @@ def patch_db(chars):
     rel = db_bundle('CharaCustomize_Item')
     env = UnityPy.load(aa(rel)); o = mb(env); r = bytearray(o.get_raw_data())
     p0 = after_name(r); cnt = struct.unpack_from('<i', r, p0)[0]
-    rows = [struct.unpack_from('<24i', r, p0 + 4 + 96 * i) for i in range(cnt)]
+    # a row: _id, Name, Explanation, ColorID, CategoryID, SpriteID, IsDefault, InitialCondition, 10 + ten asset ids,
+    # SeasonID, SeasonStepNum, the flags (IsNotCoordinate; game 2.2.0 added IsDole), _empty, _order
+    w = (len(r) - p0 - 4) // (4 * cnt)
+    assert w >= 24 and 4 + 4 * w * cnt == len(r) - p0, 'item table: unexpected row size'
+    rows = [struct.unpack_from('<%di' % w, r, p0 + 4 + 4 * w * i) for i in range(cnt)]
     i = next(k for k, row in enumerate(rows) if row[0] == ITEM_ID)
-    assert rows[i][22] == 1 and rows[i][23] == -1, 'item record %d is not blank' % ITEM_ID
-    order = max(row[23] for row in rows) + 1
-    row = [ITEM_ID, ITEM_ID, ITEM_ID, 0, ITEM_CATEGORY_OUTFIT, sprite_id, 0, INITIAL_CONDITION, 10, asset_id] + [0] * 9 + [0, 0, 0, 0, order]
-    struct.pack_into('<24i', r, p0 + 4 + 96 * i, *row)
+    assert rows[i][-2] == 1 and rows[i][-1] == -1, 'item record %d is not blank' % ITEM_ID
+    order = max(row[-1] for row in rows) + 1
+    row = [ITEM_ID, ITEM_ID, ITEM_ID, 0, ITEM_CATEGORY_OUTFIT, sprite_id, 0, INITIAL_CONDITION, 10, asset_id] + [0] * 9 + [0, 0] + [0] * (w - 23) + [0, order]
+    struct.pack_into('<%di' % w, r, p0 + 4 + 4 * w * i, *row)
     o.set_raw_data(bytes(r))
     save_bundle(env, rel)
 

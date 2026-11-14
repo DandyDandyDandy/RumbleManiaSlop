@@ -15,10 +15,10 @@
 #include "rt.h"
 
 #define FN(off) (GUEST_BASE + (off))
-#define F_CHARA_GET_ITEM 0x43ccbd0ull       // ShopItemParamCharacter.GetItem(Def.Chara.eID): makes the item when it is missing
-#define F_CHARA_GET_ITEM2 0x43d1750ull      // ShopItemParamCharacter.GetItem(Def.Chara.eID, Def.Chara.Table)
-#define F_SHOP_ON_CREATE 0x43cb7f0ull       // SaveUserParam.ShopItemParam.OnCreate()
-#define F_SHOP_ON_AFTER_LOAD 0x43cb9a0ull   // SaveUserParam.ShopItemParam.OnAfterLoad()
+#define F_CHARA_GET_ITEM 0x43fbd10ull       // ShopItemParamCharacter.GetItem(Def.Chara.eID): makes the item when it is missing
+#define F_CHARA_GET_ITEM2 0x4400890ull      // ShopItemParamCharacter.GetItem(Def.Chara.eID, Def.Chara.Table)
+#define F_SHOP_ON_CREATE 0x43fa930ull       // SaveUserParam.ShopItemParam.OnCreate()
+#define F_SHOP_ON_AFTER_LOAD 0x43faae0ull   // SaveUserParam.ShopItemParam.OnAfterLoad()
 #define SHOP_CHARACTER 0x28                 // ShopItemParam.m_Character
 #define CHARACTER_DICT 0x10                 // ShopItemParamCharacter.m_Dict
 #define ITEM_CONDITION 0x10                 // ShopItemParamItemBase -> ShopItemConditionParam
@@ -29,8 +29,8 @@
 
 static const uint32_t g_charas[] = {12, 19, 20, 21, 22, 23};   // Def.Chara.eID: Madhihi, Collab01..Collab05 (as in delisted.py)
 
-// A character counts only when the game data has its model: the 2.00 files hold Dr. Bad-Boon and the first two
-// collaboration characters; the other three exist as statistics only unless their add-on content is installed.
+// A character counts only when the game data has its model. The 2.2.0 update, which the port is made for, carries
+// all six (the game before it had Dr. Bad-Boon and two collaboration characters only); the check stays as a guard.
 static int has_model(uint32_t chara) {
     char pattern[700];
     WIN32_FIND_DATAA fd;
@@ -81,8 +81,8 @@ static int get_item(Cpu *c, uint64_t fn) {
     c->x[30] = lr;
     return 1;
 }
-int rt_hook_43ccbd0(Cpu *c) { return get_item(c, F_CHARA_GET_ITEM); }
-int rt_hook_43d1750(Cpu *c) { return get_item(c, F_CHARA_GET_ITEM2); }
+int rt_hook_43fbd10(Cpu *c) { return get_item(c, F_CHARA_GET_ITEM); }
+int rt_hook_4400890(Cpu *c) { return get_item(c, F_CHARA_GET_ITEM2); }
 
 static int shop_event(Cpu *c, uint64_t fn) {
     if (g_inside) return 0;
@@ -99,5 +99,5 @@ static int shop_event(Cpu *c, uint64_t fn) {
     c->x[30] = lr;
     return 1;
 }
-int rt_hook_43cb7f0(Cpu *c) { return shop_event(c, F_SHOP_ON_CREATE); }
-int rt_hook_43cb9a0(Cpu *c) { return shop_event(c, F_SHOP_ON_AFTER_LOAD); }
+int rt_hook_43fa930(Cpu *c) { return shop_event(c, F_SHOP_ON_CREATE); }
+int rt_hook_43faae0(Cpu *c) { return shop_event(c, F_SHOP_ON_AFTER_LOAD); }
