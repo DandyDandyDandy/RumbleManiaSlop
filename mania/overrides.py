@@ -7,24 +7,38 @@ Banana Mania's stages lack things Banana Rumble's have, and the import cannot de
     {"stages":  {"<Mania stage id>": {"gold": "<path of the banana that becomes the Golden Banana>",
                                       "time": <seconds of the time mission>,
                                       "time_perfect": <seconds for the mission's perfect mark; default: time>,
-                                      "bananas": <bananas of the banana mission; default: half of the stage's>}},
+                                      "bananas": <bananas of the banana mission; default: half of the stage's>,
+                                      "picture": "<file>"}},
      "courses": {"<Mania course name>": {"missions": true | false,
                                          "theme": <Rumble course id>, "thumbnail": "mania" | <Rumble course id>,
-                                         "brochure": <id>, "icon": <id> | 0, "title": <id> | 0}}}
+                                         "brochure": <id>, "icon": <id> | 0, "title": <id> | 0,
+                                         "picture": "<file>", "big_picture": "<file>", "icon_picture": "<file>"}}}
 
 Everything is optional. A course has stage missions when "missions" says so, and without the key when one of its
 stages has a "gold" or a "time". "theme" is the Rumble world whose graphics the course borrows (the picture beside
 the list in Select World, the world icon, the title card when a stage loads); "brochure", "icon" and "title" each
 name another world for one of them, and 0 leaves the icon or the title card out. "thumbnail" is the course's small
 picture in Select World: Banana Mania's own ("mania", the default where Mania has one) or a Rumble world's.
+
+Pictures of one's own go before all of that: "picture" of a stage is its thumbnail in Select Stage, "picture",
+"big_picture" and "icon_picture" of a course its small picture, the big picture beside the lists and the world
+icon. Each names a PNG file in input\\pictures\\ (the editor puts uploads there, cut to the shape the game shows;
+the folder is the user's and not part of the repository). A file that is missing is passed over.
 """
 import json
 import math
 import os
+import re
 
-PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'overrides.json')
-STAGE_KEYS = {'gold': str, 'time': (int, float), 'time_perfect': (int, float), 'bananas': int}
-COURSE_KEYS = {'missions': bool, 'theme': int, 'thumbnail': (int, str), 'brochure': int, 'icon': int, 'title': int}
+HERE = os.path.dirname(os.path.abspath(__file__))
+PATH = os.path.join(HERE, 'overrides.json')
+PICTURES = os.path.join(os.path.dirname(HERE), 'input', 'pictures')
+PICTURE_NAME = re.compile(r'[A-Za-z0-9_]{1,100}\.png')
+# the shapes the game shows them in: (width, height, with transparency)
+PICTURE_SHAPES = {'picture': (512, 512, False), 'big_picture': (804, 1004, False), 'icon_picture': (132, 132, True)}
+STAGE_KEYS = {'gold': str, 'time': (int, float), 'time_perfect': (int, float), 'bananas': int, 'picture': str}
+COURSE_KEYS = {'missions': bool, 'theme': int, 'thumbnail': (int, str), 'brochure': int, 'icon': int, 'title': int,
+               'picture': str, 'big_picture': str, 'icon_picture': str}
 
 
 def clean(data):
@@ -47,6 +61,8 @@ def clean(data):
                     raise ValueError(f'overrides: {section}/{name}/{k} has the wrong type')
                 if isinstance(v, (int, float)) and not isinstance(v, bool) and (v < 0 or v > 100000):
                     raise ValueError(f'overrides: {section}/{name}/{k} is out of range')
+                if k in PICTURE_SHAPES and not PICTURE_NAME.fullmatch(v):
+                    raise ValueError(f'overrides: {section}/{name}/{k} is not the name of a PNG file')
                 kept[k] = v
             if kept:
                 out[section][str(name)] = kept
@@ -76,6 +92,34 @@ def save(data, path=None):
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
     os.replace(tmp, path or PATH)
+
+
+def picture(entry, key):
+    """The user's picture an entry names under `key` as an image, or None (no such key, or the file is missing)."""
+    name = entry.get(key)
+    path = os.path.join(PICTURES, name) if name and PICTURE_NAME.fullmatch(name) else None
+    if not path or not os.path.exists(path):
+        return None
+    from PIL import Image
+    with Image.open(path) as img:
+        return img.convert('RGBA')
+
+
+def fit_picture(img, key):
+    """An uploaded picture in the shape the game shows it in: the small pictures and the big one fill their frame
+    (the middle is kept, what sticks out is cut), the icon is fitted whole into its square, keeping transparency."""
+    from PIL import Image, ImageOps
+    w, h, alpha = PICTURE_SHAPES[key]
+    img = ImageOps.exif_transpose(img).convert('RGBA')
+    if not alpha:
+        ground = Image.new('RGBA', img.size, (0, 0, 0, 255))
+        ground.alpha_composite(img)
+        return ImageOps.fit(ground, (w, h), Image.LANCZOS).convert('RGB')
+    # the game's icons leave a few pixels free at the rim (the sprite's rectangle is smaller than the texture)
+    inner = ImageOps.contain(img, (w - 12, h - 12), Image.LANCZOS)
+    out = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    out.alpha_composite(inner, ((w - inner.width) // 2, (h - inner.height) // 2))
+    return out
 
 
 def gold(data, stage_id):

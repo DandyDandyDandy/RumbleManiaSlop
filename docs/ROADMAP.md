@@ -10,8 +10,9 @@ borrows; stage and world thumbnails come from Banana Mania by themselves. Still 
 
 * **Placing a banana anywhere**, not only turning one of the stage's own into the golden one (every imported
   stage has at least one banana, so each can have a Golden Banana today).
-* **Pictures of one's own**: a stage thumbnail taken from the editor's view, an uploaded world picture or icon
-  (`mania\sprites.py` can already add a picture to the game; they would have to live outside the repository).
+* **A title card of one's own.** Uploaded pictures exist for the stage thumbnail and a world's small picture,
+  big picture and icon; the title card when a stage loads is a timeline asset of a Rumble world
+  (`Course.BeginningTitle`), not a picture, and can only be borrowed or left out.
 * **Intro cameras.** The fly-over before a stage is one box and two camera points per stage
   (`BeginningBounds`, see `docs\MANIA.md`); the import derives the box from the stage's size. Stages where that
   looks wrong need a way to move the two points by hand.

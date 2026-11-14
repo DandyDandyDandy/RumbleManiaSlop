@@ -99,14 +99,17 @@ class Sprites:
                 return o.read().image
         return None
 
-    def add(self, key, img, out):
+    def add(self, key, img, out, template=TEMPLATE_SPRITE):
         """A new sprite with the picture `img`, written into the override tree `out`; its sprite id. `key` names
-        it (the same key gives the same file and GUID in every import)."""
+        it (the same key gives the same file and GUID in every import). template: the sprite of the game it is a
+        copy of; the picture takes its size and texture format (with transparency where that format has it)."""
         if key in self._made:
             return self._made[key]
         if not self.free:
             raise ValueError('the sprite table has no unused row left')
-        src, locs = self.bundle_of(TEMPLATE_SPRITE)
+        src, locs = self.bundle_of(template)
+        if src is None:
+            raise ValueError(f'sprite {template} of the game was not found')
         env = UnityPy.load(src)
         name = 'mania_' + key
         asset_path = f'Assets/Mania/Sprite/{name}.tga'
@@ -114,7 +117,9 @@ class Sprites:
             if o.type.name == 'Texture2D':
                 t = o.read()
                 t.m_Name = name
-                t.set_image(img.convert('RGB').resize((t.m_Width, t.m_Height)), target_format=TextureFormat.DXT1, mipmap_count=1)
+                fmt = TextureFormat(t.m_TextureFormat)
+                t.set_image(img.convert('RGB' if fmt == TextureFormat.DXT1 else 'RGBA').resize((t.m_Width, t.m_Height)),
+                            target_format=fmt, mipmap_count=1)
                 t.save()
             elif o.type.name == 'Sprite':
                 tt = o.read_typetree()

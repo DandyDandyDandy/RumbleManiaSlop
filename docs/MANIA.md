@@ -593,13 +593,24 @@ its result).
   it is the world that stands in for the first stage's background (`WORLD_OF_BG`), as before. A course without a
   title card (an empty `BeginningTitle`, as the game's World Tour has) loads and plays.
 
+* Pictures of one's own go before all of these (`overrides.json`: `picture` of a stage; `picture`, `big_picture`,
+  `icon_picture` of a course). They are PNG files in `input\pictures\`, the user's folder, which is not part of
+  the repository; the editor writes them there in the shape the game shows (512 x 512 for the small pictures,
+  804 x 1004 for the big one, both filled from the middle of the upload; 132 x 132 with transparency for the
+  icon, fitted whole). The big picture and the icon are copies of World 1's sprites with another image
+  (`Sprites.add(..., template=)`), which gives them size and texture format; the sprite's name holds a hash of
+  the picture, so a changed picture is another asset. A file that is missing is passed over with a line in the
+  import's output.
+
 **The editor** (`editor.cmd`, `mania\editor.py` with the page `mania\editor.html`): a page in the browser, served
 on 127.0.0.1 only, that takes changes only from itself (the `Origin` header is checked). Left: the worlds and
 their stages. Middle: the stage as Mania has it, drawn with WebGL from the drawn meshes at rest (read from the
 Mania install with `maniastage.py`; textures scaled to 256), with a marker on each banana, the start and the
 goals; a click on a banana makes it the Golden Banana. Two more tabs are mock-ups of Select Stage and Select
 World with the pictures and mission numbers the game will show. Right: the stage's mission values and the
-world's missions switch, theme and pictures. Every change is saved at once; "Apply to game" runs
+world's missions switch, theme and pictures; under each picture "Upload" takes an image file (PNG, JPEG, WebP,
+BMP, GIF) of one's own and "Remove" deletes it again, and a stage's thumbnail can also be taken "From the view"
+(the middle square of the 3D view on a sky). Every change is saved at once; "Apply to game" runs
 `build.py --no-stages` (about a minute; it refuses while the game runs, because the game keeps the files open).
 Nothing of either game is copied into the repository: what the page reads is cached in
 `build\mania_work\editor\`.
@@ -608,7 +619,9 @@ Checked in the running game (2.20, one stage each): the chosen banana is golden 
 completes the third mission on the result screen; Select Stage shows Mania's thumbnails and the three stamps with
 the set numbers; Select World shows Mania's course pictures and the chosen theme's big picture; the Missions menu
 lists the imported worlds that have missions with the set values, while its overall percentage stays the game's
-own; a world without a title card. Not looked at: the title card with a world icon, the time and banana missions
+own; a world without a title card; uploaded pictures as a stage's thumbnail (a file and one taken from the
+view), a world's small picture and its big picture. A world icon, borrowed or uploaded, was not found on any
+screen: the title cards seen (the theme of World 3) do not show one. Not looked at: the time and banana missions
 completed in play (only the golden one was), perfect marks, split screen and online with missions, other
 languages.
 

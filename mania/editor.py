@@ -7,6 +7,9 @@ What a person sets with it (saved at once into mania\\overrides.json, which mani
     per stage   the Golden Banana (click one of the stage's bananas in the 3D view), the time of the time mission
                 and of its perfect mark, the number of bananas of the banana mission
     per world   whether it has stage missions, and the Rumble world whose graphics it borrows in the menus
+    pictures    of one's own for a stage's thumbnail and a world's small picture, big picture and icon: uploaded
+                in the page (or, for a stage, taken from the 3D view), cut to the game's shape and kept as PNG
+                files in input\\pictures\\ (the user's folder, not part of the repo)
 
 The page shows the stage as Banana Mania has it (the drawn meshes at rest, read from the Mania install with
 maniastage.py; nothing is copied into the repo) and a mock-up of Select World and Select Stage with the pictures
@@ -49,6 +52,7 @@ def importer():
 
 
 TEXTURE_SIZE = 256              # stage textures are scaled down to this for the 3D view
+MAX_BODY = 56 << 20             # of a request: a picture of 40 MB as base64
 LOCK = threading.RLock()        # UnityPy objects are not used from two requests at once
 
 
@@ -135,6 +139,42 @@ class Game:
             img.save(path)
         with open(path, 'rb') as f:
             return f.read()
+
+    def user_picture(self, name):
+        """PNG bytes of one of the user's pictures (input\\pictures), or None."""
+        if not overrides.PICTURE_NAME.fullmatch(name):
+            return None
+        try:
+            with open(os.path.join(overrides.PICTURES, name), 'rb') as f:
+                return f.read()
+        except OSError:
+            return None
+
+    def set_picture(self, section, name, key, data):
+        """Keep an uploaded picture (data: a data URL or base64 of an image file; None removes it) for the stage
+        or course `name` in the shape of `key`; returns the file's name (None when removed)."""
+        if section not in ('stages', 'courses') or key not in overrides.PICTURE_SHAPES or (section == 'stages' and key != 'picture'):
+            raise ValueError('no such picture')
+        safe = ''.join(ch if ch.isascii() and ch.isalnum() else '_' for ch in str(name))[:60]
+        if not safe:
+            raise ValueError('no such stage or world')
+        file = ('st' if section == 'stages' else 'world_') + safe + ('' if section == 'stages' else '_' + key) + '.png'
+        path = os.path.join(overrides.PICTURES, file)
+        if data is None:
+            if os.path.exists(path):
+                os.remove(path)
+            return None
+        from PIL import Image
+        try:
+            raw = base64.b64decode(data.split(',', 1)[-1], validate=True)
+            img = Image.open(io.BytesIO(raw))
+            img.load()
+        except Exception:
+            raise ValueError('this file is not a picture the editor can read (PNG, JPEG, WebP, BMP, GIF)')
+        os.makedirs(overrides.PICTURES, exist_ok=True)
+        overrides.fit_picture(img, key).save(path + '.tmp', 'PNG')
+        os.replace(path + '.tmp', path)
+        return file
 
     # ---- a stage --------------------------------------------------------------------------------------------
     def stage(self, sid):
@@ -356,6 +396,9 @@ def make_handler(game, apply):
                 if parts[0] == 'api' and parts[1] == 'stage' and parts[2].isdigit():
                     with LOCK:
                         return self.send(200, game.stage(int(parts[2])))
+                if parts[0] == 'img' and len(parts) == 3 and parts[1] == 'user':
+                    png = game.user_picture(parts[2])
+                    return self.send(200, png, 'image/png') if png else self.send(404, b'', 'text/plain')
                 if parts[0] == 'img' and len(parts) == 3 and parts[1] in ('stage', 'course', 'sprite'):
                     name = parts[2].rsplit('.', 1)[0]
                     if parts[1] != 'course' and not name.isdigit():
@@ -372,8 +415,16 @@ def make_handler(game, apply):
         def do_POST(self):
             if not self.own_page() or 'application/json' not in self.headers.get('Content-Type', ''):
                 return self.send(403, {'error': 'not from the editor page'})
-            body = self.rfile.read(int(self.headers.get('Content-Length') or 0))
+            size = int(self.headers.get('Content-Length') or 0)
+            if size > MAX_BODY:
+                self.close_connection = True
+                return self.send(413, {'error': 'the picture is too big (40 MB at most)'})
+            body = self.rfile.read(size)
             try:
+                if self.path == '/api/picture':
+                    j = json.loads(body)
+                    file = game.set_picture(j.get('section'), j.get('name'), j.get('key'), j.get('data'))
+                    return self.send(200, {'file': file})
                 if self.path == '/api/save':
                     overrides.save(json.loads(body))
                     return self.send(200, {'ok': True})

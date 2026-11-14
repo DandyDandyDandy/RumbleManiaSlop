@@ -352,6 +352,17 @@ def main():
     return 0
 
 
+def own_picture(entry, key):
+    """(name for the sprite, picture) of the user's picture an entry of the overrides names, or None. The name
+    holds a hash of the picture and its use, so another picture is another asset to the game."""
+    img = overrides.picture(entry, key)
+    if img is None:
+        if entry.get(key):
+            print(f'  picture {entry[key]} is not in input\\pictures: passed over', flush=True)
+        return None
+    return 'user_' + hashlib.md5(img.tobytes() + f'{img.size} {key}'.encode()).hexdigest()[:12], overrides.fit_picture(img, key)
+
+
 def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds, extras, ov, cat):
     """The table rows, the pictures and the music of the imported courses; returns (tables written, music lines,
     course lines, the Sprites object with the new pictures).
@@ -384,9 +395,14 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
         fields.update(scenery[WORLD_OF_BG.get(st['bg'], 1)])
         if st['bg'] in backgrounds:
             fields.update(stage_fields(backgrounds[st['bg']]))
-        # the picture in Select Stage: Banana Mania's thumbnail of the stage (0 = "no image")
-        picture = thumbs.square(st.get('thumb'))
-        thumb = sprites.add(f'st{sid}', picture, out) if picture else 0
+        # the picture in Select Stage: the user's (overrides.json), else Banana Mania's thumbnail of the stage
+        # (0 = "no image")
+        picture = own_picture(ov['stages'].get(str(sid), {}), 'picture')
+        if picture:
+            thumb = sprites.add(*picture, out)
+        else:
+            picture = thumbs.square(st.get('thumb'))
+            thumb = sprites.add(f'st{sid}', picture, out) if picture else 0
         fields.update(Name=rid, SceneID=str(scene_id(sid)), TimeLimit=mania.time_limit(sid), CaptionText=rid, ThumbnailSpriteID=thumb,
                       MiniThumbnailSpriteID=thumb, MissionPoint=0, MissionPointMaster=0, MissionBanana=0, CheckpointStageAnimationFrame=0,
                       CheckpointSwitchClass=-1, CheckpointSwitchAnimationSpeed=0, CheckpointSwitchAnimationFrame=0, AnimationType=0,
@@ -444,17 +460,26 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
         brochure, icon, card = look('brochure', theme['_id']) or theme, look('icon', 0), look('title', theme['_id'])
         small = co.get('thumbnail', 'mania')
         picture = thumbs.square(course_thumb(mania, name)) if small == 'mania' else None
-        if picture:
+        mine = {key: own_picture(co, key) for key in ('picture', 'big_picture', 'icon_picture')}
+        if mine['picture']:
+            small = sprites.add(*mine['picture'], out)
+        elif picture:
             small = sprites.add('course_' + ''.join(ch if ch.isalnum() else '_' for ch in name), picture, out)
         else:
             small = (look('thumbnail', None) or theme)['ThumbnailSpriteID']
+        # the user's big picture and icon: copies of World 1's, which give them size and format
+        big, icon_id = brochure['BrochureSpriteID'], icon['IconSpriteID'] if icon else 0
+        if mine['big_picture']:
+            big = sprites.add(*mine['big_picture'], out, template=by_id[1]['BrochureSpriteID'])
+        if mine['icon_picture']:
+            icon_id = sprites.add(*mine['icon_picture'], out, template=by_id[1]['IconSpriteID'])
         course_t.use(cid, Name=cid, StageListID=LIST_BASE + k, CategoryID=COURSE_CATEGORY,
                      NextCourseID=cid + 1 if k + 1 < len(courses) else 0, PrevCourseID=0, SerialName=cid,
                      ThumbnailSpriteID=small, CaptionText=cid, AdventureTimerText=cid,
                      BeginningTitle=list(card['BeginningTitle']) if card else ['', '', ''], ClearMainMissionID=0,
-                     BrochureSpriteID=brochure['BrochureSpriteID'], AssistKind=2,
+                     BrochureSpriteID=big, AssistKind=2,
                      IsEnabledCategory=[False, True, False, False, False, False, False],
-                     IsStageMissionEnabled=overrides.has_missions(ov, name, ids), IconSpriteID=icon['IconSpriteID'] if icon else 0)
+                     IsStageMissionEnabled=overrides.has_missions(ov, name, ids), IconSpriteID=icon_id)
         for lang, t in ctext_t.items():
             t.use(cid, Name=title, SerialName=prefix, CaptionText=t.row(1)['CaptionText'], AdventureTimerText=title.upper())
         for i in range(len(ids)):
