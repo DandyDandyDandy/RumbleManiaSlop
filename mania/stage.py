@@ -36,9 +36,28 @@ LAYER = 7                       # the layer of stage objects in Rumble's stage s
 Y180 = (0.0, 1.0, 0.0, 0.0)     # Mania's start and goal face -Z, Rumble's +Z
 TAG_STGMOT = 20000              # the tag "StgMot" (the game's first own tag): collision under it follows its transform
 TEMPLATE_STAGE = 'bg_stg_w01_001'
-MATERIAL_CACHE = os.path.join('manual_additions_assets_maingame', 'stagemiddle', 'w01', 'unitymaterialscache.bundle')
-# the template materials (World 1's material cache): name -> what it is used for
-MATERIAL_MODELS = {'opaque': 'bg_stg_w01_island02', 'cutout': 'bg_stg_w01_plants01', 'transparent': 'bg_stg_w01_swg02'}
+MATERIAL_CACHE = os.path.join('manual_additions_assets_maingame', 'stagemiddle', '{world}', 'unitymaterialscache.bundle')
+# the template materials (a world's material cache): what it is used for -> (world, name). 'belt' is the material of
+# World 2's conveyor belts: a lit shader with a UV scroll (`_Speedbelt_X1` / `_Y1`)
+MATERIAL_MODELS = {'opaque': ('w01', 'bg_stg_w01_island02'), 'cutout': ('w01', 'bg_stg_w01_plants01'),
+                   'transparent': ('w01', 'bg_stg_w01_swg02'), 'belt': ('w02', 'bg_stg_w02_convey01')}
+# Mania's conveyor manager scrolls a belt's texture by its `m_uvSpeed` times a constant of the code; with this value
+# the texture of SMB1's Conveyers (uv speed 100, belt speed 3) moves as fast as the belt carries the ball
+BELT_UV_SPEED = 0.0075
+# Goal colours. Rumble's arch is orange and yellow; an imported goal gets the arch's texture and toon colours in the
+# colour of Mania's goal (m_GoalKind 1 blue, 2 green, 3 red). The hues, and how strong and bright the colour is, are
+# those of the classic goal's posts (measured on pictures: saturation 0.65, brightness 0.63, against the arch's
+# 1.0 and 0.8): every colour of the arch moves to the goal's hue, keeping a part of its distance from the arch's
+# orange so that panels and stripes stay apart, and loses saturation and brightness by the two factors.
+GOAL_BASE_HUE = 40.0
+GOAL_HUES = {1: 214.0, 2: 136.0, 3: 356.0}
+GOAL_HUE_SPREAD = 0.25
+GOAL_SATURATION = 0.66
+GOAL_BRIGHTNESS = 0.82
+GOAL_MATERIAL_COLORS = ('_ToonColor1', '_ToonColor2', '_SpecularColor', '_RimColor')
+WORMHOLE_DONOR = ('bg_stg_w06_215', 'wormhole_a1')      # a stage of the game with a wormhole, and the object's name
+BELT_DONOR = 'bg_stg_w02_006'                           # a stage that depends on the bundle of the belt shader
+AREA_KINDS = {'InactiveGoal': 'goal', 'DisableWormhole': 'wormhole'}    # Mania's area attribute -> mania_areas.txt
 # Script classes the template stage does not use are taken from a stage of the game that does (its type entry with
 # the type tree, and its MonoScript object): class -> stage scene
 SCRIPT_DONORS = {'CollisionBumper': 'bg_stg_w01_102', 'MgBumper': 'bg_stg_w01_102',
@@ -322,6 +341,61 @@ class Scene:
         tree['m_Script'] = pptr(script, self.shared_fid)
         s._donors[('MonoBehaviour', cls)] = (model, tree)
 
+    def derived_script(self, cls, base_cls, fields):
+        """Make usable a script class that no stage of the game has an object of, so that there is no type entry to
+        copy (CollisionJamabar): the entry of its base class `base_cls`, which this scene has, with more fields at
+        the end. fields: [(name, script class in the sharedAssets file, field of that class with the same type,
+        value)]. The engine reads a MonoBehaviour through the stored type tree and matches fields by name, so the
+        tree only has to describe the bytes that are written here."""
+        from UnityPy.helpers.TypeTreeNode import TypeTreeNode
+        import hashlib
+        s, sh = self.scene, self.shared
+        if ('MonoBehaviour', cls) in s._donors:
+            return
+        model, tree = s.donor('MonoBehaviour', base_cls)
+        nodes = model.serialized_type.node.to_dict_list()
+        tree = copy.deepcopy(tree)
+        for name, src_cls, src_field, value in fields:
+            src = sh.donor('MonoBehaviour', src_cls)[0].serialized_type.node.to_dict_list()
+            at = next(i for i, d in enumerate(src) if d['m_Name'] == src_field)
+            depth = src[at]['m_Level']
+            end = next((i for i in range(at + 1, len(src)) if src[i]['m_Level'] <= depth), len(src))
+            sub = [dict(d, m_Level=d['m_Level'] - depth + 1) for d in src[at:end]]
+            sub[0]['m_Name'] = name
+            nodes += sub
+            tree[name] = copy.deepcopy(value)
+        for i, d in enumerate(nodes):
+            d['m_Index'] = i
+            d['m_Children'] = []
+        ref = tree['m_Script']
+        if ref['m_FileID'] != self.shared_fid or ref['m_PathID'] not in sh.sf.objects:
+            raise KeyError(f'the MonoScript of {base_cls} is not in the sharedAssets file')
+        script_tree = copy.deepcopy(sh.get(ref['m_PathID']))
+        script_tree['m_Name'] = script_tree['m_ClassName'] = cls
+        script = sh.add('MonoScript', script_tree)
+        ident = copy.copy(s.sf.script_types[0])
+        ident.local_serialized_file_index = self.shared_fid
+        ident.local_identifier_in_file = script
+        s.sf.script_types.append(ident)
+        typ = copy.copy(model.serialized_type)
+        typ.node = TypeTreeNode.from_list(nodes)
+        typ.script_type_index = len(s.sf.script_types) - 1
+        typ.script_id = hashlib.md5(('mania script ' + cls).encode()).digest()
+        typ.old_type_hash = hashlib.md5(('mania type ' + cls).encode()).digest()
+        s.sf.types.append(typ)
+        tree['m_Script'] = pptr(script, self.shared_fid)
+        s._donors[('MonoBehaviour', cls)] = (attrs.evolve(model, type_id=len(s.sf.types) - 1, serialized_type=typ, data=None), tree)
+
+    def descendant(self, go, name):
+        """The first object called `name` under `go` (depth first), or None."""
+        for c in self.children(go):
+            if self.name(c) == name:
+                return c
+            found = self.descendant(c, name)
+            if found:
+                return found
+        return None
+
     def import_asset(self, aa_switch, stage, cls, name):
         """Copy the object of class `cls` named `name` from the sharedAssets of another stage of the game; its id."""
         key = (stage, cls, name)
@@ -330,6 +404,141 @@ class Scene:
             src = next(o for o in shared.objects.values() if o.type.name == cls and o.peek_name() == name)
             self._imported[key] = self.shared.add(cls, src.read_typetree())
         return self._imported[key]
+
+    # ---- whole objects of another stage of the game (the wormhole: a model, a camera rig, scripts)
+    def _foreign_model(self, ed, obj, script, script_ref):
+        """Make the file of Editor `ed` able to hold copies of `obj`, an object of another file of the game: when it
+        has no object of that class (and script) yet, the type entry of `obj` is added. script_ref: (file index,
+        path id) of the MonoScript as seen from that file."""
+        key = (obj.type.name, script)
+        if key in ed._donors:
+            return
+        try:
+            ed.donor(*key)
+            return
+        except KeyError:
+            pass
+        typ = copy.copy(obj.serialized_type)
+        if script is not None:
+            ident = copy.copy(ed.sf.script_types[0])
+            ident.local_serialized_file_index, ident.local_identifier_in_file = script_ref
+            ed.sf.script_types.append(ident)
+            typ.script_type_index = len(ed.sf.script_types) - 1
+        ed.sf.types.append(typ)
+        ed._donors[key] = (attrs.evolve(obj, assets_file=ed.sf, type_id=len(ed.sf.types) - 1, serialized_type=typ, data=None), None)
+
+    def _scene_external(self, cab):
+        """Index (1-based) of the external file `cab` in the scene file, adding it when new."""
+        sf = self.scene.sf
+        low = cab.lower()
+        for i, e in enumerate(sf.externals):
+            if e.path.replace('\\', '/').rsplit('/', 1)[-1].lower() == low:
+                return i + 1
+        e = copy.copy(sf.externals[0])
+        e.path = f'archive:/{cab}/{cab}'
+        sf.externals.append(e)
+        self.add_external(cab)                       # the bundle's dependency list is the shared file's
+        return len(sf.externals)
+
+    def _import_shared(self, dsf, pid, memo):
+        """Copy object `pid` of another stage's sharedAssets file `dsf`, with what it refers to, into this stage's;
+        its new path id. Mesh and texture data kept in the other bundle's resource file is taken inline."""
+        if pid in memo:
+            return memo[pid]
+        sh = self.shared
+        obj = dsf.objects[pid]
+        cls = obj.type.name
+        tree = obj.read_typetree()
+        if cls == 'MonoScript':                      # one MonoScript per class
+            for o in sh.objects('MonoScript'):
+                t = sh.get(o.path_id)
+                if t['m_ClassName'] == tree['m_ClassName'] and t.get('m_Namespace') == tree.get('m_Namespace'):
+                    memo[pid] = o.path_id
+                    return o.path_id
+        script = script_ref = None
+        if cls == 'MonoBehaviour':
+            ref = tree['m_Script']
+            if ref['m_FileID']:
+                raise ValueError(f'{tree.get("m_Name")}: a script outside the sharedAssets file')
+            script = dsf.objects[ref['m_PathID']].read_typetree()['m_ClassName']
+            script_ref = (0, self._import_shared(dsf, ref['m_PathID'], memo))
+        self._foreign_model(sh, obj, script, script_ref)
+        memo[pid] = new = sh.add(cls, tree, script)
+        stream = tree.get('m_StreamData')
+        if isinstance(stream, dict) and stream.get('size'):
+            base = stream['path'].replace('\\', '/').rsplit('/', 1)[-1]
+            res = next(f for n, f in dsf.parent.files.items() if n.lower() == base.lower())
+            pos = res.Position
+            res.Position = stream['offset']
+            data = bytes(res.read_bytes(stream['size']))
+            res.Position = pos
+            if cls == 'Mesh':
+                tree['m_VertexData']['m_DataSize'] = data
+            else:
+                tree['image data'] = data
+            tree['m_StreamData'] = {'offset': 0, 'size': 0, 'path': ''}
+
+        def fix(p):
+            if not p['m_PathID']:
+                return
+            if p['m_FileID'] == 0:
+                p['m_PathID'] = self._import_shared(dsf, p['m_PathID'], memo)
+            else:
+                p['m_FileID'] = self.add_external(dsf.externals[p['m_FileID'] - 1].path.replace('\\', '/').rsplit('/', 1)[-1])
+        walk_pptrs(tree, fix)
+        return new
+
+    def import_tree(self, aa_switch, stage, name):
+        """Copy the object called `name` of another stage of the game, with everything under it and every asset it
+        uses, into this scene; the copy's root (no parent yet). References to objects outside the copy are null."""
+        s = self.scene
+        dscene, dshared = _donor_stage(os.path.join(aa_switch, f'scene_{stage}_scenes_all.bundle'), want_files=True)
+        shared_name = next(n for n, f in dscene.parent.files.items() if f is dshared)
+        shared_idx = 1 + [i for i, e in enumerate(dscene.externals) if e.path.endswith(shared_name)][0]
+        memo = self._imported.setdefault(('shared', stage), {})
+        start = next(o.path_id for o in dscene.objects.values() if o.type.name == 'GameObject' and o.peek_name() == name)
+        ids, todo = [], [start]
+        while todo:
+            g = todo.pop()
+            ids.append(g)
+            for c in dscene.objects[g].read_typetree()['m_Component']:
+                cid = c['component']['m_PathID']
+                ids.append(cid)
+                co = dscene.objects[cid]
+                if co.type.name == 'Transform':
+                    todo += [dscene.objects[ch['m_PathID']].read_typetree()['m_GameObject']['m_PathID']
+                             for ch in co.read_typetree()['m_Children']]
+        remap, trees = {}, {}
+        for pid in ids:
+            obj = dscene.objects[pid]
+            tree = obj.read_typetree()
+            script = script_ref = None
+            if obj.type.name == 'MonoBehaviour':
+                ref = tree['m_Script']
+                if ref['m_FileID'] != shared_idx:
+                    raise ValueError(f'{name}: a script outside the sharedAssets file')
+                script = dshared.objects[ref['m_PathID']].read_typetree()['m_ClassName']
+                script_ref = (self.shared_fid, self._import_shared(dshared, ref['m_PathID'], memo))
+            self._foreign_model(s, obj, script, script_ref)
+            remap[pid] = s.add(obj.type.name, tree, script)
+            trees[pid] = tree
+
+        def fix(p):
+            if not p['m_PathID']:
+                return
+            if p['m_FileID'] == 0:
+                p['m_PathID'] = remap.get(p['m_PathID'], 0)
+            elif p['m_FileID'] == shared_idx:
+                p['m_PathID'] = self._import_shared(dshared, p['m_PathID'], memo)
+                p['m_FileID'] = self.shared_fid
+            else:
+                p['m_FileID'] = self._scene_external(dscene.externals[p['m_FileID'] - 1].path.replace('\\', '/').rsplit('/', 1)[-1])
+        for pid, tree in trees.items():
+            walk_pptrs(tree, fix)
+            if dscene.objects[pid].type.name == 'Transform':
+                self.tr_of_go[tree['m_GameObject']['m_PathID']] = remap[pid]
+                self.go_of_tr[remap[pid]] = tree['m_GameObject']['m_PathID']
+        return remap[start]
 
     def shared_ref(self, pid):
         """A PPtr, as written in the scene file, to an object of the sharedAssets file."""
@@ -419,8 +628,9 @@ class Scene:
 _donor_cache = {}
 
 
-def _donor_stage(bundle, want_shared=False):
-    """{script class: (object, its type tree dict, its MonoScript's dict)} of the MonoBehaviours of a stage scene."""
+def _donor_stage(bundle, want_shared=False, want_files=False):
+    """{script class: (object, its type tree dict, its MonoScript's dict)} of the MonoBehaviours of a stage scene;
+    with want_shared its sharedAssets file, with want_files (scene file, sharedAssets file)."""
     if bundle not in _donor_cache:
         env = UnityPy.load(bundle)
         files = serialized_files(env)
@@ -437,7 +647,9 @@ def _donor_stage(bundle, want_shared=False):
                 continue
             st = so.read_typetree()
             out.setdefault(st['m_ClassName'], (o, t, st))
-        _donor_cache[bundle] = (env, out, shared)
+        _donor_cache[bundle] = (env, out, shared, scene)
+    if want_files:
+        return _donor_cache[bundle][3], _donor_cache[bundle][2]
     return _donor_cache[bundle][2 if want_shared else 1]
 
 
@@ -447,21 +659,68 @@ class MaterialModels:
     """The template materials: World 1's material cache holds materials of the shaders the converted stages use."""
 
     def __init__(self, aa_switch):
-        env = UnityPy.load(os.path.join(aa_switch, MATERIAL_CACHE))
         self.models = {}
-        want = {v: k for k, v in MATERIAL_MODELS.items()}
-        for name, sf in serialized_files(env).items():
-            for o in sf.objects.values():
-                if o.type.name != 'Material':
-                    continue
-                t = o.read_typetree()
-                if t['m_Name'] in want:
+        for world in sorted({w for w, _ in MATERIAL_MODELS.values()}):
+            env = UnityPy.load(os.path.join(aa_switch, MATERIAL_CACHE.format(world=world)))
+            want = {name: k for k, (w, name) in MATERIAL_MODELS.items() if w == world}
+            for name, sf in serialized_files(env).items():
+                for o in sf.objects.values():
+                    if o.type.name != 'Material' or o.peek_name() not in want:
+                        continue
+                    t = o.read_typetree()
                     sh = t['m_Shader']
                     cab = sf.externals[sh['m_FileID'] - 1].path.replace('\\', '/').rsplit('/', 1)[-1]
                     self.models[want[t['m_Name']]] = (t, cab, sh['m_PathID'])
         missing = set(MATERIAL_MODELS) - set(self.models)
         if missing:
-            raise ValueError(f'template materials not found in {MATERIAL_CACHE}: {sorted(missing)}')
+            raise ValueError(f'template materials not found in the material caches: {sorted(missing)}')
+
+
+def goal_hsv(h, s, v, hue):
+    """A colour of Rumble's goal arch (h in degrees, s, v; numbers or arrays) in the goal colour `hue`."""
+    away = (h - GOAL_BASE_HUE + 180.0) % 360.0 - 180.0
+    return (hue + GOAL_HUE_SPREAD * away) % 360.0, s * GOAL_SATURATION, v * GOAL_BRIGHTNESS
+
+
+def goal_colored_image(img, hue):
+    """A PIL image of the arch's texture in the goal colour `hue`; alpha is kept."""
+    from PIL import Image
+    rgba = img.convert('RGBA')
+    hsv = np.array(rgba.convert('RGB').convert('HSV')).astype(np.float64)
+    h, s, v = goal_hsv(hsv[..., 0] * 360.0 / 256.0, hsv[..., 1], hsv[..., 2], hue)
+    out = np.stack([h * 256.0 / 360.0 % 256.0, s, v], axis=-1)
+    out = Image.fromarray(np.clip(np.rint(out), 0, 255).astype(np.uint8), 'HSV').convert('RGB').convert('RGBA')
+    out.putalpha(rgba.getchannel('A'))
+    return out
+
+
+def goal_colored(c, hue):
+    import colorsys
+    h, s, v = colorsys.rgb_to_hsv(c['r'], c['g'], c['b'])
+    h, s, v = goal_hsv(h * 360.0, s, v, hue)
+    r, g, b = colorsys.hsv_to_rgb(h / 360.0, s, v)
+    return {'r': r, 'g': g, 'b': b, 'a': c['a']}
+
+
+def rgba32_texture(tree, img):
+    """The Texture2D tree `tree` holding the PIL image `img` as uncompressed RGBA with a full mip chain."""
+    from PIL import Image, ImageOps
+    img = ImageOps.flip(img.convert('RGBA'))            # Unity stores the bottom row first
+    data, levels = b'', 0
+    while True:
+        data += img.tobytes()
+        levels += 1
+        if img.width == 1 and img.height == 1:
+            break
+        img = img.resize((max(img.width // 2, 1), max(img.height // 2, 1)), Image.BOX)
+    tree['m_TextureFormat'], tree['m_MipCount'] = 4, levels
+    tree['m_CompleteImageSize'] = len(data)
+    tree['image data'] = data
+    tree['m_StreamData'] = {'offset': 0, 'size': 0, 'path': ''}
+    tree['m_IsReadable'] = False
+    if 'm_PlatformBlob' in tree:
+        tree['m_PlatformBlob'] = []
+    return tree
 
 
 def merged_part(pieces):
@@ -614,18 +873,22 @@ class Converter:
                 tex_ids[key] = sh.add('Texture2D', new)
             return pptr(tex_ids[key])
 
-        def material(sf, ref):
+        def material(sf, ref, belt=None):
+            """The Rumble material for a lit Mania material. belt: (u, v) UV units per second for an opaque
+            material of a conveyor belt, which then goes on the belt shader of Rumble's conveyors."""
             got = m.get(sf, ref)
             if got is None:
                 return dict(NULL)
             key, t, msf, _ = got
+            d = assets.describe(sf, ref)
+            kind = {'additive': 'transparent'}.get(d['kind'], d['kind'])
+            if belt and kind == 'opaque' and 'scr' in d['shader'].lower():
+                kind, key = 'belt', (key, 'belt', belt)
             if key not in mat_ids:
                 props = t['m_SavedProperties']
                 texs = dict(props['m_TexEnvs'])
                 cols = dict(props['m_Colors'])
                 floats = dict(props['m_Floats'])
-                d = assets.describe(sf, ref)
-                kind = {'additive': 'transparent'}.get(d['kind'], d['kind'])
                 model, cab, shader_pid = self.materials.models[kind]
                 new = copy.deepcopy(model)
                 new['m_Name'] = 'mania_' + t['m_Name']
@@ -645,9 +908,15 @@ class Converter:
                 for k, v in new['m_SavedProperties']['m_Colors']:
                     if k in ('_Color', '_BaseColor') and tint:
                         v = {'r': tint['r'], 'g': tint['g'], 'b': tint['b'], 'a': tint['a'] if kind == 'transparent' else 1.0}
+                    elif k in ('_Color', '_BaseColor') and kind == 'belt':     # the model's own tint is a blue
+                        v = {'r': 1.0, 'g': 1.0, 'b': 1.0, 'a': 1.0}
                     ncol.append((k, v))
                 new['m_SavedProperties']['m_Colors'] = ncol
                 change = {}
+                if kind == 'belt':
+                    change['_Speedbelt_X1'], change['_Speedbelt_Y1'] = float(belt[0]), float(belt[1])
+                    stats['belt_materials'] = stats.get('belt_materials', 0) + 1
+                    donors.add(BELT_DONOR)
                 if floats.get('_Cull') is not None:
                     change['_Cull'] = float(floats['_Cull'])
                 if kind == 'cutout':                # Mania's threshold (0.75 on the start mark), not the template's
@@ -699,9 +968,9 @@ class Converter:
             bound = sum(c[1] for c in clips)
             return (sh.add('AnimatorController', new) if bound else 0), bound
 
-        def animator(go, ctrl):
+        def animator(go, ctrl, update_mode=1):
             a = s.template('Animator')
-            a.update(m_Enabled=1, m_Avatar=dict(NULL), m_Controller=sc.shared_ref(ctrl), m_CullingMode=0, m_UpdateMode=1,
+            a.update(m_Enabled=1, m_Avatar=dict(NULL), m_Controller=sc.shared_ref(ctrl), m_CullingMode=0, m_UpdateMode=update_mode,
                      m_ApplyRootMotion=False)
             aid = sc.add_component(go, 'Animator', a)
             tracker = s.template('MonoBehaviour', 'ReplayTracker')
@@ -714,6 +983,7 @@ class Converter:
         lo, hi = np.full(3, np.inf), np.full(3, -np.inf)
         bananas, goals, start_node = [], [], None
         stats = {'renderers': 0, 'collision_parts': 0, 'triangles': 0, 'skipped': {}}
+        donors = set()      # stages of the game whose assets this stage uses: it needs the bundles they depend on
 
         def skip(what):
             stats['skipped'][what] = stats['skipped'].get(what, 0) + 1
@@ -727,20 +997,27 @@ class Converter:
                     for r in level.get('renderers', []):
                         far_levels.add(r['renderer']['m_PathID'])
         bumpers, go_of = [], {}
-        seesaws, seesaw_parts, conveyors = [], {}, []
+        seesaws, seesaw_parts, conveyors, jamabars = [], {}, [], []
         has_part, moving_roots = set(), set()
+        # the belts of Mania's conveyor manager (a script on the stage root): MeshRenderer id -> (u, v) per second
+        belts = {}
+        for _, _, t in m.root.components:
+            for p in t.get('m_conveyParamArray', []) if isinstance(t, dict) else []:
+                # Rumble's belt shader adds time x speed to the UV, Mania's manager takes it off: the sign turns
+                belts[p['m_Renderer']['m_PathID']] = (-p['m_uvSpeedX'] * BELT_UV_SPEED, -p['m_uvSpeedY'] * BELT_UV_SPEED)
 
-        def add_part(go, n, data, flags):
-            """Rumble's CollisionStagePart on go, from the Mania part data `data` (in node n's frame)."""
+        def add_part(go, n, data, flags, script='CollisionStagePart', **more):
+            """Rumble's CollisionStagePart on go, from the Mania part data `data` (in node n's frame); its id."""
             nonlocal lo, hi
             conv, plo, phi = collision_part(data, sh.template('MonoBehaviour', 'CollisionStageData')['part'])
             d = sh.template('MonoBehaviour', 'CollisionStageData')
             d['m_Name'], d['part'] = 'mania_' + n.name, conv
             did = sh.add('MonoBehaviour', d, 'CollisionStageData')
-            p = s.template('MonoBehaviour', 'CollisionStagePart')
+            p = s.template('MonoBehaviour', script)
             p.update(isPhysical=1, isTrigger=int(bool(flags.get('isTrigger', 0))), isDynamic=int(bool(flags.get('isDynamic', 0))),
                      priority=0, layerMask=10, isDebugSelected=0, isItem=0, m_CollisionStage=sc.shared_ref(did), m_CullingScale=1.0)
-            sc.add_component(go, 'MonoBehaviour', p, 'CollisionStagePart')
+            p.update(more)
+            part_id = sc.add_component(go, 'MonoBehaviour', p, script)
             has_part.add(go)
             stats['collision_parts'] += 1
             stats['triangles'] += len(conv['triangle'])
@@ -750,6 +1027,7 @@ class Converter:
                     for cz in (plo[2], phi[2]):
                         p3 = (w @ np.array([cx, cy, cz, 1.0]))[:3]
                         lo, hi = np.minimum(lo, p3), np.maximum(hi, p3)
+            return part_id
 
         def copy_node(n, parent, visual):
             nonlocal lo, hi, start_node
@@ -776,7 +1054,7 @@ class Converter:
                     stats['unlit_renderers'] = stats.get('unlit_renderers', 0) + 1
                 else:
                     mesh_id = mesh(m.main, mf[2]['m_Mesh'])['m_PathID']
-                    materials = [sc.shared_ref(material(m.main, x)['m_PathID']) for x in refs]
+                    materials = [sc.shared_ref(material(m.main, x, belts.get(mr[1]))['m_PathID']) for x in refs]
                 sc.add_component(go, 'MeshFilter', {'m_Mesh': sc.shared_ref(mesh_id)})
                 r = s.template('MeshRenderer')
                 r['m_Enabled'] = bool(mr[2]['m_Enabled'])
@@ -790,6 +1068,8 @@ class Converter:
             above = n.parent
             if part and not visual and above is not None and above.component('MgSeesaw') and not above.component('CollisionStagePart'):
                 seesaw_parts.setdefault(above.id, []).append(n)     # becomes one part on the seesaw itself (below)
+            elif part and not visual and 'm_OriginalMatrix' in part[2]:
+                jamabars.append((n, go))                            # a CollisionJamabar (below)
             elif part and not visual:
                 data = m.get(m.main, part[2]['m_CollisionStage'])
                 if data is not None and data[1]['part']['triangle']:
@@ -805,7 +1085,8 @@ class Converter:
                 bananas.append((go, banana[2]['m_Kind']))
             for kind in kinds - {'Transform', 'MeshFilter', 'MeshRenderer', 'CollisionStagePart', 'BananaPos', 'Animator', 'GravityTilt',
                                  'MonoBehaviour', 'CollisionBumper', 'Bumper', 'LODGroup', 'MgStageSwitch', 'CollisionSwitchUpper',
-                                 'MgTRSSync', 'StageMovObjManager', 'MgStageSwitchManager', 'MainGameStage', 'MgSeesaw', 'MgConveyer'}:
+                                 'MgTRSSync', 'StageMovObjManager', 'MgStageSwitchManager', 'MainGameStage', 'MgSeesaw', 'MgConveyer',
+                                 'MgJamabar', 'MgBlurFloor', 'MainGameStageArea', 'MgConveyManager'}:
                 skip(kind)
             for c in n.children:
                 copy_node(c, go, visual)
@@ -813,10 +1094,76 @@ class Converter:
 
         behavior_go = copy_node(m.behavior, holder, True) if m.behavior is not None else None
         collision_go = copy_node(m.collision, holder, False) if m.collision is not None else None
-        # other children of the stage root are drawn things kept apart from the stage's tilt group (the bumper models)
+        # other children of the stage root are drawn things kept apart from the stage's tilt group (the bumper models);
+        # Mania's wormholes are left out: Rumble's own wormhole stands there (below)
+        wormholes = [n for n in m.nodes.values() if n.component('MgWormholeColi')]
         for c in m.root.children:
-            if c is not m.behavior and c is not m.collision:
+            if c is not m.behavior and c is not m.collision and not any(w.path().startswith(c.path() + '/') for w in wormholes):
                 copy_node(c, holder, True)
+
+        def node_of(ref):
+            """The node a reference to a GameObject or to a Transform points at."""
+            return m.nodes.get(ref['m_PathID']) or m.by_transform.get(ref['m_PathID'])
+
+        # ---- wormholes: Rumble's wormhole (a model with a see-through surface, its collision, a trigger square and
+        # the camera rig that draws the view through it), copied from one of the game's stages and stood at each
+        # Mania gate. The two gates are the same size (the surface is 4.4 wide and 4.5 high in both games); Mania's
+        # gate is entered from -Z, Rumble's from +Z. A gate that follows a moving node hangs under that node.
+        if wormholes:
+            proto = sc.import_tree(self.aa, WORMHOLE_DONOR[0], WORMHOLE_DONOR[1])
+            made = {}
+            for i, n in enumerate(wormholes):
+                inst = proto if i == 0 else sc.clone(proto, holder)
+                sync = n.component('MgTRSSync')
+                src = m.by_transform.get(sync[2]['m_srcTransform']['m_PathID']) if sync else None
+                if src is not None and src.id in go_of:
+                    sc.set_transform(inst, (0.0, 0.0, 0.0), Y180, go_of[src.id])
+                else:
+                    sc.set_transform(inst, world_matrix(n, m.root)[:3, 3], qmul(world_rotation(n, m.root), Y180), holder)
+                coli, refs = sc.find(inst, 'coli'), sc.find(inst, 'WormholeCameraReferences')
+                made[n.component('MgWormholeColi')[1]] = (sc.component(coli, 'MonoBehaviour', 'MgWormhole'),
+                                                          sc.component(refs, 'MonoBehaviour', 'MgWormholeCamera'))
+            pair_no = {}
+            for n in wormholes:
+                src = n.component('MgWormholeColi')
+                own, cam = made[src[1]]
+                other = made.get(src[2]['m_PairedWormhole']['m_PathID'], (0, 0))[0]
+                number = pair_no.setdefault(frozenset((own, other)), len(pair_no))
+                s.get(own).update(m_PairedWormhole=pptr(other), m_PairNumber=number, m_IsTutorial=0, m_IsOutOnlyAndInvisible=0)
+                s.get(cam).update(m_WormholeFrom=pptr(own), m_WormholeTo=pptr(other))
+            if 'm_Wormholes' in mgs:
+                mgs['m_Wormholes'] = [pptr(own) for own, _ in made.values()]
+            stats['wormholes'] = len(made)
+            donors.add(WORMHOLE_DONOR[0])
+
+        # ---- blur floors (SMB1's Blur Bridge). A floor slides to and fro; behind it come two collision pieces, a
+        # quarter and half a second late: the floor's trail, which carries the ball too. Mania draws the trail with
+        # a script that stretches one model from the floor to the last piece. Here the model, which has the size of
+        # one piece, is drawn on each of the two pieces; they overlap at every speed the floors reach.
+        blurs = 0
+        for n in [x for x in m.nodes.values() if x.component('MgBlurFloor') and x.id in go_of]:
+            src = n.component('MgBlurFloor')[2]
+            head, tail = node_of(src['m_CollisionHead']), node_of(src['m_CollisionTail'])
+            if head is None or tail is None or head.id not in go_of or tail.id not in go_of:
+                skip('MgBlurFloor')
+                continue
+            sc.clone(go_of[n.id], go_of[tail.id])
+            sc.set_transform(go_of[n.id], parent=go_of[head.id])
+            blurs += 1
+        if blurs:
+            stats['blur_floors'] = blurs
+
+        # ---- areas (Mania's MainGameStageArea on the stage root: spheres with a meaning). "InactiveGoal": a goal
+        # inside does not count (Factory parks its travelling goals there); "DisableWormhole": a ball inside does
+        # not go through a wormhole. Both are applied by the port (mania.c) from mania_areas.txt, which build.py
+        # writes from this list. "CameraDist" (one stage) is not carried over.
+        area = m.root.component('MainGameStageArea')
+        for e in (area[2]['m_AttributeToAreaList']['list'] if area else []):
+            for a in e['Value']:
+                if e['Key'] in AREA_KINDS:
+                    stats.setdefault('areas', []).append([AREA_KINDS[e['Key']], a['center']['x'], a['center']['y'], a['center']['z'], a['radius']])
+                else:
+                    skip('area ' + e['Key'])
 
         # ---- bumpers: the same sphere and push as in Mania, on Rumble's bumper classes; the drawn bumper is the
         # node named <collision node>_INS under Behavior
@@ -887,6 +1234,27 @@ class Converter:
         if conveyors:
             stats['conveyors'] = made
 
+        # ---- jamabars (the bars of SMB1's Stoppers and Push: they slide along their own z axis, 2.5 long, with the
+        # tilt of the floor and when the ball pushes them). Rumble has the class (CollisionJamabar, a collision part
+        # that moves its own object) but no stage with one, so its type entry is made here from the part's. The bar
+        # slides when it knows a player's gravity controller, which nothing in Rumble's code hands it any more:
+        # the port does (mania.c, the hook on CollisionJamabar.move).
+        jamabar_ids = []
+        for n, go in jamabars:
+            src = n.component('CollisionStagePart')[2]
+            data = m.get(m.main, src['m_CollisionStage'])
+            if data is None or not data[1]['part']['triangle']:
+                skip('CollisionJamabar')
+                continue
+            ident = {f'e{r}{c}': (1.0 if r == c else 0.0) for r in range(4) for c in range(4)}
+            sc.derived_script('CollisionJamabar', 'CollisionStagePart', [('m_OriginalMatrix', 'CollisionStageData', 'boundsOrient', ident)])
+            jamabar_ids.append(add_part(go, n, data[1]['part'], src, 'CollisionJamabar', m_OriginalMatrix=copy.deepcopy(src['m_OriginalMatrix'])))
+            moving_roots.add(go)
+        if jamabars:
+            stats['jamabars'] = len(jamabar_ids)
+            if 'm_JamabarList' in mgs:
+                mgs['m_JamabarList'] = [pptr(i) for i in jamabar_ids]
+
         # ---- moving parts. Mania animates the Collision tree only and copies each moving node's transform to other
         # objects every frame: to its drawn twin (StageMovObjManager.m_info: animationTRS -> meshTRS) and to things
         # that ride on it (MgTRSSync: source -> targets; a switch on a moving floor). Here each such target is hung
@@ -899,6 +1267,10 @@ class Converter:
             sync = n.component('MgTRSSync')
             if sync:
                 pairs += [(sync[2]['m_srcTransform']['m_PathID'], d['m_PathID']) for d in sync[2]['m_dstTransformList']]
+            bar = n.component('MgJamabar')                   # the drawn bar follows the bar's collision
+            model = bar and (m.nodes.get(bar[2]['JamabarModel']['m_PathID']) or m.by_transform.get(bar[2]['JamabarModel']['m_PathID']))
+            if model is not None:
+                pairs.append((n.transform_id, model.transform_id))
         attached = set()
         for src_tr, dst_tr in pairs:
             a, b = m.by_transform.get(src_tr), m.by_transform.get(dst_tr)
@@ -945,12 +1317,62 @@ class Converter:
             ctl['m_ClassIdToParamNameDict'] = {'m_EntryList': [{'m_Key': e['Key'], 'm_Value': list(e['Value'])}
                                                                 for e in mgr[2]['m_ClassIdToParamNameDict']['list']]}
             ctl_id = sc.add_component(collision_go, 'MonoBehaviour', ctl, 'MgStageSwitchController')
+
+            # The button's own animation. Mania's switch model has an Animator with the states "on", "off" and
+            # "default" (the button sinks and comes back up; an override controller gives each kind of switch its
+            # clips). Rumble's MgSwitch plays, on each of its m_Animators, the state called like m_OnClip / m_OffClip,
+            # so the controller is carried over with its clips renamed to their states.
+            model_ctrl = {}
+
+            def model_controller(ref):
+                got = m.get(m.main, ref)
+                if got is None:
+                    return None
+                key, t, csf, obj = got
+                if key in model_ctrl:
+                    return model_ctrl[key]
+                over = {}
+                if obj.type.name == 'AnimatorOverrideController':
+                    for c in t['m_Clips']:
+                        a, b = m.get(csf, c['m_OriginalClip']), m.get(csf, c['m_OverrideClip'])
+                        if a and b:
+                            over[a[0]] = b
+                    base = m.get(csf, t['m_Controller'])
+                    if base is None:
+                        return None
+                    t, csf = base[1], base[2]
+                new = overlay(sh.template('AnimatorController'), t)
+                clips, named = [], {}
+                for c in t['m_AnimationClips']:
+                    a = m.get(csf, c)
+                    if a is None:
+                        clips.append(dict(NULL))
+                        continue
+                    state = next((x for x in ('on', 'off') if f'_{x}' in a[1]['m_Name']), 'default')
+                    ct = overlay(sh.template('AnimationClip'), over.get(a[0], a)[1])
+                    ct['m_Name'] = state
+                    named[state] = sh.add('AnimationClip', ct)
+                    clips.append(pptr(named[state]))
+                new['m_AnimationClips'] = clips
+                model_ctrl[key] = (sh.add('AnimatorController', new), named) if 'on' in named and 'off' in named else None
+                return model_ctrl[key]
+
+            animated_models = 0
             for n in switches:
                 src = n.component('MgStageSwitch')[2]
                 sw = s.template('MonoBehaviour', 'MgSwitch')
                 sw.update(m_SwitchType=src['m_State'], m_ClassId=src['m_ClassId'], m_SerialId=src['m_SerialId'],
                           m_isTurnOnDefault=src['m_isTurnOnDefault'], m_StageSwitchController=pptr(ctl_id), m_Animators=[],
                           m_OnClip=sc.shared_ref(on), m_OffClip=sc.shared_ref(off), m_TrsFollow=dict(NULL))
+                for ref in src.get('m_Animators', []):
+                    owner = next((x for x in m.nodes.values() if x.id in go_of and (x.component('Animator') or (0, 0))[1] == ref['m_PathID']), None)
+                    # the model's far detail level is not drawn here, so only the near one is animated
+                    drawn = owner is not None and any(sc.component(g, 'MeshRenderer') for g in sc.subtree(go_of[owner.id]) if g in sc.tr_of_go)
+                    made_ctrl = model_controller(owner.component('Animator')[2]['m_Controller']) if drawn else None
+                    if made_ctrl:
+                        sw['m_Animators'].append(pptr(animator(go_of[owner.id], made_ctrl[0], 0)))
+                        sw['m_OnClip'], sw['m_OffClip'] = sc.shared_ref(made_ctrl[1]['on']), sc.shared_ref(made_ctrl[1]['off'])
+                        animated_models += 1
                 ctl['m_SwitchList'].append(pptr(sc.add_component(go_of[n.id], 'MonoBehaviour', sw, 'MgSwitch')))
                 cyl = n.component('CollisionSwitchUpper')
                 rad, height = (cyl[2]['m_CylinderRadius'], cyl[2]['m_CylinderHeight']) if cyl else (0.9, 0.7)
@@ -964,16 +1386,54 @@ class Converter:
                 tr['m_RecordProperties']['m_AnimatorProperty'] = {'m_Animator': dict(NULL), 'm_isSelfUpdate': 0}
                 sc.add_component(go_of[n.id], 'MonoBehaviour', tr, 'ReplayTracker')
             mgs['m_StageSwitchControllers'] = [pptr(ctl_id)]
-            stats['switches'] = len(switches)
+            stats['switches'], stats['switch_models'] = len(switches), animated_models
         if not np.isfinite(lo).all():
             lo, hi = np.zeros(3), np.zeros(3)
 
         # ---- goals: the template's goal at each Mania goal
         goal_colis = []
+        goal_mats = {}
+        gate0 = sc.descendant(goal0, 'gate')
+        rend0 = gate0 and sc.component(gate0, 'MeshRenderer')
+        goal_base = copy.deepcopy(s.get(rend0)['m_Materials'][0]) if rend0 else None
+
+        def goal_material(kind):
+            """The arch's material in the colour of Mania's goal kind (its path id in the sharedAssets file), or 0."""
+            if kind not in goal_mats:
+                goal_mats[kind] = 0
+                ref = goal_base
+                if ref and ref['m_FileID'] == sc.shared_fid and kind in GOAL_HUES:
+                    hue = GOAL_HUES[kind]
+                    new = copy.deepcopy(sh.get(ref['m_PathID']))
+                    new['m_Name'] += f'_mania{kind}'
+                    made, envs = {}, []
+                    for k, v in new['m_SavedProperties']['m_TexEnvs']:
+                        v = copy.deepcopy(v)
+                        tex = v['m_Texture']
+                        if k in ('_BaseMap', '_EmissiveMap') and tex['m_FileID'] == 0 and tex['m_PathID'] in sh.sf.objects:
+                            if tex['m_PathID'] not in made:
+                                tt = copy.deepcopy(sh.get(tex['m_PathID']))
+                                tt['m_Name'] += f'_mania{kind}'
+                                img = goal_colored_image(sh.sf.objects[tex['m_PathID']].read().image, hue)
+                                made[tex['m_PathID']] = sh.add('Texture2D', rgba32_texture(tt, img))
+                            v['m_Texture'] = pptr(made[tex['m_PathID']])
+                        envs.append((k, v))
+                    new['m_SavedProperties']['m_TexEnvs'] = envs
+                    new['m_SavedProperties']['m_Colors'] = [(k, goal_colored(v, hue) if k in GOAL_MATERIAL_COLORS else v)
+                                                            for k, v in new['m_SavedProperties']['m_Colors']]
+                    goal_mats[kind] = sh.add('Material', new)
+            return goal_mats[kind]
+
         for i, (n, parent) in enumerate(goals):
             g = goal0 if i == 0 else sc.clone(goal0, root)
             sc.set_transform(g, n.pos, qmul(n.rot, Y180), parent)
             goal_colis.append(pptr(sc.component(g, 'MonoBehaviour', 'MgGoalColi')))
+            kind = int(n.component('MgGoalColi')[2].get('m_GoalKind', 1))
+            stats.setdefault('goal_kinds', []).append(kind)
+            mat = goal_material(kind)
+            gate = sc.descendant(g, 'gate')
+            if mat and gate:
+                s.get(sc.component(gate, 'MeshRenderer'))['m_Materials'][0] = sc.shared_ref(mat)
         if not goals:
             sc.delete(goal0)
 
@@ -1031,7 +1491,7 @@ class Converter:
         size = sc.save(out_path, *(identity or (None, None, None)))
         stats.update(goals=len(goals), bananas=len(mgs['m_BananaTransformList']), textures=len(tex_ids), materials=len(mat_ids),
                      meshes=len(mesh_ids), bytes=size, bounds=(lo.round(2).tolist(), hi.round(2).tolist()), ringout=ring,
-                     has_start=start_node is not None)
+                     has_start=start_node is not None, donor_stages=sorted(donors))
         say(stats)
         return stats
 

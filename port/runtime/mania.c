@@ -173,6 +173,14 @@ int rt_hook_426a5b0(Cpu *c) {
     return 0;
 }
 
+// Areas of a stage (Mania's MainGameStageArea; "area <stage row> <kind> x y z radius" lines of mania_courses.txt):
+// a goal inside a "goal" area does not count, a ball inside a "wormhole" area is not taken by a wormhole
+#define MAX_AREAS 32
+#define AREA_GOAL 1
+#define AREA_WORMHOLE 2
+static struct { uint32_t stage; int kind; float c[3], r; } g_areas[MAX_AREAS];
+static int g_nareas;
+
 #define MAX_OWN 64
 static struct { uint32_t id, prev; } g_own[MAX_OWN];      // the game's Adventure worlds in display order
 static int g_nown;
@@ -189,8 +197,16 @@ static void load_courses(void) {
         unsigned list, id = 0, prev = 0;
         int first, count;
         float v[10];
+        char kind[16];
         if (sscanf(line, "bgroot %u %f %f %f %f %f %f %f %f %f %f", &id, v, v + 1, v + 2, v + 3, v + 4, v + 5, v + 6, v + 7, v + 8, v + 9) == 11) {
             if (g_nbgroot < MAX_BGROOT) { g_bgroot[g_nbgroot].stage = id; memcpy(g_bgroot[g_nbgroot].v, v, sizeof v); g_nbgroot++; }
+        } else if (sscanf(line, "area %u %15s %f %f %f %f", &id, kind, v, v + 1, v + 2, v + 3) == 6) {
+            int k = !strcmp(kind, "goal") ? AREA_GOAL : !strcmp(kind, "wormhole") ? AREA_WORMHOLE : 0;
+            if (k && g_nareas < MAX_AREAS) {
+                g_areas[g_nareas].stage = id; g_areas[g_nareas].kind = k;
+                memcpy(g_areas[g_nareas].c, v, sizeof g_areas[0].c); g_areas[g_nareas].r = v[3];
+                g_nareas++;
+            }
         } else if (sscanf(line, "own %u %u", &id, &prev) == 2) {
             if (g_nown < MAX_OWN) { g_own[g_nown].id = id; g_own[g_nown].prev = prev; g_nown++; }
         } else if (sscanf(line, "tab %u", &id) == 1) {
@@ -542,6 +558,78 @@ int rt_hook_4305d30(Cpu *c) {
         memcpy(&speed, &s, 4);
         rt_log("mania: seesaw touched (call %d): angle %.3f, angular speed %.4f", calls, angle, speed);
     }
+    return 0;
+}
+
+// Is the object `component` (anything with a Transform) of the stage being played inside an area of this kind?
+#define F_GET_POSITION 0x3eee800ull         // UnityEngine.Transform.get_position -> Vector3 in v0..v2
+static int in_area(Cpu *c, int kind, uint64_t component, const char *what) {
+    if (g_ncourses < 0) load_courses();
+    int any = 0;
+    for (int i = 0; i < g_nareas; i++) any |= g_areas[i].kind == kind;
+    if (!any || !component) return 0;
+    uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull), list = sel ? LD64(sel + SELECTOR_STAGELIST) : 0;
+    uint32_t stage = list ? (uint32_t)rt_call(c, FN(F_CURRENT_STAGE), 2, list, 0ull) : 0;
+    float p[3];
+    int hit = 0, mine = 0;
+    for (int i = 0; i < g_nareas; i++) mine |= g_areas[i].kind == kind && g_areas[i].stage == stage;
+    if (!mine) return 0;
+    get_floats(c, F_GET_POSITION, rt_call(c, FN(F_GET_TRANSFORM), 2, component, 0ull), p, 3);
+    for (int i = 0; i < g_nareas && !hit; i++) {
+        if (g_areas[i].kind != kind || g_areas[i].stage != stage) continue;
+        float dx = p[0] - g_areas[i].c[0], dy = p[1] - g_areas[i].c[1], dz = p[2] - g_areas[i].c[2];
+        hit = dx * dx + dy * dy + dz * dz < g_areas[i].r * g_areas[i].r;
+    }
+    if (getenv("BR_MANIA_LOG"))
+        rt_log("mania: %s at (%.1f, %.1f, %.1f) is %s of stage row %u", what, p[0], p[1], p[2], hit ? "inside an area: ignored" : "outside the areas", stage);
+    return hit;
+}
+
+// Wonder.MgGoalColi.OnTriggerEnterPlayer(PhysicsBall): a ball enters a goal. Not when the goal stands in an
+// "inactive goal" area of an imported stage (Factory's goals travel on a belt and are parked in such an area).
+int rt_hook_4301e40(Cpu *c) {
+    uint64_t self = c->x[0], ball = c->x[1], x2 = c->x[2], lr = c->x[30];
+    int skip = in_area(c, AREA_GOAL, self, "a goal");
+    c->x[0] = self; c->x[1] = ball; c->x[2] = x2; c->x[30] = lr;
+    return skip;
+}
+
+// Wonder.MgWormhole.OnTriggerEnterPlayer(PhysicsBall): a ball touches a wormhole. Not when the ball is in a
+// "no wormhole" area of an imported stage.
+int rt_hook_430cc30(Cpu *c) {
+    uint64_t self = c->x[0], ball = c->x[1], x2 = c->x[2], lr = c->x[30];
+    int skip = in_area(c, AREA_WORMHOLE, ball, "a ball at a wormhole");
+    if (!skip && getenv("BR_MANIA_LOG")) rt_log("mania: a ball enters a wormhole (pair %d)", (int)LD32(self + 0x54));
+    c->x[0] = self; c->x[1] = ball; c->x[2] = x2; c->x[30] = lr;
+    return skip;
+}
+
+// Wonder.CollisionJamabar.move(): a jamabar (the sliding bars of SMB1's Stoppers) takes a step. The bar slides with
+// the gravity of the player whose MgGravityController it was given (+0x168), and without one it does not move.
+// Nothing in Rumble's code gives it one (the game has the class but no stage with a bar), so the port does: the
+// first local player's. With several players each machine moves the bars by its own player.
+#define F_PLAYER_LIST 0x42a1880ull          // Wonder.MainGame.get_playerList -> List<MgPlayer> (static, through the singleton)
+#define F_OBJ_ALIVE 0x3ee4c20ull            // UnityEngine.Object.op_Implicit (static)
+#define PLAYER_IS_LOCAL 0x1b8               // MgPlayer.m_IsLocal
+#define PLAYER_GRAVITY 0x68                 // MgPlayer.m_GravityController
+#define JAMABAR_GRAVITY 0x168               // CollisionJamabar.<gravityController>k__BackingField
+int rt_hook_4282ca0(Cpu *c) {
+    uint64_t self = c->x[0], x1 = c->x[1], lr = c->x[30];
+    uint64_t have = self ? LD64(self + JAMABAR_GRAVITY) : 0;
+    if (self && !(have && (rt_call(c, FN(F_OBJ_ALIVE), 2, have, 0ull) & 1))) {
+        uint64_t players = rt_call(c, FN(F_PLAYER_LIST), 1, 0ull), found = 0;
+        int n = list_n(players);
+        for (int i = 0; i < n && !found; i++) {
+            uint64_t p = list_at(players, i);
+            if (p && LD8(p + PLAYER_IS_LOCAL)) found = LD64(p + PLAYER_GRAVITY);
+        }
+        if (found && (rt_call(c, FN(F_OBJ_ALIVE), 2, found, 0ull) & 1)) {
+            static int said;
+            ST64(self + JAMABAR_GRAVITY, found);
+            if (!said++ && getenv("BR_MANIA_LOG")) rt_log("mania: jamabars follow the local player's gravity");
+        } else if (have) ST64(self + JAMABAR_GRAVITY, 0);
+    }
+    c->x[0] = self; c->x[1] = x1; c->x[30] = lr;
     return 0;
 }
 

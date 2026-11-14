@@ -39,6 +39,9 @@ SIGNATURES = [
     ('MgConveyer', 'm_StaticSpeed'),
     ('CollisionWave', 'STEP_X'),
     ('MgTRSSync', 'm_dstTransformList'),
+    ('MgBlurFloor', 'm_LeadingFloor'),
+    ('MainGameStageArea', 'm_AttributeToAreaList'),
+    ('MgConveyManager', 'm_conveyParamArray'),
     ('GravityTilt', 'm_IsEnableFixedUpdate'),
     ('BgRoot', 'm_trs'),
 ]

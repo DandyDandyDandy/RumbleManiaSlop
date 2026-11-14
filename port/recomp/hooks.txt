@@ -38,6 +38,9 @@
 46a17d0   Wonder.UI.MainMenu.MainGame.FlowCourseSelect+<SetupCourseSelect>d__19::MoveNext   (the Mania tab of Select World)
 46a08b0   Wonder.UI.MainMenu.MainGame.FlowCourseSelect+FlowCourseSelectModeBase::onUpdateTabSelectedIdx
 440c2f0   Wonder.Util+Adventure::GetCourseCategory()
+4301e40   Wonder.MgGoalColi::OnTriggerEnterPlayer   (a goal in an "inactive goal" area of an imported stage)
+430cc30   Wonder.MgWormhole::OnTriggerEnterPlayer   (a ball in a "no wormhole" area of an imported stage)
+4282ca0   Wonder.CollisionJamabar::move   (jamabars get the local player's gravity controller)
 4308520   Wonder.MgStageSwitchController::Request(eState, int, int, bool, float)   (BR_MANIA_LOG)
 430b0a0   Wonder.MgSwitch::OnTriggerEnterPlayer(PhysicsBall)   (BR_MANIA_LOG)
 4305d30   Wonder.MgSeesaw::OnPostCollide(GameObject)   (BR_MANIA_LOG)

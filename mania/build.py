@@ -214,6 +214,20 @@ def main():
             if name.startswith('scene_') and name not in keep or name.startswith('bg_'):
                 os.remove(os.path.join(out_switch, 'mania', name))
     stage_ids = [i for i in stage_ids if os.path.exists(os.path.join(out, bundle_rel(i).replace('/', os.sep)))]
+    # what the tables and the catalog need to know about a converted stage (the stages of the game whose bundles it
+    # uses, its areas): kept in a file, because --no-stages leaves the stage bundles of an earlier import in place
+    import json
+    extras_path, extras = os.path.join(out, 'stage_extras.json'), {}
+    if os.path.exists(extras_path):
+        with open(extras_path, encoding='utf-8') as f:
+            extras = {int(k): v for k, v in json.load(f).items()}
+    sid_of = {mania.bundles[i]: i for i in stage_ids}
+    for bundle, st in reports.items():
+        if bundle in sid_of:
+            extras[sid_of[bundle]] = {'donor_stages': st.get('donor_stages', []), 'areas': st.get('areas', [])}
+    extras = {i: extras[i] for i in stage_ids if i in extras}
+    with open(extras_path, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(extras, f, indent=0, sort_keys=True)
     courses = [(n, p, t, [i for i in ids if i in stage_ids]) for n, p, t, ids in courses]
     courses = [c for c in courses if c[3]]
 
@@ -241,8 +255,8 @@ def main():
     written, music_lines, lines = [], [], []
     cat = Catalog(os.path.join(aa, 'catalog.json'))
     if courses:
-        written, music_lines, lines = import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, backgrounds)
-        add_scenes(cat, stage_ids, out)
+        written, music_lines, lines = import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, backgrounds, extras)
+        add_scenes(cat, stage_ids, out, extras)
         from background import add_to_catalog
         for info in backgrounds.values():
             add_to_catalog(cat, info, out)
@@ -290,9 +304,10 @@ def main():
     return 0
 
 
-def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, backgrounds):
+def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, backgrounds, extras):
     """The table rows and the music of the imported courses; returns (tables written, music lines, course lines).
-    backgrounds: {Mania background name: what background.py's convert returned} of the converted backgrounds."""
+    backgrounds: {Mania background name: what background.py's convert returned} of the converted backgrounds;
+    extras: {stage id: {'areas': [[kind, x, y, z, radius]], ...}} from the stage converter."""
     from background import stage_fields
     db = Database(aa_switch, cache=str(paths.BUILD / 'mania_table_index.json'))
     stage_t = db.table('Stage')
@@ -387,6 +402,11 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
                 pos = [a + b for a, b in zip(p['root'], p.get('pos', [0, 0, 0]))]
                 nums = pos + list(p.get('rot', [0, 0, 0, 1])) + list(p.get('scale', [1, 1, 1]))
                 lines.append(f'bgroot {row_of[sid]} ' + ' '.join(f'{x:g}' for x in nums))
+    # areas of a stage in which a goal does not count or a wormhole does not take the ball (stage.py): the port
+    # applies them
+    for sid in stage_ids:
+        for kind, x, y, z, radius in extras.get(sid, {}).get('areas', []):
+            lines.append(f'area {row_of[sid]} {kind} {x:g} {y:g} {z:g} {radius:g}')
     # the game's own Adventure worlds in display order with the world each one follows: the port works out the
     # "highest unlocked world" from these when the game's own answer is an imported course (mania.c)
     for r in own:
@@ -442,11 +462,13 @@ def import_tables(a, mania, courses, stage_ids, aa_switch, out, out_switch, back
     return written, music_lines, lines
 
 
-def add_scenes(cat, stage_ids, out):
+def add_scenes(cat, stage_ids, out, extras):
     """Catalog entries of the stage scenes: a bundle and a scene each, depending on what the template stage's scene
-    depends on (the shader and material bundles the converted materials use)."""
+    depends on (the shader and material bundles the converted materials use), and on what the stages of the game
+    depend on whose objects or materials the stage carries (extras[stage]['donor_stages']: a wormhole, a belt)."""
     tmpl = cat.locations('bg_stg_w01_001')[0]
     deps = cat.buckets[tmpl['dep']]
+    donor_deps = {}
     asm, cls, opts = cat.extra_json(cat.entries[deps[0]][4])
     prov_bundle, rt_bundle = cat.entries[deps[0]][1], cat.entries[deps[0]][6]
     for sid in stage_ids:
@@ -457,7 +479,12 @@ def add_scenes(cat, stage_ids, out):
         primary = rel[len('Switch/'):]
         depkey = 'mania-deps-' + name
         cat.add_entry(RT + '/' + rel, prov_bundle, None, cat.add_extra_json(asm, cls, o), primary, rt_bundle, [primary, depkey])
-        cat.buckets[cat.add_key(depkey)] += deps[1:]
+        more = []
+        for donor in extras.get(sid, {}).get('donor_stages', []):
+            if donor not in donor_deps:
+                donor_deps[donor] = cat.buckets[cat.locations(donor)[0]['dep']][1:]
+            more += [d for d in donor_deps[donor] if d not in deps and d not in more]
+        cat.buckets[cat.add_key(depkey)] += deps[1:] + more
         cat.add_entry(f'Assets/Mania/{name}.unity', tmpl['prov'], depkey, -1, name, tmpl['rt'], [name])
 
 

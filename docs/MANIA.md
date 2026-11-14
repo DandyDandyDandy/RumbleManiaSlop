@@ -257,6 +257,12 @@ What is built:
 | `MgStageSwitchManager`, `MgStageSwitch`, `CollisionSwitchUpper` | `MgStageSwitchController` on the `Collision` copy, `MgSwitch` and `CollisionSwitchUpper` on each switch (below) |
 | `MgSeesaw {momentFactor, frictionFactor, restoreFactor, seeSawModel}` on a node above the seesaw's collision parts | `MgSeesaw` (same three factors), one merged `CollisionStagePart` and a `ReplayTracker` on that node (below) |
 | `MgConveyer {m_StaticSpeed}` next to a `CollisionStagePart` | `MgConveyer` with the same speed vector next to the converted part |
+| `MgConveyManager {m_conveyParamArray}` on the stage root | the belt's material on Rumble's belt shader with the scroll speed (below) |
+| `CollisionJamabar {m_OriginalMatrix}`, `MgJamabar {JamabarModel}` | Rumble's `CollisionJamabar`, listed in `m_JamabarList`; the model hung under it (below) |
+| `MgWormholeColi {m_PairedWormhole}` with its model, camera and collision | a copy of Rumble's wormhole object (below) |
+| `MgBlurFloor {m_LeadingFloor, m_CollisionHead, m_CollisionTail}` | its model under the head piece and a copy under the tail piece (below) |
+| `MainGameStageArea {m_AttributeToAreaList}` | `area` lines of `mania_courses.txt` (below) |
+| `MgGoalColi.m_GoalKind` | the colour of the goal arch (below) |
 | `LODGroup` | only the nearest detail level is drawn |
 | fall-out height and box | `m_RingoutY`, `m_FalloutBounds` |
 
@@ -285,7 +291,50 @@ with the seesaw's angle.
 (0x4300070) gives that shape a fake displacement of `m_StaticSpeed * kGimmickSkipFrame * kFpsMultiplier / 60`
 per step in the part's frame, so the ball is carried as if the floor had moved. Both games use the same unit
 (Rumble's own belts run at 3 to 20, Mania's at 3, 16 and 100). The conveyor object needs the `StgMot` tag like
-any moving part. The belt's texture does not scroll (Mania's `MgConveyManager` is not converted).
+any moving part. The belt's texture scrolls: Mania's `MgConveyManager` (on the stage root) lists the belts' renderers
+with a UV speed each, and a lit material of such a renderer whose Mania shader is a scrolling one
+(`Custom/SurfaceVcScr`) goes on the shader of Rumble's own belts, `Shader Graphs/bg_lit_abd1n_fade`, with
+`_Speedbelt_X1` / `_Y1` set (UV units a second; the shader adds time x speed, Mania takes it off, so the sign
+turns). `BELT_UV_SPEED` is the factor from Mania's number: with 0.0075 the texture of SMB1's Conveyers moves as
+fast as the belt carries the ball. The sand belts of one stage (st1069) are unlit materials and keep their own
+scroll only.
+
+**Jamabars** (the sliding bars of SMB1's Stoppers and Push, st1024 and st1035). In both games the bar is a collision
+part that moves its own object: `CollisionJamabar`, a `CollisionStagePart` with the matrix of the bar's resting
+frame (`m_OriginalMatrix`). Each step (`move`, 0x4282ca0) it takes the gravity vector of an `MgGravityController`,
+turns it into that frame, lets its z part speed the bar up, and keeps the bar between 0 and -2.5 along its own z
+axis. Rumble has the class but no stage with a bar, so there is no type entry to copy: `Scene.derived_script`
+makes one from the entry of `CollisionStagePart` plus a matrix field (the engine reads a MonoBehaviour through
+the stored type tree and matches the fields by name). Rumble also never hands the bar a gravity controller
+(the property has no caller left), and without one the bar stands still: the port's hook on `move` gives each
+bar the first local player's (`mania.c`). The drawn bar hangs under the collision bar (`MgJamabar.JamabarModel`).
+With several players every machine moves the bars by its own player's tilt.
+
+**Wormholes.** Rumble's wormhole is an object tree of its own: the gate model with a see-through surface, its
+collision, a trigger square with `MgWormhole` and `CollisionWormholeGate`, a cubemap camera rig and
+`MgWormholeCamera`, which draws the view through the gate. `Scene.import_tree` copies that tree from one of the
+game's stages (`WORMHOLE_DONOR`) with every asset it uses (meshes and textures are taken out of the other
+bundle's resource file), adding the type entries the template stage lacks; the stage then also depends on what
+that stage depends on (`stage_extras.json`, `add_scenes`). A copy stands at each Mania gate, turned half round
+(Mania's gate is entered from -Z, Rumble's from +Z), under the node the gate follows when that one moves; the two
+gates of a pair name each other (`m_PairedWormhole`, `m_WormholeFrom` / `m_WormholeTo`). The surfaces of the two
+games' gates have the same size (4.4 wide, 4.5 high); Mania's own gate model is not drawn.
+
+**Blur floors** (SMB1's Blur Bridge, st1101). A floor slides to and fro, and two collision pieces follow it a
+quarter and half a second later: the floor's trail, which carries the ball too. Mania draws the trail with a
+script (`MgBlurFloor`) that stretches one model from the floor to the last piece. The model has the size of one
+piece, so it is drawn on each of the two pieces instead; at the speeds the floors reach the pieces always touch.
+
+**Areas.** `MainGameStageArea` on the stage root holds spheres with a meaning. `InactiveGoal` (Factory, st1109:
+goals travel on a belt and are parked inside such a sphere): a goal standing inside does not count.
+`DisableWormhole` (Conical Slider, st2318): a ball inside is not taken by a wormhole. Both go to
+`mania_courses.txt` as `area <stage row> goal|wormhole x y z radius` and are applied by the hooks on
+`MgGoalColi.OnTriggerEnterPlayer` and `MgWormhole.OnTriggerEnterPlayer`. `CameraDist` (st1110) is not carried over.
+
+**Goal colours.** Every goal is Rumble's arch and ends the stage, but the arch has the colour of Mania's goal
+(blue, green, red): a copy of the arch's material with its texture and toon colours moved to the goal's hue and
+made as mild as the classic goal's posts (`GOAL_HUES`, `GOAL_SATURATION`, `GOAL_BRIGHTNESS`; measured on pictures
+of the three goals).
 
 **Script classes the template does not have.** World 1 Stage 1 has no bumper, switch, seesaw or conveyor. A script class is made
 usable in the new scene by copying two things from a stage of the game that uses it (`SCRIPT_DONORS`): the
@@ -307,8 +356,10 @@ Rumble's controller finds the class of each animator layer by matching the layer
 `class(?<classId>\d+).*(?<frameStart>\d+)to(?<endFrame>\d+).*` (`MgStageSwitchController.Awake`, 0x4308950),
 which is the shape of Mania's own names, so the carried-over controller needs no renaming. A Mania switch
 object has two `MgStageSwitch` components; the one without a manager (the button's body) is left out. The
-switch's on / off clips are the game's own (`obj_com_switch_on` / `_off`, copied from World 3 Stage 1); the
-switch model itself is drawn but does not move when pressed.
+switch model has an Animator with the states `on`, `off` and `default` (the button sinks, its rim lights up); the
+controller is carried over, an override controller's clips put in, and the clips renamed to their states,
+because `MgSwitch.TurnOn` plays the state called like `m_OnClip` on each of `m_Animators`. A switch without such
+a model gets the game's own clips (`obj_com_switch_on` / `_off`, copied from World 3 Stage 1).
 
 How a press travels, for whoever debugs one: the ball's `CollisionSphere` is tested against the cylinder in
 `CollisionSwitchUpper.Collide` (0x428c710) and, on a hit, put into the shape's `m_CollidedObject` set;
@@ -489,12 +540,10 @@ What was checked in the running game (2.00, one PC):
 
 ## What is not converted
 
-* Wormholes (17 stages), jamabars (2: st1024, st1035): the objects are drawn and
-  their collision is solid, but they do not act. Rumble has classes for wormholes and jamabars (`MgWormhole` /
-  `CollisionWormholeGate`, `MgJamabar`); a wormhole there is a prefab of its own with a cubemap camera, particle
-  renderers and a text, so it wants a whole object tree brought over from one of the game's stages, not just
-  a script.
-* Goal colours: every goal is Rumble's arch and ends the stage.
+* What a green or a red goal does (skipping stages): every goal ends the stage; only its colour is kept.
+* Mania's own models of the goal (party ball, tape) and of the wormhole: Rumble's stand there.
+* A seesaw inside another seesaw (three stages), the camera distance area of st1110, the manager's scroll on
+  the unlit belts of st1069.
 * Of Mania's backgrounds: particles, weather, distortion and reflections (see "Backgrounds"). The stage intro
   graphics and the course's look in the world picker are still those of the Rumble world in `WORLD_OF_BG`.
 * A stage's lit materials are reduced to a texture, a tint, culling and (cut-out) the alpha threshold on three

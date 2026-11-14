@@ -59,6 +59,7 @@ class Editor:
         self.next_id = max([abs(i) for i in sf.objects] + [0]) + 1
         self._donors = {}
         self.trees = {}
+        self.script_names = {}      # path id -> script class of the MonoBehaviours added here
 
     # ---- finding things
     def objects(self, class_name=None):
@@ -66,6 +67,8 @@ class Editor:
 
     def script_class(self, obj):
         """Class name of a MonoBehaviour of this file (its MonoScript may be in another file of the bundle)."""
+        if obj.path_id in self.script_names:
+            return self.script_names[obj.path_id]
         return script_class(self.sf, obj)
 
     def donor(self, class_name, script=None):
@@ -103,6 +106,8 @@ class Editor:
         self.next_id += 1
         self.sf.objects[pid] = attrs.evolve(model, path_id=pid, data=None)
         self.trees[pid] = tree
+        if script:
+            self.script_names[pid] = script
         return pid
 
     def new(self, class_name, script=None, **fields):
@@ -114,6 +119,7 @@ class Editor:
     def remove(self, path_id):
         del self.sf.objects[path_id]
         self.trees.pop(path_id, None)
+        self.script_names.pop(path_id, None)
 
     def commit(self):
         for pid, tree in self.trees.items():

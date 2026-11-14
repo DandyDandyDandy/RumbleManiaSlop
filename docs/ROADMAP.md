@@ -28,7 +28,7 @@ come from such a file, so the tool only has to write it.
 
 ## Smaller things
 
-* Wormholes (17 stages), the two stages with sliding blocks: still without function.
+* A seesaw inside another seesaw (three stages) is left out; green and red goals do not skip stages.
 * Banana Mania's particle effects in backgrounds (rain, snow, sparks) and its screen effects.
 * The belt texture of conveyors does not scroll; the switch models do not move when pressed.
 * Goal colours: Mania's green and red goals skip stages; here every goal ends the stage.
