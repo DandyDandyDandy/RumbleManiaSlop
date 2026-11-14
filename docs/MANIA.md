@@ -180,7 +180,7 @@ described in `docs\COSTUMES.md`, sections 3 and 4). Those that matter here:
 |---|---|
 | `Stage` (705 rows) | `Name` (text row), `SceneID`, `BaseID`, `BGSceneID`, `TimeLimit`, mission values, `CaptionText`, thumbnail sprites, `LightSceneID`, `MiniMapImageID`, `FarSceneID`, `SkySceneID`, `EffectSceneID`, checkpoint animation values, `ScreenEffectAssetRef`, `GoalCameraID`, `IsRailGround`, `StartCameraID`, the four scene ids and the effect for split screen, `AnimationType`, `AnimationSpeedMultiplier` |
 | `Stage_Text_<lang>` | `Name`, `CaptionText` |
-| `Stage_DoleDisposition` | per stage id: the sponsor logo under the start (read in `MainGameStage.Start` without a check). Imported stages get a row without a logo (`AssetRef` empty, `Num` 0, as seven of the game's own rows are): Mania's stages have their own start mark |
+| `Stage_DoleDisposition` | per stage id: the sponsor logo under the start (read in `MainGameStage.Start` without a check). Imported stages get a row without a logo (`AssetRef` empty, `Num` 0, as seven of the game's own rows are): Mania's stages have their own start mark; this holds with Options > General > Dole Collaboration On too |
 | `Stage_List` (40 rows) | a reference to a `Stage_List_Group_<name>` table |
 | `Stage_List_Group_<name>` | the stages of one list: `StageID`, `NextStage[2]`, `StageListID`, `OverrideCourseID` |
 | `Course` (27 rows) | `Name`, `StageListID`, `CategoryID`, `NextCourseID`, `PrevCourseID`, `SerialName`, sprites, texts, `BeginningTitle`, `ClearMainMissionID`, `AssistKind`, `IsEnabledCategory[7]`, `IsStageMissionEnabled` |
