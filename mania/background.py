@@ -1536,13 +1536,17 @@ class BackgroundConverter:
             ps_subs.append((tree, subs))
             r = overlay(pr_base, pr[2])
             clear_refs(r)
-            flat = [dict(d, rule=dict(d['rule'], lit=False)) if d else None for d in slots]     # no light per vertex: the particles turn
+            # a mesh particle (meteorites, ice crystals) of a lit material gets Mania's light per vertex like the
+            # scenery, for the mesh as it lies: the particles turn and their light turns with them, but they have
+            # a lit and a shadowed side, which one flat brightness has not
+            lit0 = False
             if pr[2].get('m_Mesh', {}).get('m_PathID'):
-                r['m_Mesh'] = sc.shared_ref(mesh(m.main, pr[2]['m_Mesh'], flat[:1], (0.0, 0.0, 0.0, 1.0))[0])
+                mesh_id, _, lit = mesh(m.main, pr[2]['m_Mesh'], slots[:1], world_rotation(n))
+                r['m_Mesh'], lit0 = sc.shared_ref(mesh_id), bool(lit and lit[0])
             probes = int(any(d and d.get('cube') is not None for d in slots))
             r.update(m_CastShadows=0, m_ReceiveShadows=0, m_StaticShadowCaster=0, m_LightProbeUsage=probes, m_ReflectionProbeUsage=probes,
                      m_LightmapIndex=65535, m_LightmapIndexDynamic=65535,
-                     m_Materials=[sc.shared_ref(material(d, fold and i == 0, False)) if d else dict(NULL) for i, d in enumerate(slots)])
+                     m_Materials=[sc.shared_ref(material(d, fold and i == 0, lit0 and i == 0)) if d else dict(NULL) for i, d in enumerate(slots)])
             sc.add_component(go, 'ParticleSystemRenderer', r)
             stats['particle_systems'] += 1
 
