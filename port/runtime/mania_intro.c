@@ -181,7 +181,12 @@ static void put_v(Cpu *c, const float *f, int n) {
 #define READY_RATIO 0x58                    // MgCameraStateReady.m_Ratio: how far the READY timeline is, 0..1
 #define GAZING_POINT 0x20                   // MgCameraState.m_GazingPoint
 #define F_GET_POSITION 0x3f1a1f0ull         // UnityEngine.Transform.get_position
-#define BLEND_FROM 0.6f                     // READY: from this part on, Mania's end pose blends into the game's own
+#define CTRL_STAGE_TIMELINE 0x78            // MgBeginningTimelineController.m_OpeningAssetTimeline (null: no title card)
+#define F_STRING_NEW_UTF16 0x45af94ull      // il2cpp::vm::String::NewUtf16(const Il2CppChar *, int32_t)
+#define F_GO_GET_COMPONENT_NAME 0x3f0adf0ull // GameObject.GetComponent(string type)
+#define F_BEHAVIOUR_GET_ENABLED 0x3f072d0ull
+#define F_BEHAVIOUR_SET_ENABLED 0x3f07320ull
+#define BLEND_FROM 0.6f                    // READY: from this part on, Mania's end pose blends into the game's own
 static void get_v(Cpu *c, float *f, int n) {
     for (int i = 0; i < n; i++) { uint32_t u = (uint32_t)c->v[i]; memcpy(&f[i], &u, 4); }
 }
@@ -195,6 +200,17 @@ int rt_hook_42aa8f0(Cpu *c) {
     float eye[3], look[3], view[4], pitch, yaw, dist;
     pose(r, eye, look, view, &pitch, &yaw, &dist);
     uint64_t tr = rt_call(c, FN(F_GO_TRANSFORM), 2, camera, 0ull);
+    // A world whose title card is "none" (editor) has no stage timeline, so no timeline camera draws the intro, and
+    // the game camera stays off until READY: the screen was black for the six seconds. Then the game camera draws it.
+    if (r > 0 && g_ctrl && !LD64(g_ctrl + CTRL_STAGE_TIMELINE)) {
+        static const uint16_t name[] = {'C', 'a', 'm', 'e', 'r', 'a'};
+        uint64_t s = rt_call(c, FN(F_STRING_NEW_UTF16), 2, (uint64_t)(uintptr_t)name, 6ull);
+        uint64_t cam = s ? rt_call(c, FN(F_GO_GET_COMPONENT_NAME), 3, camera, s, 0ull) : 0;
+        if (cam && !((int)rt_call(c, FN(F_BEHAVIOUR_GET_ENABLED), 2, cam, 0ull) & 1)) {
+            rt_call(c, FN(F_BEHAVIOUR_SET_ENABLED), 3, cam, 1ull, 0ull);
+            if (logging()) rt_log("mania: intro: no stage timeline (no title card): the game camera draws the intro");
+        }
+    }
     // In READY the game's camera flies in from the front and ends where play begins. Mania's end pose is a little
     // closer: over the last part of READY it is blended into the game's own pose, so GO does not jump.
     float ratio = 0, w = 0;
