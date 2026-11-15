@@ -179,7 +179,8 @@ label { display: block; margin: 10px 0 4px; font-weight: 600; }
     <div class="note" id="timenote"></div>
     <label for="perfect">Perfect time (seconds)</label>
     <input id="perfect" type="number" min="1" max="999" step="0.1">
-    <div class="note">For the time mission's perfect mark. Empty: the challenge time.</div>
+    <div class="note">For the time mission's perfect mark. Empty: 45 % of the challenge time (Rumble's typical share). The banana
+      mission's perfect mark is always every banana; the game decides that.</div>
     <label for="bananas">Bananas to collect</label>
     <input id="bananas" type="number" min="0" max="9999" step="1">
     <div class="note" id="banananote"></div>
@@ -251,6 +252,9 @@ const hasMissions = c => {
   return c.stages.some(s => 'gold' in stageOv(s.id) || 'time' in stageOv(s.id));
 };
 const defaultTime = s => Math.floor(s.limit / 2);
+// Rumble's typical values (no formula in the game; medians of its own stages, as mania\overrides.py)
+const defaultBananas = total => { const n = total * 0.75; return n >= 10 ? Math.floor(n / 5) * 5 : total ? Math.max(1, Math.ceil(n)) : 0; };
+const defaultPerfect = t => Math.max(0.1, Math.round(t * 4.5) / 10);
 // what the stage's bananas are worth without the golden one (as the import counts them)
 function bananaTotal(s) {
   if (data && data.id === s.id) {
@@ -262,8 +266,8 @@ function bananaTotal(s) {
 function missionValues(s) {
   const o = stageOv(s.id), total = bananaTotal(s);
   const t = o.time || defaultTime(s);
-  const n = 'bananas' in o ? o.bananas : (total == null ? null : Math.ceil(total / 2));
-  return {time: t, perfect: Math.min(o.time_perfect || t, t), bananas: n == null ? '?' : Math.min(n, total == null ? n : total), gold: !!o.gold};
+  const n = 'bananas' in o ? o.bananas : (total == null ? null : defaultBananas(total));
+  return {time: t, perfect: Math.min(o.time_perfect || defaultPerfect(t), t), bananas: n == null ? '?' : Math.min(n, total == null ? n : total), gold: !!o.gold};
 }
 const world = id => IDX.worlds.find(w => w.id === id);
 let picVer = 0;                // counted up with every upload, so the browser asks for the picture again
@@ -332,8 +336,8 @@ function fillStagePanel() {
   $('goldclear').style.display = o.gold ? '' : 'none';
   $('time').value = o.time ?? ''; $('time').placeholder = defaultTime(stage) + '  (default: half the time limit)';
   $('timenote').textContent = `"Clear within ${missionValues(stage).time} seconds". The stage's time limit is ${stage.limit} s.`;
-  $('perfect').value = o.time_perfect ?? ''; $('perfect').placeholder = String(o.time || defaultTime(stage));
-  $('bananas').value = o.bananas ?? ''; $('bananas').placeholder = total == null ? '' : Math.ceil(total / 2) + '  (default: half)';
+  $('perfect').value = o.time_perfect ?? ''; $('perfect').placeholder = defaultPerfect(o.time || defaultTime(stage)) + '  (default: 45 % of the challenge time, as in Rumble)';
+  $('bananas').value = o.bananas ?? ''; $('bananas').placeholder = total == null ? '' : defaultBananas(total) + '  (default: 75 %, as in Rumble)';
   $('banananote').textContent = total == null ? '' : `"Clear and collect ${missionValues(stage).bananas} bananas". The stage has ${total}` +
     (o.gold ? ' besides the golden one' : '') + ' (a bunch counts 10).';
   fillPics();

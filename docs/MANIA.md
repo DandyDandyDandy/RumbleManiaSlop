@@ -680,7 +680,10 @@ seconds" (`Stage.MissionTime`; its perfect mark asks for `MissionTimeMaster`), "
   `game\mania\stage_extras.json` with the path, so `build.py --no-stages` converts again exactly the stages whose
   Golden Banana changed;
 * a course has missions when its entry says so, and without one as soon as one of its stages has a Golden Banana
-  or a time. Stages nobody set values for get half the time limit and half the bananas; without a Golden Banana
+  or a time. Rumble has no formula for its mission values (they are set by hand per stage), so stages nobody set
+  values for get half the time limit, a perfect mark at 45 % of that time and 75 % of the bananas (rounded down to
+  a multiple of 5): the medians of Rumble's 200 Adventure and challenge stages. The banana mission's perfect mark
+  is always every banana (`MainGame.IsTakenAllBanana`), there is no value for it; without a Golden Banana
   the third mission cannot be completed (the editor shows which stages lack one);
 * the game adds up the missions of every course for the percentage of the Missions menu and for the conditions
   that ask for all of them (`Util.Mission.GetStageMissionCompletedNumOnAll`, 0x4450ed0). Imported worlds stay out

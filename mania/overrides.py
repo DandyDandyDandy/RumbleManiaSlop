@@ -6,8 +6,8 @@ Banana Mania's stages lack things Banana Rumble's have, and the import cannot de
 
     {"stages":  {"<Mania stage id>": {"gold": "<path of the banana that becomes the Golden Banana>",
                                       "time": <seconds of the time mission>,
-                                      "time_perfect": <seconds for the mission's perfect mark; default: time>,
-                                      "bananas": <bananas of the banana mission; default: half of the stage's>,
+                                      "time_perfect": <seconds for the mission's perfect mark; default: 45 % of time>,
+                                      "bananas": <bananas of the banana mission; default: 75 % of the stage's>,
                                       "picture": "<file>"}},
      "courses": {"<Mania course name>": {"missions": true | false,
                                          "theme": <Rumble course id>, "thumbnail": "mania" | <Rumble course id>,
@@ -147,14 +147,26 @@ def default_time(time_limit):
     return float(math.floor(time_limit / 2))
 
 
+# Rumble sets its mission values by hand per stage; there is no formula. Over its 200 Adventure and challenge
+# stages (game 2.20) the banana mission asks for a median 76 % of what the stage's bananas are worth (most often a
+# multiple of 5), and the time mission's perfect mark is a median 45 % of its challenge time (one decimal). The
+# defaults follow those medians. The perfect mark of the banana mission is always all of them (the game decides).
+BANANA_SHARE, PERFECT_SHARE = 0.75, 0.45
+
+
 def default_bananas(banana_count):
-    return int(math.ceil(banana_count / 2))
+    n = banana_count * BANANA_SHARE
+    return int(n // 5 * 5) if n >= 10 else max(1, int(math.ceil(n))) if banana_count else 0
+
+
+def default_perfect(time):
+    return max(0.1, round(time * PERFECT_SHARE, 1))
 
 
 def missions(data, stage_id, time_limit, banana_count):
     """(time, perfect time, bananas) of the stage's missions. banana_count: what all its bananas are worth."""
     s = data['stages'].get(str(stage_id), {})
     t = float(s.get('time') or default_time(time_limit))
-    perfect = float(s.get('time_perfect') or t)
+    perfect = float(s.get('time_perfect') or default_perfect(t))
     bananas = s['bananas'] if 'bananas' in s else default_bananas(banana_count)
     return t, min(perfect, t), max(0, min(int(bananas), int(banana_count)))
