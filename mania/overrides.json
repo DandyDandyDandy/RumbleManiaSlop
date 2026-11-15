@@ -1,6 +1,9 @@
 {
  "stages": {
+  "1001": {"bananas": 3, "gold": "Collision/bananaset/banana001", "picture": "st1001.png", "time": 10, "time_perfect": 5, "view": [23.9284, 7.804, 5.0274, 1.5604, -0.9064, -1.833, 45.8366]},
+  "1002": {"picture": "st1002.png", "view": [-20.3435, 19.619, 56.1625, 2.1738, -4.1783, -3.6599, 45.8366]}
  },
  "courses": {
+  "Smb1Org_Shokyu": {"theme": 1, "title": 0}
  }
 }

@@ -160,7 +160,7 @@ label { display: block; margin: 10px 0 4px; font-weight: 600; }
     <div id="marks"></div>
     <div id="viewbtns"><button id="prev" title="Previous stage (PageUp)">◂ Prev</button><button id="next" title="Next stage (PageDown)">Next ▸</button>
       <button id="top">Top view</button><button id="reset">Reset view</button></div>
-    <div id="hint">Click a banana to make it the Golden Banana · drag: turn · right-drag or Shift-drag: move · wheel: zoom</div>
+    <div id="hint">Click a banana to make it the Golden Banana · drag: turn · right-drag or Shift-drag: move · wheel: zoom · F: picture from this view</div>
     <div id="busy">Loading the stage …</div>
   </div>
   <div class="view" id="vstage"><div class="mock"><div class="screen" id="mockstage"></div></div>
@@ -355,7 +355,7 @@ function fillPics() {
       const r = new FileReader(); r.onload = () => sendPicture(section, name, key, r.result); r.readAsDataURL(f); }; $('file').click(); };
     if (viewed) up.textContent = 'Upload instead …';
     box.append(up);
-    if (id === 'pic-stage') { const v = el('button', 'fromview primary', 'From the view'); v.onclick = () => { const d = snapshot(); if (d) sendPicture(section, name, key, d, currentView()); }; box.append(v); }
+    if (id === 'pic-stage') { const v = el('button', 'fromview primary', 'From the view (F)'); v.title = 'Take the picture from the stage view (key F)'; v.onclick = () => { const d = snapshot(); if (d) sendPicture(section, name, key, d, currentView()); }; box.append(v); }
     if (file) { const rm = el('button', 'remove', 'Remove'); rm.onclick = () => sendPicture(section, name, key, null); box.append(rm); }
   }
 }
@@ -682,6 +682,9 @@ $('prev').onclick = () => step(-1); $('next').onclick = () => step(1);
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.key === 'PageDown') { e.preventDefault(); step(1); } else if (e.key === 'PageUp') { e.preventDefault(); step(-1); }
+  else if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat) {
+    const b = document.querySelector('#pic-stage .fromview'); if (b) { e.preventDefault(); b.click(); }
+  }
 });
 numberField('time', 'time', false); numberField('perfect', 'time_perfect', false); numberField('bananas', 'bananas', true);
 worldField('missions', 'missions'); worldField('theme', 'theme'); worldField('thumbnail', 'thumbnail'); worldField('brochure', 'brochure');
