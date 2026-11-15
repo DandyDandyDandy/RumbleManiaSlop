@@ -781,12 +781,17 @@ screen: the title cards seen (the theme of World 3) do not show one. Not looked 
 completed in play (only the golden one was), perfect marks, split screen and online with missions, other
 languages.
 
-## The title screen with pictures of one's own (`mania\title.py`)
+## The fork's title screen (`mania\title.py`, pictures in `mania\title\`)
 
-PNG files in `input\title\` replace the title screen's textures; the names, sizes and the `--export` command that
-writes the game's own pictures as a starting point are in the header of `title.py`. `build.py` runs the step at
-the end of every import; `python mania\title.py` alone redoes it in seconds. The pictures stay in `input\` (not
-committed: they are the user's and contain the game's artwork).
+PNG files replace the title screen's textures: `mania\title\` holds RumbleMania's own title (committed on
+purpose, like a mod's files: the user's decision, 2026-11-15, an exception to "no game content in the repo"),
+and `input\title\` (not committed) can override any of them per file. The names, sizes and the `--export`
+command that writes the game's own pictures as a starting point are in the header of `title.py`. `build.py`
+runs the step at the end of every import; `python mania\title.py` alone redoes it in seconds.
+
+The fork's set: AiAi (classic artwork, cut to the style of the game's ball pictures) in Gongon's place; Baby,
+Doctor, MeeMee, Palette and YanYan as fully transparent pictures (not shown); one logo
+(`ui_View_Title_titlelogo.png`, all languages) reading "Banana Rumble Mania".
 
 What the screen is made of (`ui_assets_ui\scenetitleloop\ui_view_titleloop_title.prefab.bundle`): seven monkeys in
 balls, 760 x 760 each, of which the opening shows some flying past (Aiai, Gongon seen); the opening logo built

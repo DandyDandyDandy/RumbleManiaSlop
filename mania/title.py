@@ -1,11 +1,13 @@
-"""The title screen with pictures of one's own: the monkeys in their balls and the title logo.
+"""The fork's own title screen: the monkeys in their balls and the title logo.
 
-    python title.py                 put the pictures of input\\title\\ into the built game (seconds; the import
-                                    build.py does the same at its end)
+    python title.py                 put the title pictures into the built game (seconds; the import build.py
+                                    does the same at its end)
     python title.py --export DIR    write the game's own title pictures to DIR as PNG files: the names to use, and
-                                    the starting point for one's own
+                                    the starting point for new ones
 
-A picture is a PNG file in input\\title\\ named like the texture it replaces (letter case does not matter):
+The pictures come from two folders: mania\\title\\ (part of the fork, committed: RumbleMania's title screen, like a
+mod's files) and input\\title\\ (one's own, not committed), whose files win over the fork's of the same name.
+A picture is a PNG file named like the texture it replaces (letter case does not matter):
 
     ui_View_TitleLoop_Title_<Aiai|Meemee|Baby|Gongon|Yanyan|Doctor|Palette>.png   the monkeys, 760 x 760
     ui_View_TitleLoop_Title_Title.png       the animated logo: one sheet of 15 pieces (banana logo, plank, ball,
@@ -17,8 +19,8 @@ A picture is a PNG file in input\\title\\ named like the texture it replaces (le
 
 A picture of another size is scaled to the texture's size. A fully transparent picture removes that monkey.
 The game's bundles are not changed: changed copies go to the override folder game\\mania\\Switch\\ (the runtime
-reads it first, see docs\\MANIA.md), and pictures removed from input\\title\\ give the game's own back on the
-next run. The pictures are the user's and stay out of the repository like everything in input\\.
+reads it first, see docs\\MANIA.md), and a picture removed from both folders gives the game's own back on the
+next run.
 """
 import argparse
 import os
@@ -32,16 +34,18 @@ import paths  # noqa: E402
 LANGS = ('de', 'en', 'es', 'es419', 'fr', 'it', 'ja', 'ko', 'ptbr', 'zh', 'zhs')
 LOOP_BUNDLE = 'ui_assets_ui/scenetitleloop/ui_view_titleloop_title.prefab.bundle'
 BUNDLES = [LOOP_BUNDLE] + [f'ui_assets_ui/localizedsprite/{l}/ui_view_title_titlelogo_{l}.tga.bundle' for l in LANGS]
-PICTURES = str(paths.INPUT / 'title')
+PICTURES = (os.path.join(HERE, 'title'), str(paths.INPUT / 'title'))     # the fork's, then one's own (wins)
 ALL_LANGS_LOGO = 'ui_view_title_titlelogo'
 SKIP = {'ui_Empty', 'TMP_DefaultSprite'}
 
 
-def user_pictures(folder=PICTURES):
-    """{lower-case texture name: path} of the PNG files in the folder."""
-    if not os.path.isdir(folder):
-        return {}
-    return {f[:-4].lower(): os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith('.png')}
+def user_pictures(folders=PICTURES):
+    """{lower-case texture name: path} of the PNG files in the folders; a later folder's file wins."""
+    pics = {}
+    for folder in folders:
+        if os.path.isdir(folder):
+            pics.update({f[:-4].lower(): os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith('.png')})
+    return pics
 
 
 def picture_for(name, pics):
@@ -84,13 +88,13 @@ def full_quad(tt, tex_w, tex_h):
     return True
 
 
-def apply(aa, out, folder=PICTURES, log=print):
-    """Write changed copies of the title bundles for the pictures in `folder` into the override tree `out`
+def apply(aa, out, folders=PICTURES, log=print):
+    """Write changed copies of the title bundles for the pictures in `folders` into the override tree `out`
     (game\\mania); remove the copies of earlier runs that no picture asks for any more. The number of textures."""
     import UnityPy
     from PIL import Image
     from UnityPy.enums import TextureFormat
-    pics = user_pictures(folder)
+    pics = user_pictures(folders)
     count = 0
     for rel in BUNDLES:
         src = os.path.join(aa, 'Switch', rel.replace('/', os.sep))
@@ -159,15 +163,17 @@ def export(aa, folder):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--game', default=str(paths.GAME))
-    ap.add_argument('--pictures', default=PICTURES, help='the folder with the pictures (default input\\title)')
+    ap.add_argument('--pictures', help='take the pictures from this folder only (default: mania\\title, then input\\title)')
     ap.add_argument('--export', metavar='DIR', help='write the game\'s own title pictures to DIR instead')
     a = ap.parse_args()
     aa = os.path.join(a.game, f'{paths.NAME}_Data', 'StreamingAssets', 'aa')
     if a.export:
         print(f'{export(aa, a.export)} pictures -> {a.export}')
         return 0
-    n = apply(aa, os.path.join(a.game, 'mania'), a.pictures)
-    print(f'{n} title textures from {a.pictures}' if n else f'no title pictures in {a.pictures}: the game\'s own title')
+    folders = (a.pictures,) if a.pictures else PICTURES
+    n = apply(aa, os.path.join(a.game, 'mania'), folders)
+    where = ' + '.join(folders)
+    print(f'{n} title textures from {where}' if n else f'no title pictures in {where}: the game\'s own title')
     return 0
 
 

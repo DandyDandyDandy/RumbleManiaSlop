@@ -26,7 +26,8 @@ Pictures of your own (optional)
   The level editor (editor.cmd) keeps the pictures you upload for stages and worlds in the folder pictures\ here.
   Every import reads them again, so keep the folder.
 
-  The title screen: PNG files in the folder title\ here replace its monkeys and logos (names and sizes: run
+  The title screen: RumbleMania's own title pictures are in mania\title\. PNG files in a folder title\ here
+  replace any of them, or other monkeys and logos of the title screen (names and sizes: run
   build\venv\Scripts\python.exe mania\title.py --export <folder> for the game's own pictures, and see the top of
   mania\title.py). Every import puts them in; mania\title.py alone does it in seconds.
 
