@@ -836,6 +836,39 @@ monkeys whose pictures are fully transparent not seen; Press any button leads to
 the whole opening frame by frame (which monkeys it shows when), other languages' logo on screen, the sheet replaced,
 wide screens.
 
+## The main menu under the stars (`mania\menu_sky.py`, sky in `mania\menu_sky\`)
+
+The game's main menu (the monkeys' beach) is one of three scenes, `MainMenu3D_daytime`, `_evening`, `_night`:
+`MainMenu3D_Mediator.GetEnvSceneID` reads the save's environment number and the `MainMenu_Environment` table
+(rows 1-3 = day, evening, night, each moves on to the next after 5 visits; row 4 = day). The fork shows the night
+scene always and puts a starry sky over it. `menu_sky.py` (run by `build.py` after the title; alone: seconds)
+writes two override copies:
+
+* `db_assets_db/mainmenu_environment.asset.bundle`: every row's `SceneID` is `MainMenu3D_night`;
+* `scene_mainmenu3d_night_scenes_all.bundle`: the skybox cubemap `ui_sky03_main_night` (1024, BC7, one level) and
+  the reflection cubemap `..._env` (128) made from `menu_sky\sky.jpg`; the skybox material's rotation, exposure,
+  tint; `RenderSettings` ambient (trilight) and fog; the two directional lights; the volume profile's Beautify
+  exposure, brightness, saturation. All values are in `menu_sky\menu_sky.txt` (the game's own night values are
+  `DEFAULTS` in the script); `input\menu_sky\` wins per file and per line. `enabled=no` or `--off` gives the
+  game's menu back.
+
+The sky picture is CC0: Poly Haven's "Rogland Clear Night" (`menu_sky\LICENSE.txt`), made by `menu_sky.py
+--prepare <hdr>` from the 4k `.hdr` (own reader: Radiance RGBE, run-length rows). What `--prepare` does: the sky
+glow is taken by brightness, raised to a power (the Milky Way stands out) and coloured night blue, the stars keep
+their colour; the photo's hills (up to 23 degrees) are found per column as dark points and the sky above them is
+stretched down to the horizon; the sky is also squeezed towards the horizon (`SKY_LIFT` 0.6), because **the
+menu's cameras see only about the lowest 20 degrees of sky**; a thin haze at the horizon; under it the sky
+mirrored dimly. The sea, beach and moon are scene geometry (the cubemap's lower half is hardly seen).
+
+Finding where the cameras look: a test sky with numbered 30-degree sectors (`_slop_scratch\mmsky\grid_sky.py`)
+showed picture longitudes ~210-270 in the beach-chair view at rotation 80; `rotation=150` brings a leg of the
+Milky Way there. The menu has four camera views (R1 / L1 switch them; one is chosen at start).
+
+Seen (window 5120 x 1440, all four views, 2026-11-15): the night scene with stars over the sea, the moon, the
+retuned moonlit lighting (blue sand, dark deck, warm torches), Milky Way faint near the moon. Not looked at: other
+window shapes (16:9 shows less sky), the Style / Change Character screens that reuse the menu scene, split screen
+menus, how bright the monkeys are against the darker scene by the user's eye.
+
 ## Testing
 
 `python mania\tools\try_stage.py <course> <stage>` (or `st<Mania stage number>`) starts the built game, walks
