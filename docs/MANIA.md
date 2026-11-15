@@ -737,9 +737,12 @@ its result).
   taken again only for another view (or `build.py --retake`); `--no-views` leaves the step out. Up to three
   copies of the game take pictures at the same time (`thumbshot.INSTANCES`), each with its own test save
   (`T`, `T1`, `T2`), log (`BR_LOG=port<n>.log`, `player<n>.log`) and input file; one picture takes about 75
-  seconds whether one copy runs or three (measured: 4 pictures in 151 s instead of about 300). Jumping from
-  stage to stage inside one running copy was tried and does not work: during play the UI state manager holds
-  no state to ask a scene change of, and in the View Stage mode PLUS opens no pause menu. With
+  seconds whether one copy runs or three (measured: 4 pictures in 151 s instead of about 300). Going on from
+  stage to stage inside one running copy was tried and does not work yet. During play the UI state manager
+  holds no state to ask a scene change of. In the View Stage mode PLUS opens nothing; after
+  `MgViewStageController.End` plus `PauseManager.ForcePauseOff` it opens the pause menu, and Skip Stage's scene
+  change asked of that menu is queued and pushed (its manager's stack grows) but the stage never changes. The
+  attempt is kept outside the repository as a patch. With
   `--no-stages` and the stage already in the game as this import would make it, the pictures are taken before
   the import; otherwise after it, and the import runs once more with `--no-stages --no-views` to put them in.
   A picture that could not be taken (the game is running, the menus were not reached) leaves the editor's
