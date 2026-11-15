@@ -781,6 +781,33 @@ screen: the title cards seen (the theme of World 3) do not show one. Not looked 
 completed in play (only the golden one was), perfect marks, split screen and online with missions, other
 languages.
 
+## The title screen with pictures of one's own (`mania\title.py`)
+
+PNG files in `input\title\` replace the title screen's textures; the names, sizes and the `--export` command that
+writes the game's own pictures as a starting point are in the header of `title.py`. `build.py` runs the step at
+the end of every import; `python mania\title.py` alone redoes it in seconds. The pictures stay in `input\` (not
+committed: they are the user's and contain the game's artwork).
+
+What the screen is made of (`ui_assets_ui\scenetitleloop\ui_view_titleloop_title.prefab.bundle`): seven monkeys in
+balls, 760 x 760 each, of which the opening shows some flying past (Aiai, Gongon seen); the opening logo built
+from the 15 pieces of the sheet `ui_View_TitleLoop_Title_Title`; then the finished logo of the language,
+`ui_View_Title_titlelogo_<lang>` (its own bundle per language under `localizedsprite\`), which stays on screen
+with "Press any button!".
+
+Changed copies of these bundles go to the override folder. The trap: the game's sprites are trimmed to the
+opaque part of the original picture (`m_RD.textureRect`, e.g. the logo from y 80 up) and cut to its outline (a
+tight mesh); a new picture that draws outside that shape was clipped (a third line under the logo was cut in
+half). A sprite that shows a whole replaced texture is rewritten to a full-rect quad (`full_quad`: two vertex
+streams, positions then UVs at a 16-byte boundary, mesh type Full Rect). The sheet's pieces keep their cut, so a
+new sheet must keep the piece positions (`manifest` of the export: `--export` writes only the textures).
+Crunched textures are written as plain DXT5.
+
+Seen in the game (window 1920 x 1080, 2026-11-15): AiAi from a picture of the user's in Gongon's place in the
+opening, next to the game's AiAi; the user's logo with a third line ("Mania") whole under the plank; the
+monkeys whose pictures are fully transparent not seen; Press any button leads to the main menu. Not looked at:
+the whole opening frame by frame (which monkeys it shows when), other languages' logo on screen, the sheet replaced,
+wide screens.
+
 ## Testing
 
 `python mania\tools\try_stage.py <course> <stage>` (or `st<Mania stage number>`) starts the built game, walks

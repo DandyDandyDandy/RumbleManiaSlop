@@ -24,6 +24,7 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\mania_music.txt                   per stage row: its BGM cue row, and the Classic Soundtrack's cue row (0: none)
     mania\\mania_stages.txt                  course number, stage number, Mania stage, course name, stage name
     mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are)
+    mania\\Switch\\ui_assets_ui\\...           the title screen's bundles with the pictures of input\\title\\ (title.py)
     mania\\mania_music.txt                   the BGM cue of each imported stage
 
 How the stages become courses (docs/MANIA.md has the reasons):
@@ -350,6 +351,10 @@ def main():
         from sprites import TABLE_REL
         sprites.write_table(out_switch, os.path.join(out_switch, TABLE_REL.replace('/', os.sep)) if classic else None)
     cat.save(os.path.join(out, 'catalog.json'))
+
+    # ---- the title screen with the user's pictures (input\title; title.py)
+    import title
+    title.apply(aa, out)
 
     # what each stage has and what was left out, for whoever looks into a stage that plays wrong
     skipped = {}
