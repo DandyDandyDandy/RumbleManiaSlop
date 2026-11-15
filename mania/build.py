@@ -284,7 +284,7 @@ def main():
     for bundle, st in reports.items():
         if bundle in sid_of:
             sid = sid_of[bundle]
-            extras[sid] = {'donor_stages': st.get('donor_stages', []), 'areas': st.get('areas', []),
+            extras[sid] = {'donor_stages': st.get('donor_stages', []), 'areas': st.get('areas', []), 'intro': st.get('intro'),
                            'banana_count': st.get('banana_count', 0), 'gold': overrides.gold(ov, sid)}
             if overrides.gold(ov, sid) and not st.get('gold'):
                 print(f'  st{sid}: overrides.json names a Golden Banana the stage does not have ({overrides.gold(ov, sid)})', flush=True)
@@ -553,6 +553,11 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
     for sid in stage_ids:
         for kind, x, y, z, radius in extras.get(sid, {}).get('areas', []):
             lines.append(f'area {row_of[sid]} {kind} {x:g} {y:g} {z:g} {radius:g}')
+    # Banana Mania's intro camera of a stage (stage.py mania_intro): the port flies it (mania_intro.c)
+    for sid in stage_ids:
+        intro = extras.get(sid, {}).get('intro')
+        if intro:
+            lines.append(f'intro {row_of[sid]} ' + ' '.join(f'{x:g}' for x in intro))
     # the game's own Adventure worlds in display order with the world each one follows: the port works out the
     # "highest unlocked world" from these when the game's own answer is an imported course (mania.c)
     for r in own:

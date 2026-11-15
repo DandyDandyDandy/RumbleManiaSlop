@@ -97,6 +97,46 @@ def world_matrix(node, stop=None):
     return m
 
 
+def mania_intro(m, start_node):
+    """What Banana Mania's intro camera (MainCameraReady) starts from, for the port (mania_intro.c):
+    [box centre x, y, z, start distance, START x, y, z, start heading in degrees], or None without a START.
+
+    Mania measures the stage when it starts (Util.CalcStageBounds): every object under the stage with a mesh adds
+    the two corners of its mesh's bounds, moved by its transform (two points, not eight). The bottom of that box is
+    raised to the fall-out height (m_ringoutY, unless it is -FLT_MAX). The camera starts looking at the box's
+    centre from 1.6 x half its diagonal; it ends looking at START (the ball's centre) from behind, in the
+    ball's start heading."""
+    if start_node is None:
+        return None
+    lo, hi = np.full(3, np.inf), np.full(3, -np.inf)
+
+    def walk(n):
+        nonlocal lo, hi
+        mf = n.component('MeshFilter')
+        got = m.get(m.main, mf[2]['m_Mesh']) if mf and mf[2]['m_Mesh']['m_PathID'] else None
+        if got is not None and 'm_LocalAABB' in got[1]:
+            box = got[1]['m_LocalAABB']
+            c = np.array([box['m_Center'][k] for k in 'xyz'], dtype=np.float64)
+            e = np.array([box['m_Extent'][k] for k in 'xyz'], dtype=np.float64)
+            w = world_matrix(n, m.root)
+            for p in (c - e, c + e):
+                p3 = (w @ np.append(p, 1.0))[:3]
+                lo, hi = np.minimum(lo, p3), np.maximum(hi, p3)
+        for k in n.children:
+            walk(k)
+    for k in m.root.children:
+        walk(k)
+    if not np.all(np.isfinite(lo)):
+        return None
+    ring = float(m.info.get('m_ringoutY', -3.4e38))
+    lo[1] = max(lo[1], ring if ring > -3.4e38 else lo[1])
+    centre, dist = (lo + hi) / 2, float(np.linalg.norm(hi - lo)) * 0.5 * 1.6
+    start = world_matrix(start_node, m.root)[:3, 3]
+    x, y, z, w = world_rotation(start_node, m.root)
+    heading = math.degrees(math.atan2(2 * (x * z + w * y), 1 - 2 * (x * x + y * y))) % 360.0     # Unity's euler y
+    return [round(float(v), 4) for v in (*centre, dist, *start, heading)]
+
+
 def world_rotation(node, stop=None):
     q = (0.0, 0.0, 0.0, 1.0)
     while node is not None and node is not stop:
@@ -1555,6 +1595,9 @@ class Converter:
             for (g, k, p), e in list(zip([b for b in bananas if b[1] in (0, 1)], mgs['m_BananaTransformList']))[first + 1:]:
                 e['kind'] = int(k)
         kinds = [e['kind'] for e in mgs['m_BananaTransformList']]
+        intro = mania_intro(m, start_node)
+        if intro:
+            stats['intro'] = intro
         mgs['m_MeshBounds'] = {'m_Center': v3(centre), 'm_Extent': v3(extent)}
         fb = m.info.get('m_FalloutBounds')
         ring = float(m.info.get('m_ringoutY', lo[1] - 10.0))

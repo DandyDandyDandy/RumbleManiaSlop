@@ -48,6 +48,11 @@
 4337600   Wonder.MgStageSwitchController::Request(eState, int, int, bool, float)   (BR_MANIA_LOG)
 433a180   Wonder.MgSwitch::OnTriggerEnterPlayer(PhysicsBall)   (BR_MANIA_LOG)
 4334e10   Wonder.MgSeesaw::OnPostCollide(GameObject)   (BR_MANIA_LOG)
+# port/runtime/mania_intro.c: Banana Mania's intro camera on imported stages
+442d1e0   Wonder.MgBeginningTimelineController::StageTimelineUpdate(bool)   (the intro lasts Mania's six seconds)
+442d600   Wonder.MgBeginningTimelineController::PlayerTimelineUpdate(bool)   (the READY state keeps the orbit's end)
+42aa8f0   Wonder.MgCameraStateReady::setPos(GameObject)   (the game camera before GO: Mania's pose)
+20c7800   Cinemachine.CinemachineBrain::PushStateToUnityCamera(ref CameraState)   (Mania's camera pose)
 # port/runtime/ultrawide.c: screens wider than 16:9
 4176dc0   UnityEngine.UI.CanvasScaler::Handle
 452f4b0   Wonder.UI.UISystemViewManager::SetActiveOutOfRangeBlackView

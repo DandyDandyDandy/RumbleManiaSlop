@@ -13,9 +13,9 @@ borrows; stage and world thumbnails come from Banana Mania by themselves. Still 
 * **A title card of one's own.** Uploaded pictures exist for the stage thumbnail and a world's small picture,
   big picture and icon; the title card when a stage loads is a timeline asset of a Rumble world
   (`Course.BeginningTitle`), not a picture, and can only be borrowed or left out.
-* **Intro cameras.** The fly-over before a stage is one box and two camera points per stage
-  (`BeginningBounds`, see `docs\MANIA.md`); the import derives the box from the stage's size. Stages where that
-  looks wrong need a way to move the two points by hand.
+* **Intro cameras.** Imported stages now open with Banana Mania's own intro camera, computed from the stage as
+  Mania does (`docs\MANIA.md` "The intro"). Still possible: a per-stage override in the editor (start distance,
+  heading) for stages where Mania's formula starts outside the scenery (Wormhole).
 * Moving stage parts are shown at rest, and the view has no collision or play test.
 
 ## Smaller things

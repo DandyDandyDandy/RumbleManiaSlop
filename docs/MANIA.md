@@ -486,12 +486,43 @@ stage", like the last stage of one of the game's own worlds: after it the game r
 FLT_MAX / 2 on each side. Rumble takes the box literally and its arithmetic overflows: Fall Out on the first
 frame. Such a box is replaced by one around the stage, as for stages that have none.
 
-**The intro fly-over.** Before a stage the camera flies between two points of a box (`BeginningBounds`:
-`m_Bounds`, a begin and an end point given as a pivot on the box and a target, and one of three generic
-timeline assets, `MainGame_Beginning`). The points are children of the box object, so they follow its
-rotation. Rumble's stages run towards +Z and Mania's towards -Z; the import keeps the template's points, sets
-the box to the stage's size and turns it half round, without which the fly-over looked away from the stage.
-It is still one generic camera move for every stage (see `docs\ROADMAP.md`).
+**The intro: Banana Mania's camera** (`port\runtime\mania_intro.c`, `stage.py` `mania_intro`). Rumble opens a
+stage with two timelines: the stage timeline (title card, and a generic camera move between two points of a box,
+`BeginningBounds`) and, with READY, a player timeline whose camera flies in to the ball from the front. Banana
+Mania has no timeline for it: its camera state `MainCameraReady` computes the intro from the stage. Read from
+Mania's own code (`GameAssembly.dll` of the PC version, method addresses from the metadata with the LibCpp2IL in
+Mania's BepInEx folder; values from the `GameParam` object in `sharedassets0.assets`):
+
+* start: look at the centre of the stage's box, pitch -60.254 degrees (`cameraStartXAng`), heading = the ball's
+  start heading - 360, distance 1.6 x half the box's diagonal. The box is `Util.CalcStageBounds`: every object
+  under the stage with a mesh adds the two corners of its mesh bounds after its transform; its bottom is raised to
+  the fall-out height (`m_ringoutY`, unless that is -FLT_MAX).
+* end: look at the ball's start + 0.98 up (`interestOffsetY`), pitch -18.281 (`cameraXAng`), heading = the start
+  heading, distance 3.362 (`cameraDist`).
+* `r` runs from 1 to 0 in 360 frames of 1/60 s (6 s), eased `s = r^2 (3 - 2r)`; look-at point, angles and
+  distance are blended by `s`; the eye is the look-at point + `Euler(pitch, heading, 0) x (0, 0, distance)`,
+  looking at the look-at point, field of view 60. The camera turns once round the stage as it comes down.
+
+The import writes `intro <stage row> cx cy cz distance sx sy sz heading` per stage into `mania_courses.txt`. The
+port flies it through four entry hooks:
+
+| Hook | What it does there |
+|---|---|
+| `MgBeginningTimelineController.StageTimelineUpdate` (`442d1e0`) | a pure "is the stage timeline over" question, once a frame in the intro state: answers "not yet" until Mania's 6 s have passed. They count from the moment the loading screen has gone (`UIFadeManager.stateKind` None): the intro state starts under it. A skipped intro (button, or a retry, which the game skips) is left alone |
+| `MgBeginningTimelineController.PlayerTimelineUpdate` (`442d600`) | only marks that the READY state is on |
+| `CinemachineBrain.PushStateToUnityCamera` (`20c7800`) | the stage timeline's camera (`cm_BeginningCameraBounds_Camera`, the only camera drawing then) gets Mania's eye, orientation and field of view |
+| `MgCameraStateReady.setPos` (`42aa8f0`) | the game camera's READY state (already on during the intro, it draws once the stage timeline's 6.8 s are over): Mania's pose; in READY the end pose, blended over the last 40 % of READY into the game's own pose (its own `setPos` is run and read back), so GO does not jump |
+
+The title card, READY, GO, the ball's entrance and Rumble's own stages (no `intro` line) stay the game's.
+`BR_MANIA_INTRO=0` turns it off; `BR_MANIA_LOG=1` logs the start, the pose twice a second and the READY blend.
+Seen (2026-11-14): Stoppers (st1024) frame by frame against the log, Factory (st1109, 82 units out at the start),
+Wormhole (st2028), a fall-out retry on st1101 (skipped, the game's), World 1-1 (unchanged). Not seen: split screen,
+online, a replay, Banana Mania itself side by side. Wormhole starts 204 units out (its own meshes run from z -156
+to +95), so the first moments look at the background's arena wall from outside; whether Mania shows the same
+was not checked.
+
+The old `BeginningBounds` box (the import still sets it to the stage's size, turned half round because Rumble's
+stages run towards +Z and Mania's towards -Z) only matters with `BR_MANIA_INTRO=0`.
 
 ### Backgrounds (`mania\background.py`)
 

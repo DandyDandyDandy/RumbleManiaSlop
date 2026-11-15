@@ -8,7 +8,7 @@ read "RumbleSlop" below as "the port". What the fork adds is in two other files:
 * `docs\COSTUMES.md`: characters and costumes, and the Classic Outfit (`mania\classic\`, `port\runtime\classic.c`).
 
 Differences from RumbleSlop in the shared code: the game is named `RumbleManiaSlop` (`port\paths.py`), the setup
-has a last step `mania` (`setup\setup.py`), the runtime has `classic.c` and `mania.c` with their entry hooks
+has a last step `mania` (`setup\setup.py`), the runtime has `classic.c`, `mania.c` and `mania_intro.c` with their entry hooks
 (`port\recomp\hooks.txt`), the file layer asks `classic_fs_override` for files of the override folder
 `game\mania\`, and a per-frame tick calls `classic_tick` and `mania_tick` (`display_opt.c`).
 
