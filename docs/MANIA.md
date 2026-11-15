@@ -596,6 +596,40 @@ to the saves (`spindash=`, `spindash_multi=`; both on when there is no file).
   replays (they play what was recorded).
 * `BR_SPIN_LOG=1` logs which mode applies and what a room was told.
 
+## Skip Stage (`port\runtime\stage_skip.c`)
+
+A row in the pause menu of Adventure that leaves the stage being played for the next one, on the game's own
+stages and the imported ones. It asks first ("Skip this stage?", focus on No).
+
+* **Single player:** *Help Menu > Skip Stage* (the last row of that tab, under the game's *Mark as Cleared*; the
+  Game Menu tab is full, its view has five buttons). Yes goes straight to the next stage, by the steps of the
+  result screen's *Next* (`FlowMaingameResultBase.onDecideNext`): `StageList.IncIndex`, the next stage's save
+  condition opened (`SetConditionFromStageIndex`, never lowered), `transitionStageToStage`, then
+  `RequestSceneChange` with a `UIStateArgTransitionToMainGameScene_NoParamNextStage`. The stage left is **not**
+  marked as cleared and nothing is recorded for it; the next one becomes selectable in Select Stage. *Mark as
+  Cleared* (costs points, only on a stage not yet cleared, shows the result screen) is untouched. No row on the
+  last stage of a world, in the tutorial, in a replay, or outside stage-by-stage play
+  (`SelectorParam.m_MainGameCategoryID` other than 1: the timed runs).
+* **Split screen and online:** *Skip Stage* above *Quit* in the multiplayer menu (`UIStateInBattleMenu`). Its view
+  has four buttons: a fifth is instantiated from the last one and the five are spread a little closer around
+  the middle of the envelope (a guest's menu, without the row, keeps the game's four positions). A stage of
+  several players ends only through the game master every machine runs, and the next stage is started by the
+  host from the scene after the result screen (`BattleStarter.RequestStartAdventureOnline`, refused while a
+  stage is played), so the stage is ended the way *Mark as Cleared* ends one: every player still playing gets
+  `MgPlayer.isGoal` with the time played so far as goal time, which `PlayerStateMainGame.OnUpdate` turns into
+  the ordinary goal (`NetworkEvent.Goal` online). The result screen follows and *Next* is chosen there as after
+  any stage; the stage counts as cleared by everybody in that time (the multiplayer result flows write no best
+  times). Split screen: any player's menu has the row. **Online: the host's only**; the choice goes to the
+  guests as a 12-byte message of the port's own (`online_send_port`; `online.c` hands it to
+  `stage_skip_message` instead of the game), carrying the stage's index, and each machine flags its own
+  players. A guest whose game lacks this code would pass the message to the game as an unknown event.
+* How the row gets into the menus: both hand their finished row list to `UIChoicesGroupModule_Vertical..ctor`
+  (hooked); the row is a copy of the list's first row object, recognised by its address in the hooks on the
+  menus' `onInitSelectableButton` (text) and `onDecide`. The answer is read from the dialog's `UIStateHandle`
+  on a later frame (`stage_skip_tick`); the multiplayer menu is closed with `RequestStatePop` once it takes
+  requests again.
+* `BR_SKIP_LOG=1` logs why a menu did or did not get the row.
+
 ## Missions, menu pictures and the editor
 
 Three things of a Rumble world have no counterpart in Banana Mania, and a person decides them: `mania\overrides.json`

@@ -174,3 +174,10 @@
 4649c50   Wonder.UI.ViewCtrl.UIViewCtrl_AdvMulti_GameSetting::onChangePickerValueForBallCollision
 43c3150   Wonder.AppInput+ActionAssignMouse::VirtualPadDef   (the game's mouse drag bindings, pc_input.c)
 43c31e0   Wonder.AppInput+ActionAssignMouse::GestureDef
+# port/runtime/stage_skip.c: Skip Stage in the pause menus of Adventure (fork only)
+4581900   Wonder.UI.Choices.UIChoicesGroupModule_Vertical::.ctor
+4626eb0   Wonder.UI.Pause.UIStatePauseMenu::initChoicesModule
+46287d0   Wonder.UI.Pause.UIStatePauseMenu::onInitSelectableButton
+4628a70   Wonder.UI.Pause.UIStatePauseMenu::onDecide
+45b0d40   Wonder.UI.MainGame.UIStateInBattleMenu::onInitSelectableButton
+45b0df0   Wonder.UI.MainGame.UIStateInBattleMenu::onDecide

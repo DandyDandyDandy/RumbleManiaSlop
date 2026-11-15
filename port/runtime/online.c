@@ -131,6 +131,12 @@ static void stat_log(void) {
         }
     memset(g_stat, 0, sizeof g_stat);
 }
+// Fork only (stage_skip.c): the port's own Skip Stage message between the machines of a room.
+int stage_skip_message(const uint8_t *data, uint32_t len, int from_host);
+int online_role(void) { return !g_np || g_state != ST_INROOM ? 0 : np_local_id(g_np) == np_master_id(g_np) ? 1 : 2; }
+int online_send_port(const uint8_t *data, uint32_t len) {
+    return g_np && g_state == ST_INROOM && np_send(g_np, data, len, 1, NP_TO_OTHERS, NULL, 0);
+}
 static void deliver(Cpu *c, uint64_t bytes, uint64_t from, int reliable) {
     stat_note(1, reliable, bytes);
     rt_call(c, FN(F_ON_EVENT_RECEIVED), 5, bytes, from, 1ull, (uint64_t)(reliable != 0), 0ull);
@@ -239,6 +245,7 @@ void online_tick(Cpu *c) {
             break;
         }
         case NP_EV_DATA:
+            if (g_state == ST_INROOM && stage_skip_message(e.data, e.len, e.peer == np_master_id(g_np))) { np_free(e.data); break; }
             if (g_state == ST_INROOM && e.len >= 2) deliver(c, new_bytes(c, e.data, e.len), e.peer, e.reliable);
             np_free(e.data);
             break;

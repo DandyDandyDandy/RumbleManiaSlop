@@ -24,6 +24,9 @@ room code), plus, when Banana Mania is installed:
   stages. They are played with Rumble's ball, physics, goal, camera and rules; every stage is open from the start.
 - **Banana Mania's stage music** on those stages, and the original games' music when your Banana Mania has the
   Classic Soundtrack add-on (*Options > Audio > Imported Stage Music*).
+- **Skip Stage.** In Adventure the pause menu can leave a stage for the next one: *Help Menu > Skip Stage* in
+  single player (straight to the next stage, nothing recorded), *Skip Stage* in the menu of split screen and of
+  an online room (the host's choice; the stage ends for everybody and the result screen follows).
 - **Spin Dash on or off.** Banana Mania's stages were made for a ball without it: *Options > General > Spin Dash
   (Single Player)* for single player, and a *Spin Dash* choice under *Ball Collision* on the game settings screen
   of multiplayer Adventure (split screen and online; online the host's choice holds for the room). Battle modes

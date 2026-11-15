@@ -586,6 +586,7 @@ int rt_hook_43d58c0(Cpu *c) {
         extern void name_ui_tick(Cpu *c);
         extern void pc_input_tick(Cpu *c);
         extern void test_aids_tick(Cpu *c);
+        extern void stage_skip_tick(Cpu *c);                                  // fork only: stage_skip.c
         extern void interp_tick(Cpu *c);
         extern void pc_shell_tick(Cpu *c);
         extern void gfx_opt_tick(Cpu *c);
@@ -598,6 +599,7 @@ int rt_hook_43d58c0(Cpu *c) {
         ultrawide_tick(c);
         test_aids_tick(c);
         online_tick(c);
+        stage_skip_tick(c);
         mouse_diag_tick(c);
         copy_button_tick(c);
         name_ui_tick(c);
