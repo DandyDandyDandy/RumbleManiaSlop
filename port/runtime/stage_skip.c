@@ -10,7 +10,7 @@
 // in the challenge modes (the stage list there is a timed run).
 //
 // Split screen and online (UIStateInBattleMenu): the row stands above Quit; the menu's view has four buttons, so a
-// fifth is made from the last one and the five are spread over the envelope. A stage of several players can only
+// fifth is made from the last one and the five take the room of the four. A stage of several players can only
 // end through the game master every machine runs (BattleGameMaster.AdvGameMaster), and the next stage is started
 // by the host from the scene that follows the result screen, so here the stage is ended the way the game's own
 // Mark as Cleared ends one: every player still playing is flagged as having reached the goal (MgPlayer.isGoal,
@@ -63,6 +63,9 @@
 #define F_GET_PARENT 0x3f1a0a0ull           // Transform.get_parent
 #define F_GET_ANCHORED_POS 0x3f182c0ull     // RectTransform.get_anchoredPosition -> Vector2 in v0, v1
 #define F_SET_ANCHORED_POS 0x3f18390ull     // RectTransform.set_anchoredPosition(Vector2)
+#define F_GET_LOCAL_SCALE 0x3f1b1e0ull      // Transform.get_localScale -> Vector3 in v0..v2
+#define F_SET_LOCAL_SCALE 0x3f1b2b0ull      // Transform.set_localScale(Vector3)
+#define FIVE_ROWS 0.8f                      // five rows in the room of four: button size and row distance
 #define M_CLASS_YESNO_ARG 0x61679d0ull      // metadata usage pointer slots
 #define M_CLASS_NEXT_STAGE_ARG 0x616f770ull
 #define STATE_YESNO_DIALOG 0x3b             // Def_UIState.eStateKind
@@ -100,6 +103,7 @@ static const uint8_t k_magic[8] = {0xf5, 'B', 'R', 'S', 'K', 'I', 'P', 1};
 static uint64_t g_pause_menu;               // the UIStatePauseMenu whose initChoicesModule is running
 static uint32_t g_buttons_h;                // the multiplayer menu's button list that was given a fifth button,
 static float g_button_y[4];                 // and where its four buttons stood
+static float g_button_scale[3];             // and their size
 static uint32_t g_item_h;                   // GC handles: the Skip Stage row of the menu that is open,
 static uint32_t g_state_h;                  // the menu that asked,
 static uint32_t g_dialog_h;                 // the question's UIStateHandle
@@ -185,16 +189,24 @@ static void set_y(Cpu *c, uint64_t tr, float y) {
     c->x[0] = tr; c->x[1] = 0;
     rt_call_regs(c, FN(F_SET_ANCHORED_POS));
 }
-// The multiplayer menu's view (kept and used again by the game) has one button per row of the game: four. With
-// the row a fifth button is made from the last one, and the five stand around the middle of the four, a little
-// closer together (the envelope has room for four and a half rows); without the row the four stand where the
-// game put them (the module hides a spare button).
+static void set_scale(Cpu *c, uint64_t tr, float k) {
+    c->x[0] = tr; c->x[1] = 0;
+    for (int i = 0; i < 3; i++) { float f = g_button_scale[i] * (i < 2 ? k : 1.0f); uint32_t u; memcpy(&u, &f, 4); c->v[i] = u; }
+    rt_call_regs(c, FN(F_SET_LOCAL_SCALE));
+}
+// The multiplayer menu's view (kept and used again by the game) has one button per row of the game: four, which
+// fill the envelope. With the row a fifth button is made from the last one, and the five take the room of the
+// four: each four fifths the size, four fifths of a row apart, around the same middle. Without the row the four
+// stand as the game put them (the module hides a spare button).
 static void fit_buttons(Cpu *c, uint64_t buttons, int with_row) {
     if (!buttons || list_n(buttons) < 4) return;
     uint64_t tr[5] = {0};
     if (target(c, g_buttons_h) != buttons) {
         if (list_n(buttons) != 4 || !with_row) return;
         for (int i = 0; i < 4; i++) g_button_y[i] = get_y(c, rt_call(c, FN(F_GET_TRANSFORM), 2, list_at(buttons, i), 0ull));
+        c->x[0] = rt_call(c, FN(F_GET_TRANSFORM), 2, list_at(buttons, 0), 0ull); c->x[1] = 0;
+        rt_call_regs(c, FN(F_GET_LOCAL_SCALE));
+        for (int i = 0; i < 3; i++) { uint32_t u = (uint32_t)c->v[i]; memcpy(&g_button_scale[i], &u, 4); }
         uint64_t last = list_at(buttons, 3), ltr = rt_call(c, FN(F_GET_TRANSFORM), 2, last, 0ull);
         uint64_t copy = rt_call(c, FN(F_INSTANTIATE), 3, last, rt_call(c, FN(F_GET_PARENT), 2, ltr, 0ull), 0ull);
         if (!copy || c->eh_unwinding) return;
@@ -204,7 +216,10 @@ static void fit_buttons(Cpu *c, uint64_t buttons, int with_row) {
     }
     for (int i = 0; i < 5; i++) tr[i] = rt_call(c, FN(F_GET_TRANSFORM), 2, list_at(buttons, i), 0ull);
     float step = g_button_y[3] - g_button_y[2], mid = 0.5f * (g_button_y[0] + g_button_y[3]);
-    for (int i = 0; i < 5; i++) set_y(c, tr[i], with_row ? mid + 0.92f * step * (float)(i - 2) : i < 4 ? g_button_y[i] : g_button_y[3] + step);
+    for (int i = 0; i < 5; i++) {
+        set_y(c, tr[i], with_row ? mid + FIVE_ROWS * step * (float)(i - 2) : i < 4 ? g_button_y[i] : g_button_y[3] + step);
+        set_scale(c, tr[i], with_row ? FIVE_ROWS : 1.0f);
+    }
 }
 
 // UIStatePauseMenu.initChoicesModule(): fills the row lists of both tabs, then makes the row module (below).

@@ -611,8 +611,9 @@ stages and the imported ones. It asks first ("Skip this stage?", focus on No).
   last stage of a world, in the tutorial, in a replay, or outside stage-by-stage play
   (`SelectorParam.m_MainGameCategoryID` other than 1: the timed runs).
 * **Split screen and online:** *Skip Stage* above *Quit* in the multiplayer menu (`UIStateInBattleMenu`). Its view
-  has four buttons: a fifth is instantiated from the last one and the five are spread a little closer around
-  the middle of the envelope (a guest's menu, without the row, keeps the game's four positions). A stage of
+  has four buttons, which fill the envelope: a fifth is instantiated from the last one and the five take the
+  room of the four (each four fifths the size and four fifths of a row apart, around the same middle; a
+  guest's menu, without the row, keeps the game's four buttons as they are). A stage of
   several players ends only through the game master every machine runs, and the next stage is started by the
   host from the scene after the result screen (`BattleStarter.RequestStartAdventureOnline`, refused while a
   stage is played), so the stage is ended the way *Mark as Cleared* ends one: every player still playing gets
