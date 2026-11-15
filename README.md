@@ -78,11 +78,13 @@ Those of RumbleSlop, and for the imported stages:
 - Imported stages have Banana Mania's goal (gate, party ball and tape, in blue, green or red); every goal ends the
   stage: green and red warp goals do not skip stages.
 - Stages have Banana Mania's backgrounds, sky and lighting, with their particle effects (waterfall spray, fires,
-  lightning) and animated signs, but without the camera weather, mirror images on the scenery and Mania's colour grading; the
-  light on the scenery is baked into it (no shadows cast on it). The stages themselves are drawn with Rumble's stage shaders: colours and materials
-  differ from the original, vertex colouring is lost.
-- No stage pictures in *Select Stage*, no missions, no rankings for the imported worlds, and one generic intro
-  camera move for every stage (`docs\ROADMAP.md` has the plan for an editor).
+  lightning) and animated signs, but without the camera weather, mirror images on the scenery and Mania's colour
+  grading; the light on the scenery is baked into it (no shadows cast on it). Brightness, colour and fog are still
+  being tuned against Banana Mania, and not every background has been compared by eye yet. The stages
+  themselves are drawn with Rumble's stage shaders: colours and materials differ from the original, vertex
+  colouring is lost.
+- No rankings for the imported worlds. Stage pictures, missions and world pictures come from Banana Mania and
+  the level editor (above); the intro camera is Banana Mania's, computed from each stage.
 - Only a sample of the 392 stages has been started in the game; see `docs\MANIA.md` for what was checked.
 - The Classic Outfit's face does not blink, and other body items do not show while it is worn.
 

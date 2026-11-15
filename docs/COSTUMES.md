@@ -153,6 +153,10 @@ Looks, in the order they were got right:
 * **Shading.** Reusing Rumble materials as they are gives mismatched tints (the costume material's shadows are
   blue, for denim). A flat neutral set was rejected as unshaded. What was accepted: every material takes the
   settings of that character's own `ch_00N_body_mat`, with normal and specular maps dropped.
+* **Lobby shading.** Dropping the specular map is not enough: the shader reads a missing specular map as white,
+  so every pixel got the full shine, and under the strong front light of the online lobbies the whole monkey came
+  out bleached. With the maps, their terms go too: `shading_of` sets `_SpecularStrength` and `_NormalStrength` to
+  0 on the borrowed body settings.
 * **Hands.** Binding five straight classic fingers to Rumble's four finger chains tears them. The hand is bound
   to the hand bone as one piece and posed beforehand. The pose comes from `mania\classic\classic_hands.json`,
   made with the page `make_hand_poser.py` writes (`hand_poser.html`); the pose
