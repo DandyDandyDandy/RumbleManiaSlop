@@ -810,6 +810,12 @@ a `Sound_CueSheet` row, and rows 1 and 2 point at it. Seen: the log names `mania
 Mania's `adv_e` plays there now); the Classic Soundtrack option does not reach the title (Mania's `adv_dx` is
 not used).
 
+No title call (`port\runtime\title_call.c`): Rumble's monkeys calling the game's name (cue 1501, sheet `adv`, cue
+`title_call`) stay silent. The title coroutine prepares that handle and waits until it is prepared, so the cue
+must stay loadable; the hook on `Sound.Handle.Prepare` remembers the handle prepared with cue 1501 and the hook
+on `Sound.Handle.Play()` skips that handle's play (a prepared cue sits paused). `BR_TITLE_CALL=1` lets it play.
+Seen: log "title: the title call stays silent" once at the title, the title going on to the main menu. Not heard.
+
 What the screen is made of (`ui_assets_ui\scenetitleloop\ui_view_titleloop_title.prefab.bundle`): seven monkeys in
 balls, 760 x 760 each, of which the opening shows some flying past (Aiai, Gongon seen); the opening logo built
 from the 15 pieces of the sheet `ui_View_TitleLoop_Title_Title`; then the finished logo of the language,
