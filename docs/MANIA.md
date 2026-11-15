@@ -734,7 +734,12 @@ its result).
   `port.log` tells the importer to photograph the window (`PrintWindow`, so windows in front do not matter; the
   middle square of the client area, scaled to 512). So the picture has the game's lighting, the stage's Mania
   background and goal, and no ball or HUD. It is kept as `build\mania_views\st<id>_<hash of the view>.png` and
-  taken again only for another view (or `build.py --retake`); `--no-views` leaves the step out. With
+  taken again only for another view (or `build.py --retake`); `--no-views` leaves the step out. Up to three
+  copies of the game take pictures at the same time (`thumbshot.INSTANCES`), each with its own test save
+  (`T`, `T1`, `T2`), log (`BR_LOG=port<n>.log`, `player<n>.log`) and input file; one picture takes about 75
+  seconds whether one copy runs or three (measured: 4 pictures in 151 s instead of about 300). Jumping from
+  stage to stage inside one running copy was tried and does not work: during play the UI state manager holds
+  no state to ask a scene change of, and in the View Stage mode PLUS opens no pause menu. With
   `--no-stages` and the stage already in the game as this import would make it, the pictures are taken before
   the import; otherwise after it, and the import runs once more with `--no-stages --no-views` to put them in.
   A picture that could not be taken (the game is running, the menus were not reached) leaves the editor's

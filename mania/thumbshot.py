@@ -5,8 +5,9 @@ point looked at, vertical field of view of the square picture; stage coordinates
 draw the stage from there, with the game's lighting and the stage's background: for every such stage the built
 game is started on the test save (profile "T", a copy of the save made on first use; the real save is not touched),
 walked through the menus into the stage, told to show that view with nothing else on the screen
-(BR_THUMB_VIEW, port\\runtime\\thumb.c), and its window is photographed. One stage takes about a minute and a half;
-a picture is kept (build\\mania_views) and only taken again when the view changes or with build.py --retake.
+(BR_THUMB_VIEW, port\\runtime\\thumb.c), and its window is photographed. One stage takes about a minute and a
+quarter; up to INSTANCES copies of the game run side by side, each with its own test save ("T", "T1", ...), log
+and input file. A picture is kept (build\\mania_views) and only taken again when the view changes or with build.py --retake.
 
     python thumbshot.py st<Mania stage number> <ex> <ey> <ez> <tx> <ty> <tz> [<fov>] [--out FILE]      one picture, as a test
 """
@@ -28,6 +29,7 @@ FOV = 2 * math.degrees(0.4)     # the editor's 3D view (editor.html, updateMvp)
 SIZE = 512                      # the kept picture is a square of this size
 EXE = paths.NAME + '.exe'
 DIR = paths.BUILD / 'mania_views'
+INSTANCES = 3                   # copies of the game taking pictures at the same time
 
 
 def view_key(view):
@@ -127,9 +129,9 @@ def place(game, sid):
     return None
 
 
-def take(sid, view, out, say=print, game=None):
+def take(sid, view, out, say=print, game=None, slot=0):
     """Start the game, go into the stage, take the picture of `view` and write it to `out`. Returns None, or what
-    went wrong. The game must not be running."""
+    went wrong. The game must not be running, except other copies started by take() with another `slot`."""
     game = game or str(paths.GAME)
     where = place(game, sid)
     if where is None:
@@ -137,19 +139,21 @@ def take(sid, view, out, say=print, game=None):
     course, stage = where
     work = str(DIR)
     os.makedirs(work, exist_ok=True)
-    if not os.path.isdir(os.path.join(game, 'saveT')) and os.path.isdir(os.path.join(game, 'save')):
-        shutil.copytree(os.path.join(game, 'save'), os.path.join(game, 'saveT'))
-    live, log = os.path.join(work, 'live.txt'), os.path.join(game, 'port.log')
+    tag = str(slot or '')                                    # slot 0 keeps the names of a single copy
+    profile = 'T' + tag
+    if not os.path.isdir(os.path.join(game, 'save' + profile)) and os.path.isdir(os.path.join(game, 'save')):
+        shutil.copytree(os.path.join(game, 'save'), os.path.join(game, 'save' + profile))
+    live, log = os.path.join(work, f'live{tag}.txt'), os.path.join(game, f'port{tag}.log')
     open(live, 'w').close()
-    for f in ('port.log', 'player.log'):
+    for f in (f'port{tag}.log', f'player{tag}.log'):
         try:
             os.remove(os.path.join(game, f))
         except OSError:
             pass
-    env = dict(os.environ, BR_PROFILE='T', BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_NO_REAL_INPUT='1', BR_AUDIO='off',
+    env = dict(os.environ, BR_PROFILE=profile, BR_LOG=f'port{tag}.log', BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_NO_REAL_INPUT='1', BR_AUDIO='off',
                BR_THUMB_VIEW=camera(view))
     p = subprocess.Popen([os.path.join(game, EXE), '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720',
-                          '-logFile', 'player.log'], cwd=game, env=env)
+                          '-logFile', f'player{tag}.log'], cwd=game, env=env)
 
     def press(*keys, gap=0.9):
         for k in keys:
@@ -207,12 +211,14 @@ def take(sid, view, out, say=print, game=None):
                 p.wait(10)
             except subprocess.TimeoutExpired:
                 pass
-        subprocess.run(['taskkill', '/F', '/IM', 'UnityCrashHandler64.exe'], capture_output=True)
     return error
 
 
 def take_all(views, say=print, game=None):
-    """views: {stage id: view}. Takes the pictures that are not kept yet; returns the number taken."""
+    """views: {stage id: view}. Takes the pictures that are not kept yet, INSTANCES at a time; returns the number taken."""
+    import concurrent.futures
+    import queue
+    import threading
     todo = {sid: v for sid, v in views.items() if not os.path.exists(kept(sid, v))}
     if not todo:
         return 0
@@ -220,19 +226,34 @@ def take_all(views, say=print, game=None):
         say(f'  {len(todo)} stage pictures are to be taken in the game, but the game is running: close it and import again '
             '(until then the stages show the editor\'s picture)')
         return 0
-    say(f'Taking {len(todo)} stage picture{"s" if len(todo) > 1 else ""} in the game (about a minute and a half each; '
-        'the game window opens by itself, leave it alone)')
-    done = 0
-    for sid, v in sorted(todo.items()):
-        err = take(sid, v, kept(sid, v), say, game)
-        if err:
-            say(f'  st{sid}: no picture from the game ({err}); the editor\'s picture is shown')
-        else:
-            done += 1
+    n = min(INSTANCES, len(todo))
+    say(f'Taking {len(todo)} stage picture{"s" if len(todo) > 1 else ""} in the game, {n} at a time (about a minute and a '
+        'quarter each; the game windows open by themselves, leave them alone)')
+    slots, lock, done = queue.Queue(), threading.Lock(), [0]
+    for i in range(n):
+        slots.put(i)
+
+    def one(sid, v):
+        slot = slots.get()
+        try:
+            time.sleep(4 * slot if done[0] == 0 else 0)     # the first starts a little apart
+            err = take(sid, v, kept(sid, v), say, game, slot)
+        finally:
+            slots.put(slot)
+        with lock:
+            if err:
+                say(f'  st{sid}: no picture from the game ({err}); the editor\'s picture is shown')
+                return
+            done[0] += 1
             for name in os.listdir(str(DIR)):               # the stage's pictures of earlier views
                 if name.startswith(f'st{sid}_') and name != os.path.basename(kept(sid, v)):
                     os.remove(os.path.join(str(DIR), name))
-    return done
+
+    with concurrent.futures.ThreadPoolExecutor(n) as pool:
+        for f in [pool.submit(one, sid, v) for sid, v in sorted(todo.items())]:
+            f.result()
+    subprocess.run(['taskkill', '/F', '/IM', 'UnityCrashHandler64.exe'], capture_output=True)
+    return done[0]
 
 
 if __name__ == '__main__':

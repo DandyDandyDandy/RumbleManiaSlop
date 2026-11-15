@@ -45,8 +45,8 @@ each stage's Golden Banana and mission values, each world's graphics. A stage wh
 converted again even with --no-stages.
 
 A stage whose picture was taken "From the view" in the editor gets its picture from the game itself: the import
-starts the game and photographs the stage from that point of view (thumbshot.py; about a minute and a half per
-new view, --no-views leaves it out, --retake takes all of them again). With --no-stages and an import already in
+starts the game and photographs the stage from that point of view (thumbshot.py; about a minute and a quarter per
+new view, three copies of the game at a time, --no-views leaves it out, --retake takes all of them again). With --no-stages and an import already in
 the game this happens first; otherwise after the import, which then runs its table part once more.
 """
 import argparse
