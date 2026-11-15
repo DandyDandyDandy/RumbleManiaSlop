@@ -42,7 +42,7 @@ RT = '{UnityEngine.AddressableAssets.Addressables.RuntimePath}'
 ITEM_ID = 544                    # a blank record of CharaCustomize_Item (and of its text tables)
 ITEM_CATEGORY_OUTFIT = 7
 INITIAL_CONDITION = 4            # as the Resort Outfit: owned from the start
-TEXT = {'en': ('Classic Outfit', 'The look from the original Super Monkey Ball games! (AI Port)')}
+TEXT = {'en': ('Classic Outfit', 'The look from the original Super Monkey Ball games!')}
 LANGS = ('de', 'en', 'es', 'es419', 'fr', 'it', 'ja', 'ko', 'ptbr', 'zh', 'zhs')
 
 def md5(s): return hashlib.md5(s.encode()).hexdigest()
