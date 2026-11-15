@@ -361,9 +361,15 @@ the game's, so results, replays and online play work as for any goal. Around it:
   `MgGoalColi.OnTriggerEnterPlayer`) hides `goal_tape` and swings `goal_sphere01` / `goal_sphere02` apart over
   0.45 s. A retry does not load the scene again, so `goal_tick` closes the ball and brings the tape back when the
   stage sequence returns to PREPARE / INTRO / READY / RETRY.
+* Confetti rains from the opened party ball, as in Mania (`MainGameStage.updateGoalSub_EFFECT` plays
+  `particle_common/goalconfetti.prefab` on the goal). `stage.py` (`add_confetti`, `ManiaPrefab`) copies its one
+  drawing system (`square01`: Unity's built-in quad, `Particles/Standard Unlit` on the unlit shader, 300 pieces a
+  second, looping, world space) under `mania_goal` into an inactive object `mania_confetti`, with play on awake.
+  `goal_entered` switches it on, the restart switches it off (and so clears it). The quad is referenced in
+  `unity default resources` (path id 10210), which the template scene already lists.
 
 Not done: what a green or red goal does in Mania (skipping stages; every goal ends the stage), the tape's cloth
-motion and the confetti of the party ball (Rumble's own goal effect plays), the party ball as a solid thing.
+motion, the party ball as a solid thing. Rumble's own goal effect still plays as well.
 
 **Script classes the template does not have.** World 1 Stage 1 has no bumper, switch, seesaw or conveyor. A script class is made
 usable in the new scene by copying two things from a stage of the game that uses it (`SCRIPT_DONORS`): the

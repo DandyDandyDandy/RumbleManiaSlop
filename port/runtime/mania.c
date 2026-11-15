@@ -623,7 +623,12 @@ static int in_area(Cpu *c, int kind, uint64_t component, const char *what) {
 #define STR_CHARS 0x14
 #define GOAL_OPEN_MS 450.0f                 // the party ball takes this long to open
 #define GOAL_OPEN_ANGLE 1.05f               // each half swings out by this much (radians)
-static struct { uint32_t goal, tape, half[2]; uint64_t t0; int done; } g_goal_open[40];
+// Mania's confetti (particle_common/goalConfetti) hangs under "mania_goal" as an inactive object "mania_confetti"
+// whose system plays on awake: switched on with the opening ball, it rains from the ball until the restart.
+static struct { uint32_t goal, tape, half[2], confetti; uint64_t t0; int done; } g_goal_open[40];
+static void set_active_tr(Cpu *c, uint64_t tr, int on) {
+    if (tr) rt_call(c, FN(F_SET_ACTIVE), 3, rt_call(c, FN(F_GET_GAMEOBJECT), 2, tr, 0ull), (uint64_t)!!on, 0ull);
+}
 
 static int obj_alive(Cpu *c, uint64_t o) { return o && (rt_call(c, FN(F_OBJ_ALIVE), 2, o, 0ull) & 1); }
 static uint64_t handle_target(Cpu *c, uint32_t h) {
@@ -653,8 +658,9 @@ static void goal_halves(Cpu *c, int slot, float angle) {
     }
 }
 static void goal_slot_free(Cpu *c, int slot) {
-    uint32_t *h[4] = {&g_goal_open[slot].goal, &g_goal_open[slot].tape, &g_goal_open[slot].half[0], &g_goal_open[slot].half[1]};
-    for (int k = 0; k < 4; k++) {
+    uint32_t *h[5] = {&g_goal_open[slot].goal, &g_goal_open[slot].tape, &g_goal_open[slot].half[0], &g_goal_open[slot].half[1],
+                      &g_goal_open[slot].confetti};
+    for (int k = 0; k < 5; k++) {
         if (*h[k]) rt_call(c, FN(F_GCHANDLE_FREE), 1, (uint64_t)*h[k]);
         *h[k] = 0;
     }
@@ -674,10 +680,14 @@ static void goal_entered(Cpu *c, uint64_t self) {
     g_goal_open[slot].tape = tape ? (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, tape, 0ull) : 0;
     g_goal_open[slot].half[0] = h0 ? (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, h0, 0ull) : 0;
     g_goal_open[slot].half[1] = h1 ? (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, h1, 0ull) : 0;
+    uint64_t confetti = tr_find(c, model, "mania_confetti", 0);
+    g_goal_open[slot].confetti = confetti ? (uint32_t)rt_call(c, FN(F_GCHANDLE_NEW), 2, confetti, 0ull) : 0;
     g_goal_open[slot].t0 = GetTickCount64();
     g_goal_open[slot].done = 0;
-    if (tape) rt_call(c, FN(F_SET_ACTIVE), 3, rt_call(c, FN(F_GET_GAMEOBJECT), 2, tape, 0ull), 0ull, 0ull);
-    if (getenv("BR_MANIA_LOG")) rt_log("mania: goal: the tape goes and the party ball opens (tape %d, halves %d %d)", !!tape, !!h0, !!h1);
+    set_active_tr(c, tape, 0);
+    set_active_tr(c, confetti, 1);
+    if (getenv("BR_MANIA_LOG"))
+        rt_log("mania: goal: the tape goes and the party ball opens (tape %d, halves %d %d, confetti %d)", !!tape, !!h0, !!h1, !!confetti);
 }
 
 static void goal_tick(Cpu *c) {
@@ -690,8 +700,8 @@ static void goal_tick(Cpu *c) {
         if (!g_goal_open[i].goal) continue;
         if (!handle_target(c, g_goal_open[i].goal)) { goal_slot_free(c, i); continue; }     // the stage is gone
         if (restart) {
-            uint64_t tape = handle_target(c, g_goal_open[i].tape);
-            if (tape) rt_call(c, FN(F_SET_ACTIVE), 3, rt_call(c, FN(F_GET_GAMEOBJECT), 2, tape, 0ull), 1ull, 0ull);
+            set_active_tr(c, handle_target(c, g_goal_open[i].tape), 1);
+            set_active_tr(c, handle_target(c, g_goal_open[i].confetti), 0);
             goal_halves(c, i, 0.0f);
             goal_slot_free(c, i);
             if (getenv("BR_MANIA_LOG")) rt_log("mania: goal: closed again for the restart");

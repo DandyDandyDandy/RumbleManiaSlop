@@ -54,6 +54,12 @@ BELT_DONOR = 'bg_stg_w02_006'                           # a stage that depends o
 MIRROR_SMOOTHNESS = 0.45        # `_Smoothness` of such a material (0.8 put a white glare spot on Storm's floor)
 MIRROR_METALLIC = 0.5           # `_Metallic` = this x the brightness of Mania's `_ReflectColor` (in linear light), at most 0.9
 GOAL_MODEL_NAME = 'mania_goal'  # the object under a goal that holds Mania's goal model (mania.c looks for it)
+# Mania's confetti from the opened party ball (MainGameStage.updateGoalSub_EFFECT plays it through ParticleManager on
+# the goal): a looping system of coloured quads. It goes under the model, inactive, as CONFETTI_NAME; mania.c
+# switches it on when a ball goes through (it plays on awake) and off on a restart.
+CONFETTI = ('particle_common', 'goalconfetti.prefab')
+CONFETTI_NAME = 'mania_confetti'
+BUILTIN_RESOURCES = 'unity default resources'   # the file of Unity's built-in meshes (the confetti's quad)
 AREA_KINDS = {'InactiveGoal': 'goal', 'DisableWormhole': 'wormhole'}    # Mania's area attribute -> mania_areas.txt
 # Script classes the template stage does not use are taken from a stage of the game that does (its type entry with
 # the type tree, and its MonoScript object): class -> stage scene
@@ -191,6 +197,53 @@ def walk_pptrs(v, fn):
     elif isinstance(v, (list, tuple)):
         for x in v:
             walk_pptrs(x, fn)
+
+
+class ManiaPrefab(ManiaStage):
+    """One prefab of a Mania bundle (not a stage) read into nodes: `root` is its top node."""
+
+    def __init__(self, game_dir, bundle, prefab):
+        self._want = prefab.lower()
+        super().__init__(game_dir, bundle)
+
+    def _build(self):
+        from maniastage import Node, script_class
+        sf = self.main
+        nodes, by_tr = {}, {}
+        for o in sf.objects.values():
+            if o.type.name != 'GameObject':
+                continue
+            g = self.tree(sf, o)
+            n = Node()
+            n.id, n.name, n.active, n.layer = o.path_id, g['m_Name'], bool(g['m_IsActive']), g['m_Layer']
+            for comp in g['m_Component']:
+                c = sf.objects.get(comp['component']['m_PathID'])
+                if c is None:
+                    continue
+                t = self.tree(sf, c)
+                kind = c.type.name
+                if kind == 'Transform':
+                    p, r, s = t['m_LocalPosition'], t['m_LocalRotation'], t['m_LocalScale']
+                    n.pos, n.rot, n.scale = (p['x'], p['y'], p['z']), (r['x'], r['y'], r['z'], r['w']), (s['x'], s['y'], s['z'])
+                    n.transform_id = c.path_id
+                    by_tr[c.path_id] = (n, t)
+                elif kind == 'MonoBehaviour':
+                    kind = script_class(t) or 'MonoBehaviour'
+                n.components.append((kind, c.path_id, t))
+            nodes[o.path_id] = n
+        for n, t in by_tr.values():
+            n.children = [by_tr[c['m_PathID']][0] for c in t['m_Children'] if c['m_PathID'] in by_tr]
+            for c in n.children:
+                c.parent = n
+        self.nodes = nodes
+        self.root = None
+        for o in sf.objects.values():
+            if o.type.name == 'AssetBundle':
+                for path, entry in self.tree(sf, o)['m_Container']:
+                    if path.replace('\\', '/').rsplit('/', 1)[-1].lower() == self._want:
+                        self.root = nodes.get(entry['asset']['m_PathID'])
+        if self.root is None:
+            raise ValueError(f'{self.bundle}: prefab {self._want} not found')
 
 
 # -------------------------------------------------------------------------------------------- the Rumble scene
@@ -877,6 +930,13 @@ class Converter:
         self.mania_dir, self.aa = mania_dir, aa_switch
         self.template = os.path.join(aa_switch, f'scene_{TEMPLATE_STAGE}_scenes_all.bundle')
         self.materials = MaterialModels(aa_switch)
+        self._confetti = None
+
+    def confetti(self):
+        """Mania's goal confetti prefab (ManiaPrefab), read once."""
+        if self._confetti is None:
+            self._confetti = ManiaPrefab(self.mania_dir, *CONFETTI)
+        return self._confetti
 
     def convert(self, stage_bundle, out_path, identity=None, log=None, gold=None):
         """Convert Mania's `stage_bundle` and write the Rumble bundle to out_path.
@@ -1528,6 +1588,50 @@ class Converter:
                     stats['goal_triangles'] = len(conv['triangle'])
             return goal_data[key]
 
+        confetti_parts = []
+
+        def add_confetti(parent):
+            """Mania's confetti under `parent` (the goal's model), inactive: the object CONFETTI_NAME."""
+            if not confetti_parts:
+                cm = self.confetti()
+                ps_obj, ps_base, pr_obj, pr_base = background.particle_models(self.aa, background.PARTICLE_TEMPLATE)
+                sc._foreign_model(s, ps_obj, None, None)
+                sc._foreign_model(s, pr_obj, None, None)
+                ext = [i + 1 for i, e in enumerate(s.sf.externals)
+                       if e.path.replace('\\', '/').rsplit('/', 1)[-1].lower() == BUILTIN_RESOURCES]
+                c_assets = background.scenery_assets(sc, cm, background.options({}), self.aa, asset_stats, np.ones(3))
+                parts = []
+                for n in cm.root.walk():
+                    ps, pr = n.component('ParticleSystem'), n.component('ParticleSystemRenderer')
+                    slots = [c_assets.describe(cm.main, x) for x in pr[2].get('m_Materials', [])] if pr else []
+                    if not ps or not any(slots):
+                        continue                    # the prefab's top system draws nothing (no material)
+                    tree = overlay(ps_base, ps[2])
+                    walk_pptrs(tree, lambda p: p.update(m_FileID=0, m_PathID=0))
+                    tree['playOnAwake'] = True      # it plays when mania.c switches the object on
+                    r = overlay(pr_base, pr[2])
+                    walk_pptrs(r, lambda p: p.update(m_FileID=0, m_PathID=0))
+                    mesh_ref = pr[2].get('m_Mesh', {})
+                    if mesh_ref.get('m_PathID'):
+                        src = cm.main.externals[mesh_ref['m_FileID'] - 1].path if mesh_ref.get('m_FileID') else ''
+                        if not ext or BUILTIN_RESOURCES not in src.lower():
+                            continue                # only Unity's built-in quad is expected here
+                        r['m_Mesh'] = pptr(mesh_ref['m_PathID'], ext[0])
+                    r.update(m_CastShadows=0, m_ReceiveShadows=0, m_StaticShadowCaster=0, m_LightProbeUsage=0, m_ReflectionProbeUsage=0,
+                             m_LightmapIndex=65535, m_LightmapIndexDynamic=65535,
+                             m_Materials=[sc.shared_ref(c_assets.material(d, False, False)) if d else dict(NULL) for d in slots])
+                    parts.append((n, tree, r))
+                confetti_parts.append(parts)
+            parts = confetti_parts[0]
+            if not parts:
+                return
+            holder = sc.new_object(CONFETTI_NAME, parent, active=False)
+            for n, tree, r in parts:
+                go = sc.new_object(n.name, holder, n.pos, n.rot, n.scale)
+                sc.add_component(go, 'ParticleSystem', copy.deepcopy(tree))
+                sc.add_component(go, 'ParticleSystemRenderer', copy.deepcopy(r))
+            stats['goal_confetti'] = stats.get('goal_confetti', 0) + 1
+
         for i, (n, parent) in enumerate(goals):
             g = goal0 if i == 0 else sc.clone(goal0, root)
             # The goal hangs under an object with the Mania node's name and place: a stage clip that moves the goal
@@ -1548,6 +1652,7 @@ class Converter:
             draw = sc.new_object(GOAL_MODEL_NAME, g, (0.0, 0.0, 0.0), Y180, n.scale)
             for c in model.children:
                 copy_node(c, draw, True)
+            add_confetti(draw)
             col = sc.descendant(g, 'model_col2')
             part = col and sc.component(col, 'MonoBehaviour', 'CollisionStagePart')
             if part:
