@@ -63,6 +63,7 @@ static int g_cur = -1;                      // index of the stage being introduc
 static uint64_t g_ctrl;                     // the timeline controller asking
 static double g_t0;                         // when the orbit began, 0 = the loading screen is still up
 static double g_intro_last, g_ready_last;   // last question of the intro / READY state
+static int g_jumped;                        // the READY timelines of this intro have been moved on
 
 static double now(void) {
     static LARGE_INTEGER f;
@@ -108,7 +109,7 @@ int rt_hook_442d1e0(Cpu *c) {
         for (int i = 0; i < g_nintro; i++)
             if (g_intro[i].stage == stage) { g_cur = i; break; }
         if (g_cur >= 0 && logging()) rt_log("mania: intro of stage row %u%s", stage, skip ? ": skipped" : ": Banana Mania's camera");
-        g_ctrl = ctrl; g_t0 = 0;
+        g_ctrl = ctrl; g_t0 = 0; g_jumped = 0;
     }
     g_intro_last = t;
     if (g_cur >= 0 && !skip && !g_t0 && (int)rt_call(c, FN(F_FADE_STATE), 1, 0ull) == FADE_NONE) {
@@ -123,8 +124,37 @@ int rt_hook_442d1e0(Cpu *c) {
 }
 
 // Wonder.MgBeginningTimelineController::PlayerTimelineUpdate(bool isSkip): the READY state is on
+// Also: the READY timeline (3.5 s) begins with the game's camera flying in from the front, 1.75 s before the READY
+// text. Mania's camera is already behind the ball, so that part was a still picture. On the first READY frame after
+// Mania's intro each player's READY timeline jumps to its own "short" point (m_SkipTimeShort, the game's shortened
+// READY), with the game's forward-only SetTime.
+#define CTRL_PLAYER_TIMELINES 0x80          // MgBeginningTimelineController.m_PlayerOpeningAssetTimelineList
+#define PLAYER_SKIP_TIME_SHORT 0x58         // PlayableDirectorInterfaceBeginningPlayer.m_SkipTimeShort (double)
+#define F_TIMELINE_SET_TIME 0x442b360ull    // PlayableDirectorInterface.SetTime(double time, bool isEnabledBack)
+#define F_TIMELINE_DURATION 0x442ea20ull    // PlayableDirectorInterface.GetDuration
 int rt_hook_442d600(Cpu *c) {
-    if (g_cur >= 0) g_ready_last = now();
+    if (g_cur < 0) return 0;
+    g_ready_last = now();
+    if (g_jumped || (c->x[1] & 1) || !g_t0) return 0;
+    g_jumped = 1;
+    uint64_t list = LD64(c->x[0] + CTRL_PLAYER_TIMELINES), items = list ? LD64(list + 0x10) : 0;
+    int n = list ? (int)LD32(list + 0x18) : 0;
+    uint64_t sx[31]; __uint128_t sv[32];
+    memcpy(sx, c->x, sizeof sx); memcpy(sv, c->v, sizeof sv);
+    for (int i = 0; i < n && items; i++) {
+        uint64_t p = LD64(items + 0x20 + 8 * (uint64_t)i);
+        if (!p) continue;
+        double at, dur;
+        memcpy(&at, (void *)(uintptr_t)(p + PLAYER_SKIP_TIME_SHORT), 8);
+        c->x[0] = p; c->x[1] = 0;
+        rt_call_regs(c, FN(F_TIMELINE_DURATION));
+        memcpy(&dur, &c->v[0], 8);
+        if (!(at > 0 && at < dur)) continue;
+        c->x[0] = p; c->x[1] = 0; c->x[2] = 0; memcpy(&c->v[0], &at, 8);
+        rt_call_regs(c, FN(F_TIMELINE_SET_TIME));
+        if (logging()) rt_log("mania: intro: READY timeline %d of %d starts at %.2f s of %.2f (no fly-in)", i + 1, n, at, dur);
+    }
+    memcpy(c->x, sx, sizeof sx); memcpy(c->v, sv, sizeof sv);
     return 0;
 }
 
