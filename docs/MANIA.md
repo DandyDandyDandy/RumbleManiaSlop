@@ -791,7 +791,24 @@ runs the step at the end of every import; `python mania\title.py` alone redoes i
 
 The fork's set: AiAi (classic artwork, cut to the style of the game's ball pictures) in Gongon's place; Baby,
 Doctor, MeeMee, Palette and YanYan as fully transparent pictures (not shown); one logo
-(`ui_View_Title_titlelogo.png`, all languages) reading "Banana Rumble Mania".
+(`ui_View_Title_titlelogo.png`, all languages) reading "Banana Rumble Mania"; `title.txt` with
+`background=#6b5cb1` (purple instead of yellow).
+
+The ground colour: the yellow is not a picture but a plain Image called `ImageBackGround` directly under the
+root of two views, the opening (`ui_view_titleloop_title`, #ffe600) and the logo screen's background
+(`ui_view_titleloop_titlebackground`, #ffdc00); the icon pattern over it is white sprites
+(`ui_partview_common_bg_pattern*`, shared with Adventure's background, not touched). `title.py` sets the
+Image colour of both; an `ImageBackGround` deeper down (a button's) keeps its own.
+
+The title music is Banana Mania's (`build.py`, music part; needs the music import, not `--no-music`). Rumble's
+title (`UIStateTitle` start-up) prepares BGM cue 1 = `Sound_Cue` row 1, sheet `adv`, cue `adv` (row 2 is that
+sheet's `adv_e`). Mania's title scene (`scene_title_unity`, `SelTitleSequence.m_BgmCueNameArray`) lists
+`adv_adv` and `adv_adv_e`: the same cue names in Mania's own `adv` sheet. That sheet is copied as
+`mania\Sound\mania_adv.acb / .awb` (Rumble's `adv` sheet also holds the title call, so it is not replaced), gets
+a `Sound_CueSheet` row, and rows 1 and 2 point at it. Seen: the log names `mania_adv.acb` and its stream
+`mania_adv.awb` opened at the title. Not heard by anyone; not known where else Rumble plays row 2 (if anywhere,
+Mania's `adv_e` plays there now); the Classic Soundtrack option does not reach the title (Mania's `adv_dx` is
+not used).
 
 What the screen is made of (`ui_assets_ui\scenetitleloop\ui_view_titleloop_title.prefab.bundle`): seven monkeys in
 balls, 760 x 760 each, of which the opening shows some flying past (Aiai, Gongon seen); the opening logo built

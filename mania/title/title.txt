@@ -1,0 +1,2 @@
+# RumbleMania's title screen settings (mania\title.py reads this; input\title\title.txt can override a line)
+background=#6b5cb1

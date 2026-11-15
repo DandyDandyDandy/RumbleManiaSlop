@@ -23,7 +23,8 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
                                             (read by port\\runtime\\mania.c)
     mania\\mania_music.txt                   per stage row: its BGM cue row, and the Classic Soundtrack's cue row (0: none)
     mania\\mania_stages.txt                  course number, stage number, Mania stage, course name, stage name
-    mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are)
+    mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are), and
+                                            its title music as mania_adv.acb / .awb (the title screen plays it)
     mania\\Switch\\ui_assets_ui\\...           the title screen's bundles with the pictures of mania\\title\\ and input\\title\\ (title.py)
     mania\\mania_music.txt                   the BGM cue of each imported stage
 
@@ -111,6 +112,8 @@ SCENERY_FIELDS = ('LightSceneID', 'FarSceneID', 'SkySceneID', 'EffectSceneID', '
                   'FarSceneSplitScreenID', 'SkySceneSplitScreenID', 'EffectSceneSplitScreenID', 'ScreenEffectSplitScreenAssetRef',
                   'MiniMapImageID')
 MANIA_LANG = {'es419': 'es', 'ptbr': 'en'}      # Rumble languages Mania has no text for
+TITLE_SHEET = 'mania_adv'       # Banana Mania's title music (its adv cue sheet) under a name of its own
+TITLE_CUES = {1: 'adv', 2: 'adv_e'}             # Rumble's title cue rows -> the cue of Mania's sheet
 
 
 def md5(s):
@@ -614,6 +617,20 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
                 music_lines.append(f'{row_of[sid]} {cues[name]} {classic_cues.get(name, 0)}')
         if classic_cues:
             print(f'Classic Soundtrack: {sum(1 for s in sheets if s.endswith("_dx"))} cue sheets, the original music is on offer')
+        # The title screen plays Banana Mania's title music. Rumble's title prepares cue row 1 (sheet "adv", cue
+        # "adv"; row 2 is its "adv_e"); Mania's title scene lists "adv_adv" and "adv_adv_e" (SelTitleSequence
+        # m_BgmCueNameArray), the same cue names in its own adv sheet. That sheet is copied under another name,
+        # because Rumble's adv sheet also holds the title call and must stay.
+        if os.path.exists(os.path.join(sound, 'adv.acb')):
+            awb = os.path.exists(os.path.join(sound, 'adv.awb'))
+            for ext in ('.acb', '.awb') if awb else ('.acb',):
+                shutil.copyfile(os.path.join(sound, 'adv' + ext), os.path.join(out, 'Sound', TITLE_SHEET + ext))
+            sid_sheet = len(sheet_t.rows)
+            sheet_t.use(sid_sheet, acbPath=f'Sound/{TITLE_SHEET}.acb', awbPath=f'Sound/{TITLE_SHEET}.awb' if awb else '',
+                        cueSheetName=TITLE_SHEET)
+            for row, cue in TITLE_CUES.items():
+                cue_t.row(row).update(cueSheet=sid_sheet, innerCueName=cue)
+            print("title music: Banana Mania's", flush=True)
     written = db.save(out_switch)
     return written, music_lines, lines, sprites
 

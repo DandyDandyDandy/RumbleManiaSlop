@@ -18,6 +18,11 @@ A picture is a PNG file named like the texture it replaces (letter case does not
     ui_View_TitleLoop_Title_<Eff|Bg_Press|Sega>.png   sparkle, the "press a button" bar, the small SEGA logo
 
 A picture of another size is scaled to the texture's size. A fully transparent picture removes that monkey.
+
+title.txt in the same folders (input\\title\\'s lines win) holds settings, one "key=value" per line:
+
+    background=#6b5cb1      the colour of the title screen's ground behind the icon pattern (the game's is yellow,
+                            #ffdc00 behind the logo, #ffe600 in the opening)
 The game's bundles are not changed: changed copies go to the override folder game\\mania\\Switch\\ (the runtime
 reads it first, see docs\\MANIA.md), and a picture removed from both folders gives the game's own back on the
 next run.
@@ -33,10 +38,61 @@ import paths  # noqa: E402
 
 LANGS = ('de', 'en', 'es', 'es419', 'fr', 'it', 'ja', 'ko', 'ptbr', 'zh', 'zhs')
 LOOP_BUNDLE = 'ui_assets_ui/scenetitleloop/ui_view_titleloop_title.prefab.bundle'
-BUNDLES = [LOOP_BUNDLE] + [f'ui_assets_ui/localizedsprite/{l}/ui_view_title_titlelogo_{l}.tga.bundle' for l in LANGS]
+BG_BUNDLE = 'ui_assets_ui/scenetitleloop/ui_view_titleloop_titlebackground.prefab.bundle'
+BUNDLES = [LOOP_BUNDLE, BG_BUNDLE] + [f'ui_assets_ui/localizedsprite/{l}/ui_view_title_titlelogo_{l}.tga.bundle' for l in LANGS]
 PICTURES = (os.path.join(HERE, 'title'), str(paths.INPUT / 'title'))     # the fork's, then one's own (wins)
 ALL_LANGS_LOGO = 'ui_view_title_titlelogo'
 SKIP = {'ui_Empty', 'TMP_DefaultSprite'}
+GROUND = 'ImageBackGround'      # the full-screen plain Image under the root of the title views (yellow in the game)
+
+
+def settings(folders=PICTURES):
+    """{key: value} of title.txt in the folders; a later folder's lines win."""
+    out = {}
+    for folder in folders:
+        path = os.path.join(folder, 'title.txt')
+        if os.path.exists(path):
+            with open(path, encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    k, sep, v = line.partition('=')
+                    if sep and not line.startswith('#'):        # a line starting with # is a comment
+                        out[k.strip()] = v.strip()
+    return out
+
+
+def colour(text):
+    """'#rrggbb' -> (r, g, b) in 0..1."""
+    h = text.strip().lstrip('#')
+    if len(h) != 6:
+        raise ValueError(f'title.txt: a colour is #rrggbb, not {text!r}')
+    return tuple(int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+
+
+def recolour_ground(env, rgb):
+    """Give the ground Image of each title view (a child of the view's root called ImageBackGround) the colour.
+    The number of Images changed."""
+    objs = {o.path_id: o for o in env.objects}
+    n = 0
+    for o in env.objects:
+        if o.type.name != 'GameObject':
+            continue
+        go = o.read_typetree()
+        if go['m_Name'] != GROUND:
+            continue
+        comps = [objs.get(c['component']['m_PathID']) for c in go['m_Component']]
+        tr = next((c for c in comps if c is not None and c.type.name in ('RectTransform', 'Transform')), None)
+        father = objs.get(tr.read_typetree()['m_Father']['m_PathID']) if tr else None
+        if father is None or father.read_typetree()['m_Father']['m_PathID'] != 0:
+            continue                            # not directly under the root (a button's own background)
+        for c in comps:
+            if c is not None and c.type.name == 'MonoBehaviour':
+                tt = c.read_typetree()
+                if 'm_Color' in tt and 'm_Sprite' in tt:
+                    tt['m_Color'].update(r=rgb[0], g=rgb[1], b=rgb[2])
+                    c.save_typetree(tt)
+                    n += 1
+    return n
 
 
 def user_pictures(folders=PICTURES):
@@ -95,16 +151,20 @@ def apply(aa, out, folders=PICTURES, log=print):
     from PIL import Image
     from UnityPy.enums import TextureFormat
     pics = user_pictures(folders)
+    ground = settings(folders).get('background')
+    ground = colour(ground) if ground else None
     count = 0
     for rel in BUNDLES:
         src = os.path.join(aa, 'Switch', rel.replace('/', os.sep))
         dst = os.path.join(out, 'Switch', rel.replace('/', os.sep))
         if os.path.exists(dst):
             os.remove(dst)
-        if not pics or not os.path.exists(src):
+        if not (pics or ground) or not os.path.exists(src):
             continue
         env = UnityPy.load(src)
         changed, replaced = [], {}
+        if ground and rel in (LOOP_BUNDLE, BG_BUNDLE) and recolour_ground(env, ground):
+            changed.append('background colour')
         for o in env.objects:
             if o.type.name != 'Texture2D':
                 continue
