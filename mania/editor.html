@@ -89,6 +89,10 @@ label { display: block; margin: 10px 0 4px; font-weight: 600; }
 #pic-stage img { width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
 #pic-stage img.mania { border-color: var(--line); }
 #pic-stage .t { flex-basis: 100%; }
+#pic-render img { width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+#pic-render .t { flex-basis: 100%; }
+#pic-render .t.pending { color: var(--accent); }
+#pic-render .t.err { color: #ff7b7b; }
 .pic .t { flex: 1; min-width: 70px; color: var(--dim); font-size: 12px; }
 .pic button { padding: 3px 8px; font-size: 13px; }
 #applylog { white-space: pre-wrap; font: 12px/1.35 Consolas, monospace; color: var(--dim); max-height: 150px; overflow: auto;
@@ -230,9 +234,12 @@ textarea { font: inherit; color: var(--text); background: var(--panel2); border:
       missions are left out.</div>
     <label>Picture in Select Stage</label>
     <div class="pic" id="pic-stage"></div>
+    <label>Rendered by the game</label>
+    <div class="pic" id="pic-render"></div>
     <div class="note">Without one of your own: Banana Mania's thumbnail. "From the view" takes the middle square of the stage view as it is now:
       what you see here is a preview, and "Apply to game" lets the game draw the stage from that same spot, with its lighting and
-      background (the game opens by itself, three copies at a time, for about a minute and a quarter per new view).</div>
+      background (the game opens by itself, three copies at a time, for about half a minute per new view). "Render in the game"
+      takes that picture now, for this stage only, and shows it here; "Apply to game" then puts it in without rendering it again.</div>
   </section>
   <section>
     <h2>World · <span id="worldname"></span></h2>
@@ -404,6 +411,49 @@ function fillPics() {
     if (id === 'pic-stage') { const v = el('button', 'fromview primary', 'From the view (F)'); v.title = 'Take the picture from the stage view (key F)'; v.onclick = () => { const d = snapshot(); if (d) sendPicture(section, name, key, d, currentView()); }; box.append(v); }
     if (file) { const rm = el('button', 'remove', 'Remove'); rm.onclick = () => sendPicture(section, name, key, null); box.append(rm); }
   }
+  fillRender();
+}
+// ---- the stage picture rendered by the game (mania\\thumbshot.py through editor.py's Render), taken now instead
+// of during the import; "Apply to game" then puts it into Select Stage without starting the game again
+let RENDER = {running: false, rendered: {}}, renderPoll = 0;
+function fillRender() {
+  const box = $('pic-render'); if (!box || !stage) return;
+  box.textContent = '';
+  const got = RENDER.rendered[stage.id], busy = RENDER.running && RENDER.sid === stage.id;
+  if (got) { const im = el('img'); im.src = `/img/rendered/${stage.id}.png?v=${got.v}`; im.alt = ''; box.append(im); }
+  const text = busy ? 'The game is rendering this stage … (about half a minute; the game window opens by itself, leave it alone)'
+    : RENDER.error && RENDER.sid === stage.id ? 'Not rendered: ' + RENDER.error
+    : got ? (got.pending ? 'Rendered, not yet in the game: "Apply to game" puts it in' : 'Rendered; this is the picture in the game')
+    : stageOv(stage.id).view ? 'Not rendered yet for this view' : 'No view to render yet: the button takes the current view first';
+  box.append(el('span', 't' + (busy || got && got.pending ? ' pending' : RENDER.error && RENDER.sid === stage.id ? ' err' : ''), text));
+  const b = el('button', 'primary', got ? 'Render again in the game' : 'Render in the game');
+  b.title = 'Starts the game, goes into this stage and takes its Select Stage picture from the saved view';
+  b.disabled = RENDER.running;
+  b.onclick = renderStage;
+  box.append(b);
+}
+async function renderStage() {
+  const sid = stage.id;
+  if (!stageOv(sid).view) {                       // no view yet: "From the view" first
+    const d = snapshot(); if (!d) return;
+    await sendPicture('stages', sid, 'picture', d, currentView());
+    if (!stageOv(sid).view) return;
+  }
+  clearTimeout(saveTimer); await save();          // the server reads the view from overrides.json
+  const r = await fetch('/api/render', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({sid})});
+  const j = await r.json();
+  if (!r.ok) { RENDER.error = j.error; RENDER.sid = sid; fillRender(); return; }
+  renderStatus();
+}
+async function renderStatus() {
+  try {
+    const was = RENDER.running;
+    RENDER = await (await fetch('/api/render')).json();
+    if (was && !RENDER.running && RENDER.done != null) { dirty = true; $('applystate').textContent = 'Changes not yet in the game'; }
+    fillRender();
+    clearTimeout(renderPoll);
+    if (RENDER.running) renderPoll = setTimeout(renderStatus, 1500);
+  } catch (e) {}
 }
 // view: where a stage picture "From the view" was taken from; an uploaded or removed picture has none
 async function sendPicture(section, name, key, dataUrl, view) {
@@ -802,7 +852,7 @@ async function applyStatus() {
   if (s.log.length) { $('applylog').style.display = 'block'; $('applylog').textContent = s.log.join('\n'); $('applylog').scrollTop = 1e6; }
   $('apply').disabled = s.running;
   if (s.running) { $('applystate').textContent = 'Importing …'; clearTimeout(poll); poll = setTimeout(applyStatus, 1000); }
-  else if (s.code === 0) { $('applystate').textContent = dirty ? 'Changes not yet in the game' : 'The game is up to date with the editor'; }
+  else if (s.code === 0) { $('applystate').textContent = dirty ? 'Changes not yet in the game' : 'The game is up to date with the editor'; renderStatus(); }
   else if (s.code != null) $('applystate').textContent = 'The import failed (see the log at the bottom right)';
 }
 $('apply').onclick = async () => {
@@ -860,7 +910,7 @@ $('carddel').onclick = () => {
     let last = {}; try { last = JSON.parse(localStorage.getItem('mania-editor') || '{}'); } catch (e) {}
     pickCourse(IDX.courses[last.course] ? last.course : 0, last.stage);
     const tab = document.querySelector(`#tabs button[data-tab="${location.hash.slice(1)}"]`); if (tab) tab.click();
-    applyStatus();
+    applyStatus(); renderStatus();
   } catch (e) { $('busy').style.display = 'grid'; $('busy').textContent = 'The editor could not start: ' + e.message; }
 })();
 </script>

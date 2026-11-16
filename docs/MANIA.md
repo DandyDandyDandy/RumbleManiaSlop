@@ -836,6 +836,12 @@ its result).
   attempt is kept outside the repository as a patch. With
   `--no-stages` and the stage already in the game as this import would make it, the pictures are taken before
   the import; otherwise after it, and the import runs once more with `--no-stages --no-views` to put them in.
+  **"Render in the game"** (editor, under the stage's picture; `Render` in `editor.py`) takes that picture at
+  once for the stage on screen, one game run (about 20 s), and shows it under "Rendered by the game" (`GET
+  /img/rendered/<id>.png`). It is written to the same kept file, so the next "Apply to game" puts it in without
+  starting the game; until then the editor marks it "not yet in the game" (picture newer than
+  `game\mania\mania_stages.txt`, which each import writes). Without a view the button takes "From the view"
+  first. It refuses while the game or an import runs and for a stage not yet in the game.
   A picture that could not be taken (the game is running, the menus were not reached) leaves the editor's
   preview in the game, with a line in the output. One picture takes 70 s on the development machine, because
   the game is started for each. The importing process must not declare itself aware of display scaling: then

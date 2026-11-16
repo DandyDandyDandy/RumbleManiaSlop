@@ -330,11 +330,90 @@ class Game:
                 'start': start, 'lo': [float(x) for x in lo], 'hi': [float(x) for x in hi]}
 
 
+class Render:
+    """The stage picture rendered by the game itself, taken on request from the page ("Render in the game") instead
+    of during the import: one game run at a time (thumbshot.take). The picture is kept where the import looks for it
+    (build\\mania_views), so the next "Apply to game" puts it into Select Stage without starting the game again."""
+
+    def __init__(self):
+        self.thread, self.sid, self.error, self.done = None, None, None, None
+
+    def running(self):
+        return self.thread is not None and self.thread.is_alive()
+
+    @staticmethod
+    def kept(sid):
+        """Path of the game's picture of the stage's current view (overrides.json), or None: no view, or not taken."""
+        import thumbshot
+        view = overrides.load()['stages'].get(str(sid), {}).get('view')
+        path = thumbshot.kept(sid, view) if view else None
+        return path if path and os.path.exists(path) else None
+
+    @staticmethod
+    def rendered():
+        """{stage id: {'v': version, 'pending': not yet in the game}} of the stages whose current view has a picture
+        from the game. Pending = taken after the last import (game\\mania\\mania_stages.txt is written by each)."""
+        import thumbshot
+        try:
+            imported = os.path.getmtime(os.path.join(str(paths.GAME), 'mania', 'mania_stages.txt'))
+        except OSError:
+            imported = 0
+        out = {}
+        for sid, e in overrides.load()['stages'].items():
+            if e.get('view'):
+                try:
+                    t = os.path.getmtime(thumbshot.kept(int(sid), e['view']))
+                except (OSError, ValueError):
+                    continue
+                out[sid] = {'v': int(t), 'pending': t > imported}
+        return out
+
+    def status(self):
+        return {'running': self.running(), 'sid': self.sid, 'error': self.error, 'done': self.done, 'rendered': self.rendered()}
+
+    def start(self, sid, apply):
+        import thumbshot
+        if self.running():
+            return f'The game is already rendering st{self.sid}.'
+        if apply.running():
+            return 'An import is running: wait for it to end.'
+        view = overrides.load()['stages'].get(str(sid), {}).get('view')
+        if not view:
+            return 'The stage has no view to render: take its picture "From the view" first.'
+        if thumbshot.game_runs():
+            return 'The game is running. Close it first: the picture is taken in a game started for it.'
+        if thumbshot.place(str(paths.GAME), sid) is None:
+            return 'The stage is not in the game yet: "Apply to game" takes its picture during the import.'
+        self.sid, self.error, self.done = sid, None, None
+
+        def run():
+            out = thumbshot.kept(sid, view)
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            try:
+                err = thumbshot.take(sid, view, out + '.new.png', say=lambda *a: None)
+            except Exception as e:                       # shown by the page
+                err = f'{type(e).__name__}: {e}'
+            subprocess.run(['taskkill', '/F', '/IM', 'UnityCrashHandler64.exe'], capture_output=True)
+            if err:
+                self.error = err
+                return
+            os.replace(out + '.new.png', out)            # an older picture of the same view stays until this one is there
+            for name in os.listdir(os.path.dirname(out)):      # the stage's pictures of earlier views
+                if name.startswith(f'st{sid}_') and name.endswith('.png') and name != os.path.basename(out):
+                    os.remove(os.path.join(os.path.dirname(out), name))
+            self.done = sid
+
+        self.thread = threading.Thread(target=run, daemon=True)
+        self.thread.start()
+        return None
+
+
 class Apply:
     """One run of mania\\build.py at a time, with its output kept for the page."""
 
     def __init__(self, mania_dir):
         self.mania_dir, self.proc, self.lines, self.code = mania_dir, None, [], None
+        self.render = None                              # the Render job: no import while the game renders
 
     def running(self):
         return self.proc is not None and self.proc.poll() is None
@@ -342,6 +421,8 @@ class Apply:
     def start(self):
         if self.running():
             return 'An import is already running.'
+        if self.render is not None and self.render.running():
+            return 'The game is rendering a stage picture: wait for it to end.'
         exe = paths.NAME + '.exe'
         try:
             listed = subprocess.run(['tasklist', '/FI', f'IMAGENAME eq {exe}', '/FO', 'CSV', '/NH'], capture_output=True, text=True).stdout
@@ -364,7 +445,7 @@ class Apply:
         return {'running': self.running(), 'code': self.code, 'log': self.lines[-12:]}
 
 
-def make_handler(game, apply):
+def make_handler(game, apply, render):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
 
@@ -398,7 +479,16 @@ def make_handler(game, apply):
                         return self.send(200, game.index())
                 if path == '/api/apply':
                     return self.send(200, apply.status())
+                if path == '/api/render':
+                    return self.send(200, render.status())
                 parts = path.strip('/').split('/')
+                if parts[0] == 'img' and len(parts) == 3 and parts[1] == 'rendered':
+                    name = parts[2].rsplit('.', 1)[0]
+                    kept = render.kept(int(name)) if name.isdigit() else None
+                    if not kept:
+                        return self.send(404, b'', 'text/plain')
+                    with open(kept, 'rb') as f:
+                        return self.send(200, f.read(), 'image/png')
                 if parts[0] == 'api' and parts[1] == 'stage' and parts[2].isdigit():
                     with LOCK:
                         return self.send(200, game.stage(int(parts[2])))
@@ -437,6 +527,12 @@ def make_handler(game, apply):
                 if self.path == '/api/apply':
                     err = apply.start()
                     return self.send(409 if err else 200, {'error': err} if err else {'ok': True})
+                if self.path == '/api/render':
+                    sid = json.loads(body).get('sid')
+                    if not isinstance(sid, int):
+                        raise ValueError('no such stage')
+                    err = render.start(sid, apply)
+                    return self.send(409 if err else 200, {'error': err} if err else {'ok': True})
                 self.send(404, {'error': 'not found'})
             except ValueError as e:
                 self.send(400, {'error': str(e)})
@@ -459,10 +555,11 @@ def main():
         mania_dir = str(found)
     if not os.path.exists(os.path.join(str(paths.GAME), f'{paths.NAME}_Data', 'StreamingAssets', 'aa', 'catalog.json')):
         sys.exit('The game is not built yet: run setup.cmd first.')
-    game, server = Game(mania_dir), None
+    game, server, apply, render = Game(mania_dir), None, Apply(mania_dir), Render()
+    apply.render = render
     for port in range(a.port, a.port + 20):
         try:
-            server = ThreadingHTTPServer(('127.0.0.1', port), make_handler(game, Apply(mania_dir)))
+            server = ThreadingHTTPServer(('127.0.0.1', port), make_handler(game, apply, render))
             break
         except OSError:
             continue
