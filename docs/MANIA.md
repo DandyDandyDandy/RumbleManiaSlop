@@ -429,9 +429,11 @@ Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9
 | `mania_stages.txt` | course number, stage number, Mania stage, course name, stage name (for people and `try_stage.py`) |
 | `import_report.txt` | per stage: counts, and the Mania components that were not converted |
 
-29 courses are made (`COURSES`): Super Monkey Ball 1 Beginner, Advanced, Expert with their Extra floors and
-Master; the ten worlds of Super Monkey Ball 2's story; its eight challenge difficulties; Deluxe; Original Stage
-Mode; Reverse Mode; and "More Stages" with every stage that is in none of them, so every imported stage is reachable.
+22 courses are made (`COURSES`): Super Monkey Ball 1 Beginner, Advanced, Expert and Master; the ten worlds of
+Super Monkey Ball 2's story; its four challenge difficulties; Deluxe; Original Stage Mode; Reverse Mode; and "More
+Stages" with every stage that is in none of them, so every imported stage is reachable. Mania's Extra courses are
+not worlds of their own: their stages come after the stages of their difficulty (`EXTRAS`; SMB1 Beginner = its 9
+stages, then Beginner Extra's 3). `--only` takes an Extra course's name as its difficulty's.
 
 **Bonus stages are not imported.** 18 of Mania's 410 stages are bonus stages (stage kind `Bonus`): bananas
 against the clock, and for five of them no goal. They do not fit worlds that are about reaching the goal and

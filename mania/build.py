@@ -84,18 +84,19 @@ TEMPLATE_STAGE_ROW = 8          # World 1 Stage 1: the model for new stage rows
 
 # (Mania course, numbering prefix, name; None = the course's own name in Mania's text)
 COURSES = [
-    ('Smb1Org_Shokyu', 'SMB1 B', 'SMB1 Beginner'), ('Smb1Org_ShokyuEx', 'SMB1 BX', 'SMB1 Beginner Extra'),
-    ('Smb1Org_Chukyu', 'SMB1 A', 'SMB1 Advanced'), ('Smb1Org_ChukyuEx', 'SMB1 AX', 'SMB1 Advanced Extra'),
-    ('Smb1Org_Jyokyu', 'SMB1 E', 'SMB1 Expert'), ('Smb1Org_JyokyuEx', 'SMB1 EX', 'SMB1 Expert Extra'),
-    ('Smb1Org_JyokyuEx2', 'SMB1 M', 'SMB1 Master'),
+    ('Smb1Org_Shokyu', 'SMB1 B', 'SMB1 Beginner'), ('Smb1Org_Chukyu', 'SMB1 A', 'SMB1 Advanced'),
+    ('Smb1Org_Jyokyu', 'SMB1 E', 'SMB1 Expert'), ('Smb1Org_JyokyuEx2', 'SMB1 M', 'SMB1 Master'),
 ] + [(f'Smb2_StoryWorld{i:02d}', f'SMB2 W{i}', None) for i in range(1, 11)] + [
-    ('Smb2Org_Shokyu', 'SMB2 B', 'SMB2 Beginner'), ('Smb2Org_ShokyuEx', 'SMB2 BX', 'SMB2 Beginner Extra'),
-    ('Smb2Org_Chukyu', 'SMB2 A', 'SMB2 Advanced'), ('Smb2Org_ChukyuEx', 'SMB2 AX', 'SMB2 Advanced Extra'),
-    ('Smb2Org_Jyokyu', 'SMB2 E', 'SMB2 Expert'), ('Smb2Org_JyokyuEx', 'SMB2 EX', 'SMB2 Expert Extra'),
-    ('Smb2Org_Master', 'SMB2 M', 'SMB2 Master'), ('Smb2Org_MasterEx', 'SMB2 MX', 'SMB2 Master Extra'),
+    ('Smb2Org_Shokyu', 'SMB2 B', 'SMB2 Beginner'), ('Smb2Org_Chukyu', 'SMB2 A', 'SMB2 Advanced'),
+    ('Smb2Org_Jyokyu', 'SMB2 E', 'SMB2 Expert'), ('Smb2Org_Master', 'SMB2 M', 'SMB2 Master'),
     ('SmbDx', 'DX', None), ('SpecialOriginal', 'ORG', None), ('SpecialReverse', 'REV', None),
     ('*', 'ETC', 'More Stages'),            # every stage that is in none of the courses above
 ]
+# Mania's Extra courses are not worlds of their own: their stages follow the stages of the course they belong to
+# (the user's wish, 2026-11-15)
+EXTRAS = {'Smb1Org_Shokyu': 'Smb1Org_ShokyuEx', 'Smb1Org_Chukyu': 'Smb1Org_ChukyuEx', 'Smb1Org_Jyokyu': 'Smb1Org_JyokyuEx',
+          'Smb2Org_Shokyu': 'Smb2Org_ShokyuEx', 'Smb2Org_Chukyu': 'Smb2Org_ChukyuEx', 'Smb2Org_Jyokyu': 'Smb2Org_JyokyuEx',
+          'Smb2Org_Master': 'Smb2Org_MasterEx'}
 # Mania background -> the Rumble world that stands in for it: the look of the course in the world picker, the intro
 # graphics, without imported music the BGM, and without imported backgrounds (--no-backgrounds, or one that failed
 # to convert) the scenery, sky and lighting of the stage
@@ -171,8 +172,12 @@ def _convert_bg(job):
 
 
 def plan_courses(mania, only=None):
-    """[(Mania course name, prefix, display name, [stage ids])] in import order. Bonus stages are left out."""
+    """[(Mania course name, prefix, display name, [stage ids])] in import order. Bonus stages are left out; an Extra
+    course's stages are appended to its main course (EXTRAS)."""
     out, used = [], set()
+    if only:
+        base_of = {e: b for b, e in EXTRAS.items()}
+        only = {base_of.get(n, n) for n in only}
 
     def wanted(i):
         return i in mania.stages and i in mania.bundles and mania.stages[i]['kind'] != 'Bonus'
@@ -185,6 +190,9 @@ def plan_courses(mania, only=None):
             if c is None:
                 continue
             ids = [i for i in c['stages'] if wanted(i)]
+            ex = mania.courses.get(EXTRAS.get(name))
+            if ex is not None:
+                ids += [i for i in ex['stages'] if wanted(i) and i not in ids]
             title = title or mania.texts('en', 'maingame').get(c['text_key']) or name
             if name.startswith('Smb2_StoryWorld'):
                 title = f'SMB2 {title}'

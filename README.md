@@ -18,8 +18,8 @@ port and the importer were written by an AI coding agent. Expect rough edges.
 Everything RumbleSlop does (display options, wide screens, keyboard and mouse, controller glyphs, online play by
 room code, also over Steam with a Steam friend's code filled in), plus, when Banana Mania is installed:
 
-- **Banana Mania's 392 goal stages in Adventure mode**, as 29 extra worlds under a *Mania* tab of *Select World*:
-  Super Monkey Ball 1 (Beginner, Advanced, Expert, their Extra floors, Master), the ten story worlds of Super
+- **Banana Mania's 392 goal stages in Adventure mode**, as 22 extra worlds under a *Mania* tab of *Select World*:
+  Super Monkey Ball 1 (Beginner, Advanced, Expert, each followed by its Extra floors, Master), the ten story worlds of Super
   Monkey Ball 2, its challenge difficulties, Deluxe, Original Stage Mode, Reverse Mode and the remaining special
   stages. They are played with Rumble's ball, physics, goal, camera and rules; every stage is open from the start.
 - **Banana Mania's stage music** on those stages, and the original games' music when your Banana Mania has the
