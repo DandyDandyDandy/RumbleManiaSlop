@@ -305,3 +305,295 @@ int rt_hook_20c7800(Cpu *c) {
     }
     return 0;
 }
+
+// ---- The stage's motion around the intro and READY ----
+//
+// Rumble steps a stage's Animators in MainGameStage.FixedUpdate in every state but READY and RESULT, and READY's
+// first frame (MainGameSequence.updateReady -> MainGameStage.ResetStage) puts them back to the checkpoint frame (0).
+// So moving parts ran during the intro, jumped back when READY came and stood still until GO.
+// Banana Mania (MainGameStage.initReadySequence / updateReady / FixedUpdate, 1.0 PC build) has one rule per stage
+// (MgStageDatum.m_StageAnimationStartKind, m_ShiftAnimationStartFrame, written by the import as "anim <stage row>
+// <kind> <shift frames>"), applied when its READY sequence begins, and that sequence includes the intro orbit:
+//   OnInitialize (403 of 410 stages): Animator.Update(shift / 60 - span of the sequence), then the motion runs every
+//     frame, through the orbit and READY, and is at `shift` at GO;
+//   OnReadyGo: Animator.Update(shift / 60), still until GO.
+// Here the same on imported stages: when the intro state begins (under the loading screen) the Animators are set to
+// shift - (orbit + READY) and held (Animator.speed 0); the orbit's start (the loading screen gone) lets them run;
+// READY then leaves them where they are and the port steps them through it. Without an orbit (a retry, a skipped
+// intro) READY's reset stays and is followed by Update(shift - READY's length). OnReadyGo stages are held at `shift`
+// from the intro state's start until GO. BR_MOTION_TRACE=1 logs the motion's time at every step (test; Unity reports
+// "inf" while an Animator is held at speed 0).
+#define F_MAIN_GAME_STATE 0x42cfd10ull      // Wonder.MainGame.get_mainGameState (static): MainGameSequence.State
+#define STATE_INTRO 2
+#define STATE_READY 3
+#define STATE_GAME 4
+#define F_FIXED_DELTA 0x3f161e0ull          // UnityEngine.Time.get_fixedDeltaTime
+#define F_RESET_ANIMATOR 0x2253380ull       // Framework.Util.Animation.ResetAnimator(Animator, float seconds)
+#define F_ANIMATOR_UPDATE 0x3e9ac00ull      // UnityEngine.Animator.Update(float)
+#define F_ANIMATOR_SET_SPEED 0x3e987c0ull   // UnityEngine.Animator.set_speed(float)
+#define F_ANIMATOR_STATE_INFO 0x3e97930ull  // UnityEngine.Animator.GetCurrentAnimatorStateInfo(int) (struct via x8)
+#define STAGE_ANIMATORS 0x48                // MainGameStage.m_StageAnimators (List<Animator>)
+#define STAGE_ANIM_SPEED 0x5c               // MainGameStage.m_AnimationSpeedMultipler
+#define READY_RESET_RETURN 0x42da0fcull     // MainGameSequence.updateReady, just after its call of ResetStage
+#define F_RESET_STAGE 0x4321130ull
+// game seconds the motion is stepped (BR_MANIA_LOG "stage motion", measured on st1052): from the orbit's start
+// (loading screen gone) to GO 6.22 + 2.08, READY alone (a retry) 1.08. Split screen and online (BrAdvSequence):
+// READY 3.75 s; there the shared start clock (start_clock) steers the motion onto `shift` at GO, which it reaches at
+// the clock's GO_CLOCK
+#define ORBIT_TO_GO 8.30
+#define READY_ALONE 1.08
+#define ORBIT_TO_GO_MULTI 9.97
+#define GO_CLOCK 0.06
+#define MULTI_READY_RETURN 0x41bc8ccull     // BrAdvSequence.updateReady, just after its call of ResetStage
+#define MULTI_START_RETURN 0x41bca7cull     // BrAdvSequence.updateReady, just after its call of ResetStageAnimation
+#define F_RESET_STAGE_ANIMATION 0x431f350ull
+#define MAX_ANIMS 1024
+
+static struct { uint32_t stage; int kind, shift; } g_anim[MAX_ANIMS];
+static int g_nanim = -1;
+static uint64_t g_anim_stage;               // the MainGameStage the values below are for
+static int g_anim_cur = -1;                 // its g_anim entry, -1 a stage of Rumble's own
+static double g_armed_t0;                   // the orbit start the Animators were set for
+static int g_continuous;                    // set at the orbit's start: READY keeps them where they are
+static int g_held;                          // the intro state has set the motion (until GO)
+static int g_speed0;                        // the Animators are held at speed 0
+static double g_motion_t;                   // test: where the motion should be (seconds), to compare at GO
+static int g_prev_state = -1;
+
+static void load_anim(void) {
+    char path[700], line[256];
+    g_nanim = 0;
+    snprintf(path, sizeof path, "%smania\\mania_courses.txt", rt_exe_dir());
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    while (fgets(line, sizeof line, f) && g_nanim < MAX_ANIMS) {
+        unsigned id;
+        int kind, shift;
+        if (sscanf(line, "anim %u %d %d", &id, &kind, &shift) == 3) {
+            g_anim[g_nanim].stage = id; g_anim[g_nanim].kind = kind; g_anim[g_nanim].shift = shift;
+            g_nanim++;
+        }
+    }
+    fclose(f);
+}
+
+static float lf(Cpu *c) { uint32_t u = (uint32_t)c->v[0]; float f; memcpy(&f, &u, 4); return f; }
+static void call_f(Cpu *c, uint64_t fn, uint64_t obj, float f) {
+    c->x[0] = obj; c->x[1] = 0; put_v(c, &f, 1);
+    rt_call_regs(c, FN(fn));
+}
+
+// layer 0's time in seconds (test log)
+static float anim_time(Cpu *c, uint64_t a) {
+    uint8_t info[64] = {0};
+    c->x[0] = a; c->x[1] = 0; c->x[2] = 0; c->x[8] = (uint64_t)(uintptr_t)info;
+    rt_call_regs(c, FN(F_ANIMATOR_STATE_INFO));
+    float nt, len;
+    memcpy(&nt, info + 0xc, 4); memcpy(&len, info + 0x10, 4);
+    return nt * len;
+}
+
+typedef void (*each_fn)(Cpu *c, uint64_t animator, float value);
+static int each_animator(Cpu *c, uint64_t stage, each_fn fn, float value) {
+    uint64_t list = stage ? LD64(stage + STAGE_ANIMATORS) : 0, items = list ? LD64(list + 0x10) : 0;
+    int n = list ? (int)LD32(list + 0x18) : 0;
+    for (int i = 0; i < n && items; i++) {
+        uint64_t a = LD64(items + 0x20 + 8 * (uint64_t)i);
+        if (a) fn(c, a, value);
+    }
+    return n;
+}
+static void set_to(Cpu *c, uint64_t a, float seconds) {   // time 0, then forward (or back) by `seconds`
+    float before = 0;
+    c->x[0] = a; c->x[1] = 0; put_v(c, (float[]){0}, 1);
+    rt_call_regs(c, FN(F_RESET_ANIMATOR));
+    if (logging()) before = anim_time(c, a);
+    if (seconds != 0) call_f(c, F_ANIMATOR_UPDATE, a, seconds);
+    if (logging()) rt_log("mania: stage motion: animator set to %.3f s (layer 0 at %.3f s, was %.3f)", seconds, anim_time(c, a), before);
+}
+static void step(Cpu *c, uint64_t a, float dt) { call_f(c, F_ANIMATOR_UPDATE, a, dt); }
+static void set_speed(Cpu *c, uint64_t a, float s) { call_f(c, F_ANIMATOR_SET_SPEED, a, s); }
+
+// Split screen and online (BrAdvSequence): the start is set by a clock all players share,
+// RuntimeParam.battle.elapsedTime, once the start message is in (isRecvStartGame). 1 and the clock's seconds, or 0.
+#define F_RUNTIME_BATTLE 0x43dbb50ull       // Wonder.RuntimeParam.get_battle (static)
+#define F_RECV_START 0x43de1b0ull           // RuntimeParam.BattleParam.get_isRecvStartGame
+#define F_ELAPSED 0x43de170ull              // RuntimeParam.BattleParam.get_elapsedTime -> GameTimer (8 bytes)
+#define F_TIMER_RAW_SEC 0x43afde0ull        // GameTimer.get_rawSec (by reference)
+static int start_clock(Cpu *c, float *sec) {
+    uint64_t b = rt_call(c, FN(F_RUNTIME_BATTLE), 1, 0ull);
+    if (!b || !((int)rt_call(c, FN(F_RECV_START), 2, b, 0ull) & 1)) return 0;
+    uint64_t timer = rt_call(c, FN(F_ELAPSED), 2, b, 0ull);
+    c->x[0] = (uint64_t)(uintptr_t)&timer; c->x[1] = 0;
+    rt_call_regs(c, FN(F_TIMER_RAW_SEC));
+    *sec = lf(c);
+    return 1;
+}
+
+#define F_IS_BATTLE_MODE 0x43de0a0ull       // RuntimeParam.BattleParam.get_isBattleMode: split screen, online, Battle
+static int is_multi(Cpu *c) {
+    uint64_t b = rt_call(c, FN(F_RUNTIME_BATTLE), 1, 0ull);
+    return b && (rt_call(c, FN(F_IS_BATTLE_MODE), 2, b, 0ull) & 1);
+}
+
+static double g_state_t;
+// Wonder.MainGameStage::FixedUpdate()
+int rt_hook_4323530(Cpu *c) {
+    if (g_nanim < 0) load_anim();
+    if (!g_nanim) return 0;
+    uint64_t stage = c->x[0];
+    uint64_t sx[31]; __uint128_t sv[32];
+    memcpy(sx, c->x, sizeof sx); memcpy(sv, c->v, sizeof sv);
+    if (stage != g_anim_stage) {                                // a new stage: which one
+        g_anim_stage = stage; g_anim_cur = -1; g_armed_t0 = 0; g_continuous = 0; g_held = 0; g_prev_state = -1;
+        uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull), list = sel ? LD64(sel + SELECTOR_STAGELIST) : 0;
+        uint32_t row = list ? (uint32_t)rt_call(c, FN(F_CURRENT_STAGE), 2, list, 0ull) : 0;
+        for (int i = 0; i < g_nanim; i++)
+            if (g_anim[i].stage == row) { g_anim_cur = i; break; }
+    }
+    if (g_anim_cur >= 0) {
+        int state = (int)rt_call(c, FN(F_MAIN_GAME_STATE), 1, 0ull);
+        float mult;
+        memcpy(&mult, (void *)(uintptr_t)(stage + STAGE_ANIM_SPEED), 4);
+        c->x[0] = 0; rt_call_regs(c, FN(F_FIXED_DELTA));
+        float dt = lf(c) * mult;
+        float shift = g_anim[g_anim_cur].shift / 60.0f;
+        int kind = g_anim[g_anim_cur].kind;
+        if (logging() && state != g_prev_state) {
+            double t = now();
+            rt_log("mania: stage motion: state %d -> %d after %.2f s%s", g_prev_state, state, g_prev_state < 0 ? 0.0 : t - g_state_t,
+                   state == STATE_GAME ? "" : "");
+            if (state == STATE_GAME && g_prev_state == STATE_READY) {
+                uint64_t list = LD64(stage + STAGE_ANIMATORS), items = list ? LD64(list + 0x10) : 0;
+                uint64_t a = items && LD32(list + 0x18) ? LD64(items + 0x20) : 0;
+                rt_log("mania: stage motion at GO: %.3f s counted, %.3f s in layer 0, Mania: %.3f s (kind %d)", g_motion_t,
+                       a ? anim_time(c, a) : -1.0f, shift, kind);
+            }
+            g_state_t = t;
+        }
+        g_prev_state = state;
+        static int trace = -1;
+        if (trace < 0) trace = getenv("BR_MOTION_TRACE") != NULL;
+        if (trace && state >= STATE_INTRO && state <= STATE_GAME) {    // test: the motion's time at every step
+            uint64_t list = LD64(stage + STAGE_ANIMATORS), items = list ? LD64(list + 0x10) : 0;
+            uint64_t a = items && LD32(list + 0x18) ? LD64(items + 0x20) : 0;
+            float clock = 0;
+            int started = start_clock(c, &clock);
+            if (a) rt_log("mania: motion trace: state %d, layer 0 at %.4f s, start clock %d %.4f", state, anim_time(c, a), started, clock);
+        }
+        // the intro state begins (under the loading screen): the motion is set where it must be when the orbit
+        // starts, so that it reaches `shift` at GO, and held there; the orbit's start lets it run (OnInitialize)
+        if (state == STATE_INTRO && !g_held) {
+            g_held = 1; g_armed_t0 = 0;
+            g_motion_t = kind == 2 ? shift : shift - (float)(is_multi(c) ? ORBIT_TO_GO_MULTI : ORBIT_TO_GO);
+            each_animator(c, stage, set_to, g_motion_t);
+            each_animator(c, stage, set_speed, 0.0f);
+            g_speed0 = 1;
+        }
+        if (state == STATE_INTRO && kind == 1 && g_cur >= 0 && g_t0 && g_t0 != g_armed_t0) {
+            g_armed_t0 = g_t0;
+            each_animator(c, stage, set_speed, 1.0f);
+            g_speed0 = 0;
+            g_continuous = 1;
+            if (logging()) rt_log("mania: stage motion: the orbit starts, motion runs (shift %d frames)", g_anim[g_anim_cur].shift);
+        } else if (state == STATE_READY && kind == 1) {
+            // the game does not step them in READY. With the shared start clock (split screen, online) the step is
+            // spread so that the motion is at `shift` when the clock reaches GO: the same moment on every machine
+            float clock, d = dt;
+            if (start_clock(c, &clock) && GO_CLOCK - clock > 0.1f) {
+                uint64_t list = LD64(stage + STAGE_ANIMATORS), items = list ? LD64(list + 0x10) : 0;
+                uint64_t a = items && LD32(list + 0x18) ? LD64(items + 0x20) : 0;
+                float rate = a ? (shift - anim_time(c, a)) / (GO_CLOCK - clock) : 1.0f;
+                d = dt * (rate < 0 ? 0 : rate > 3 ? 3 : rate);
+                static double logged;
+                if (logging() && now() - logged > 0.5) {
+                    logged = now();
+                    rt_log("mania: stage motion: READY, start clock %.3f, motion rate %.2f", clock, rate);
+                }
+            }
+            each_animator(c, stage, step, d);
+            g_motion_t += d;
+        } else if (state == STATE_INTRO && g_continuous) {
+            g_motion_t += dt;                                   // the game steps them
+        }
+        if (state == STATE_GAME && g_held) {
+            // normally READY's ResetStage has let them go; a READY this file does not know (another sequence) has not
+            if (g_speed0) {
+                each_animator(c, stage, set_speed, 1.0f);
+                if (logging()) rt_log("mania: stage motion: GO without READY's reset seen: motion let go");
+            }
+            g_continuous = 0; g_held = 0; g_speed0 = 0;
+        }
+    }
+    memcpy(c->x, sx, sizeof sx); memcpy(c->v, sv, sizeof sv);
+    return 0;
+}
+
+// Wonder.MainGameStage::ResetStage(bool isResetBanana, bool forceRespawnTransform): READY's call puts the Animators
+// back to the checkpoint frame (a lambda per Animator, called through a delegate, which a hook does not see). Around
+// it: each Animator's time is read before and given back after (motion running on), or set to Mania's start.
+#define MAX_STAGE_ANIMATORS 64
+// Runs the game's reset `fn` (stage, a1, a2) and then: keep = each Animator gets its time back; otherwise each is
+// let go (speed 1) at `to` seconds
+static void around_reset(Cpu *c, uint64_t fn, uint64_t stage, uint64_t a1, uint64_t a2, int nargs, int keep, float to) {
+    uint64_t list = LD64(stage + STAGE_ANIMATORS), items = list ? LD64(list + 0x10) : 0;
+    int n = list ? (int)LD32(list + 0x18) : 0;
+    if (n > MAX_STAGE_ANIMATORS) n = MAX_STAGE_ANIMATORS;
+    float before[MAX_STAGE_ANIMATORS];
+    for (int i = 0; i < n && items && keep; i++) {
+        uint64_t a = LD64(items + 0x20 + 8 * (uint64_t)i);
+        before[i] = a ? anim_time(c, a) : 0;
+    }
+    if (nargs == 4) rt_call(c, FN(fn), 4, stage, a1, a2, 0ull);
+    else rt_call(c, FN(fn), 2, stage, 0ull);
+    for (int i = 0; i < n && items; i++) {
+        uint64_t a = LD64(items + 0x20 + 8 * (uint64_t)i);
+        if (!a) continue;
+        if (keep) {
+            if (before[i] != 0) call_f(c, F_ANIMATOR_UPDATE, a, before[i]);
+        } else {
+            set_speed(c, a, 1.0f);
+            set_to(c, a, to);
+        }
+    }
+    if (keep && logging()) rt_log("mania: stage motion: a reset before GO keeps the motion running (%d animators, layer 0 at %.3f s)", n, n ? before[0] : 0.0f);
+}
+
+// Wonder.MainGameStage::ResetStage(bool isResetBanana, bool forceRespawnTransform): READY's call (single player:
+// MainGameSequence, split screen / online: BrAdvSequence) puts the Animators back to the checkpoint frame (a lambda
+// per Animator, called through a delegate, which a hook does not see). Around it: each Animator's time is given back
+// (motion running on), or set to Mania's start.
+int rt_hook_4321130(Cpu *c) {
+    static int inside;
+    if (inside || g_anim_cur < 0 || (c->x[30] != FN(READY_RESET_RETURN) && c->x[30] != FN(MULTI_READY_RETURN))) return 0;
+    uint64_t lr = c->x[30], stage = c->x[0], a1 = c->x[1], a2 = c->x[2];
+    float shift = g_anim[g_anim_cur].shift / 60.0f;
+    int kind = g_anim[g_anim_cur].kind;
+    int keep = kind == 1 && g_continuous && g_cur >= 0;
+    float to = kind == 2 ? shift : shift - (float)READY_ALONE;
+    inside = 1;
+    around_reset(c, F_RESET_STAGE, stage, a1, a2, 4, keep, to);
+    inside = 0;
+    if (!keep) g_motion_t = to;
+    // split screen / online: from here the start clock steers OnInitialize motion (FixedUpdate), so it runs on
+    // through the second reset as well
+    g_continuous = kind == 1 && lr == FN(MULTI_READY_RETURN) ? 1 : keep;
+    g_speed0 = 0;
+    c->x[30] = lr;
+    return 1;
+}
+
+// Wonder.MainGameStage::ResetStageAnimation(): split screen / online, a moment before GO (BrAdvSequence, when the
+// start clock reaches -GameParam's lead): the Animators to 0 again. Kept running (OnInitialize, steered) or at `shift`.
+int rt_hook_431f350(Cpu *c) {
+    static int inside;
+    if (inside || g_anim_cur < 0 || c->x[30] != FN(MULTI_START_RETURN)) return 0;
+    uint64_t lr = c->x[30], stage = c->x[0];
+    int kind = g_anim[g_anim_cur].kind;
+    float shift = g_anim[g_anim_cur].shift / 60.0f;
+    inside = 1;
+    around_reset(c, F_RESET_STAGE_ANIMATION, stage, 0, 0, 2, kind == 1, shift);
+    inside = 0;
+    c->x[30] = lr;
+    return 1;
+}

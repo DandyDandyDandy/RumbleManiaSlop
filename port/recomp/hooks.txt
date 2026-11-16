@@ -56,6 +56,9 @@
 442d600   Wonder.MgBeginningTimelineController::PlayerTimelineUpdate(bool)   (the READY state keeps the orbit's end)
 42aa8f0   Wonder.MgCameraStateReady::setPos(GameObject)   (the game camera before GO: Mania's pose)
 20c7800   Cinemachine.CinemachineBrain::PushStateToUnityCamera(ref CameraState)   (Mania's camera pose)
+4323530   Wonder.MainGameStage::FixedUpdate()   (the stage's motion: set at the orbit's start, stepped through READY)
+4321130   Wonder.MainGameStage::ResetStage(bool, bool)   (READY keeps the motion running, or sets Mania's start)
+431f350   Wonder.MainGameStage::ResetStageAnimation()   (split screen / online: the reset just before GO keeps it running)
 # port/runtime/ultrawide.c: screens wider than 16:9
 4176dc0   UnityEngine.UI.CanvasScaler::Handle
 452f4b0   Wonder.UI.UISystemViewManager::SetActiveOutOfRangeBlackView

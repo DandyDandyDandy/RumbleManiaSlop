@@ -606,6 +606,26 @@ one for a test import).
 * `BR_MANIA_LOG`: log lines for switch presses, seesaw touches, the BGM cue of a stage, the world picker's
   list and dropped statistics calls.
 
+### Stage motion through the intro and READY (`port\runtime\mania_intro.c`)
+
+Rumble steps a stage's Animators in `MainGameStage.FixedUpdate` in every state but READY and RESULT, and READY's
+first frame (`ResetStage`) puts them back to frame 0: moving parts ran during the intro, jumped back at READY and
+stood still until GO (the user saw it on Gears, st1052). Banana Mania has a rule per stage (`MgStageDatum`
+`m_StageAnimationStartKind`, `m_ShiftAnimationStartFrame`; read from `MainGameStage.initReadySequence` /
+`updateReady` / `FixedUpdate`): `OnInitialize` (403 of 410) runs the motion through the orbit and READY and has it
+at `shift` at GO (`Animator.Update(shift/60 - span)` when its READY sequence, which includes the orbit, begins;
+Unity accepts the negative step); `OnReadyGo` holds it until GO, at `shift`. The import writes `anim <stage row>
+<kind 1|2> <shift frames>` lines into `mania_courses.txt`.
+
+The port: at the first intro frame (under the loading screen) the motion is set to `shift - ORBIT_TO_GO` and held
+(speed 0); the orbit's start lets it run; READY's reset is wrapped (time read before, given back after) and the port
+steps the motion through READY. A retry or skipped intro: READY sets `shift - READY_ALONE`. Split screen / online
+(`BrAdvSequence`, recognised by `RuntimeParam.battle.isBattleMode`): a longer READY, two resets (`ResetStage`, and
+`ResetStageAnimation` shortly before GO, both wrapped), and the motion's rate in READY is steered by the shared start
+clock (`battle.elapsedTime`) so it is at `shift` at the clock's GO, the same moment on every machine. The constants
+were measured on st1052. Rumble's own stages are untouched. Test: `BR_MOTION_TRACE=1` logs the motion's time every
+step ("inf" while held), `_slop_scratch\motion_check.py port.log` lists irregular steps.
+
 ## Spin Dash on or off (`port\runtime\spindash.c`)
 
 Banana Mania's stages were made for a ball without the Spin Dash, so it can be turned off. The choice is not tied

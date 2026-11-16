@@ -580,6 +580,11 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
         intro = extras.get(sid, {}).get('intro')
         if intro:
             lines.append(f'intro {row_of[sid]} ' + ' '.join(f'{x:g}' for x in intro))
+    # when a stage's motion starts in Mania (MgStageDatum: 1 OnInitialize = running through the intro, 2 OnReadyGo =
+    # still until GO) and where it is at GO (frames of 1/60 s): the port follows it (mania_intro.c)
+    for sid in stage_ids:
+        s = mania.stages[sid]
+        lines.append(f"anim {row_of[sid]} {2 if s.get('anim_start') == 'OnReadyGo' else 1} {s.get('anim_shift', 0)}")
     # the game's own Adventure worlds in display order with the world each one follows: the port works out the
     # "highest unlocked world" from these when the game's own answer is an imported course (mania.c)
     for r in own:
