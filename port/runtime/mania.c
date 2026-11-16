@@ -883,10 +883,22 @@ static int course_imported(uint32_t course) {
     if (g_ncourses < 0) load_courses();
     return g_first_id && course >= g_first_id;
 }
+// A managed exception thrown inside a call made from a hook comes back with eh_unwinding set (rt_call); the hook
+// must not go on as if nothing happened (the lifted body would then run half unwound). It is dropped and logged.
+static int call_threw(Cpu *c, const char *what) {
+    if (!c->eh_unwinding) return 0;
+    c->eh_unwinding = 0;
+    rt_log("mania: missions: %s threw; the exception is dropped", what);
+    return 1;
+}
 static void view_shown(Cpu *c, uint64_t component, int on) {
-    uint64_t go = component ? rt_call(c, FN(F_GET_GAMEOBJECT), 2, component, 0ull) : 0;
-    if (go && (int)(rt_call(c, FN(F_GO_ACTIVE_SELF), 2, go, 0ull) & 1) != !!on)
-        rt_call(c, FN(F_SET_ACTIVE), 3, go, (uint64_t)!!on, 0ull);
+    if (!obj_alive(c, component)) return;               // missing or destroyed (Unity's "fake null")
+    uint64_t go = rt_call(c, FN(F_GET_GAMEOBJECT), 2, component, 0ull);
+    if (call_threw(c, "get_gameObject") || !go) return;
+    int active = (int)(rt_call(c, FN(F_GO_ACTIVE_SELF), 2, go, 0ull) & 1);
+    if (call_threw(c, "get_activeSelf") || active == !!on) return;
+    rt_call(c, FN(F_SET_ACTIVE), 3, go, (uint64_t)!!on, 0ull);
+    call_threw(c, "SetActive");
 }
 #define KEEP_ARGS(n) uint64_t a_[8], lr_ = c->x[30]; for (int i_ = 0; i_ < (n); i_++) a_[i_] = c->x[i_]
 #define GIVE_ARGS(n) do { for (int i_ = 0; i_ < (n); i_++) c->x[i_] = a_[i_]; c->x[30] = lr_; } while (0)
@@ -969,7 +981,9 @@ int rt_hook_44517a0(Cpu *c) {
     if (!course_imported(course)) return 0;
     uint64_t lr = c->x[30], idx = (uint32_t)c->x[1];
     uint64_t stage = rt_call(c, FN(F_MISSION_STAGE), 1, 0ull);
+    if (call_threw(c, "MissionManager.get_stage")) stage = 0;
     uint64_t p = stage ? rt_call(c, FN(F_STAGE_MISSION_PARAM), 5, stage, (uint64_t)course, idx, (uint64_t)MISSION_GOLD, 0ull) : 0;
+    if (call_threw(c, "GetStageMissionParam")) p = 0;
     uint32_t cond = p ? LD32(p + PARAM_CONDITION) : 0;
     c->x[0] = 1ull | ((uint64_t)(cond == 3 || cond == 4) << 32);
     c->x[30] = lr;
