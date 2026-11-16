@@ -7,7 +7,9 @@ What a person sets with it (saved at once into mania\\overrides.json, which mani
     per stage   the Golden Banana (click one of the stage's bananas in the 3D view): the one stage mission of an
                 imported stage
     per world   whether it has the stage mission, and the Rumble world whose graphics it borrows in the menus
-    pictures    of one's own for a stage's thumbnail and a world's small picture, big picture and icon: uploaded
+    postcards   loading screen tips of one's own (title, text, category, picture), previewed on a mock-up of the
+                loading screen beside the game's own tips (postcards.py)
+    pictures   of one's own for a stage's thumbnail, a world's small picture, big picture and icon and a postcard: uploaded
                 in the page (or, for a stage, taken from the 3D view), cut to the game's shape and kept as PNG
                 files in input\\pictures\\ (the user's folder, not part of the repo). A stage picture taken from
                 the 3D view is a preview: its point of view is kept too ("view"), and the import lets the game
@@ -119,7 +121,8 @@ class Game:
             t = text_t.row(r['_id'])
             worlds.append({'id': r['_id'], 'name': t['Name'], 'serial': t['SerialName'], 'thumbnail': r['ThumbnailSpriteID'],
                            'brochure': r['BrochureSpriteID'], 'icon': r['IconSpriteID'], 'title': bool(r['BeginningTitle'][0])})
-        return {'courses': courses, 'worlds': worlds, 'overrides': overrides.load(), 'bunch': 10}
+        import postcards
+        return {'courses': courses, 'worlds': worlds, 'overrides': overrides.load(), 'bunch': 10, 'cards': postcards.game_postcards(self.db)}
 
     # ---- pictures -------------------------------------------------------------------------------------------
     def picture(self, kind, name):
@@ -155,12 +158,13 @@ class Game:
     def set_picture(self, section, name, key, data):
         """Keep an uploaded picture (data: a data URL or base64 of an image file; None removes it) for the stage
         or course `name` in the shape of `key`; returns the file's name (None when removed)."""
-        if section not in ('stages', 'courses') or key not in overrides.PICTURE_SHAPES or (section == 'stages' and key != 'picture'):
+        if (section not in ('stages', 'courses', 'postcards') or key not in overrides.PICTURE_SHAPES
+                or (section != 'courses' and key != 'picture')):
             raise ValueError('no such picture')
         safe = ''.join(ch if ch.isascii() and ch.isalnum() else '_' for ch in str(name))[:60]
         if not safe:
             raise ValueError('no such stage or world')
-        file = ('st' if section == 'stages' else 'world_') + safe + ('' if section == 'stages' else '_' + key) + '.png'
+        file = {'stages': f'st{safe}', 'courses': f'world_{safe}_{key}', 'postcards': f'card_{safe}'}[section] + '.png'
         path = os.path.join(overrides.PICTURES, file)
         if data is None:
             if os.path.exists(path):

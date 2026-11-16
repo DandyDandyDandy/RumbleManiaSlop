@@ -650,6 +650,11 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
             for row, cue in TITLE_CUES.items():
                 cue_t.row(row).update(cueSheet=sid_sheet, innerCueName=cue)
             print("title music: Banana Mania's", flush=True)
+    # ---- the user's postcards: loading screen tips of their own (overrides.json, postcards.py)
+    import postcards
+    n = postcards.add(db, sprites, ov, out, own_picture)
+    if n:
+        print(f'postcards: {n} of your own', flush=True)
     written = db.save(out_switch)
     return written, music_lines, lines, sprites
 

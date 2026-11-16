@@ -803,6 +803,41 @@ screen: the title cards seen (the theme of World 3) do not show one. Not looked 
 completed in play (only the golden one was), perfect marks, split screen and online with missions, other
 languages.
 
+## Postcards: loading screen tips of one's own (`mania\postcards.py`)
+
+A loading screen (`UIViewFade_Tips`, `UIPartViewTips.SetTipsData`) shows one row of the table `Tips`: a picture
+(`SpriteID`, 512 x 512 DXT1), a title and a text (`Title`, `Explanation`: message ids of `Tips_Text_<lang>`), and
+its category (`Tips_Category`: a stamp icon of 220 x 174 and a name). `TermsID` puts the tip into a list
+(`Tips_Terms`: play styles, stages of story and battle progress, battle types, `IsPreferential`).
+`TipsManager.pick` (0x4430040) takes the open lists in turn, every other time a preferential one
+(`pickPreferential`), and steps through the tips of each list; both places are kept in the save
+(`SaveUserParam.TipsParam`, a dictionary per terms id that adds a missing id on demand). The Gallery's documents
+list the tips too (`GalleryDocumentParam.GetTipsParam` also adds a missing id).
+
+The user's postcards (`overrides.json` "postcards": title, text, category, picture, off) become rows after the
+game's own (239 on), with one message id each whose title and text are the same in every language. They form a
+terms row of their own (36), a copy of row 1, which is open everywhere, made preferential: the game has two or
+three preferential lists open at a time (the control guides, row 12, always), so one of the user's postcards
+comes up about every fourth loading screen. Their picture is a copy of the game's tip picture 2716 (AiAi waving,
+used by 23 of the game's tips) with the user's image (`Sprites.add(..., template=2716)`); without a picture of
+their own they show that picture itself. The tables are written by every import, also without postcards, so
+removed ones do not stay behind.
+
+In the editor the tab **Postcards** lists the game's 208 tips and the user's (filter by category) and shows the
+chosen one on a mock-up of the loading screen; game markup in a text (`<TextTag=..>`, `<InputActionBtnIcon=..>`,
+the button glyphs) is drawn as a plain mark. The game's tips are read only; "Make a copy of your own" starts a
+postcard from one. A postcard of one's own has a title, a text (a new line is a new line), a category, a picture
+(uploaded, cut to the 512 x 512 square, `input\pictures\card_<n>.png`), "Show it in the game" and Delete.
+
+What the game draws (seen 2026-11-16): an airmail postcard on black, the title in a dark red banner at the top
+left, the text below it, a "TIPS" postmark and the category's stamp at the top right, the picture below them, the
+monkey loading mark under the card; the category's name is not shown. The editor's mock-up follows that layout.
+Checked in the running game (save T, `try_stage.py st1001`): a test postcard (category Characters, an uploaded
+picture, two lines of text) came up on the very first loading screen with its title, both lines, the stamp and
+the picture. Going on to the next stage after a goal shows no loading screen (a short transition), so only
+entering from Select Stage was seen. Not looked at: how often it comes up over many loading screens, the
+Gallery's documents with a postcard, other languages, a postcard without a picture, split screen and online.
+
 ## The fork's title screen (`mania\title.py`, pictures in `mania\title\`)
 
 PNG files replace the title screen's textures: `mania\title\` holds RumbleMania's own title (committed on

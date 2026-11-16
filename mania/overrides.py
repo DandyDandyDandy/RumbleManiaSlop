@@ -10,13 +10,18 @@ look of a world in the menus. The editor
      "courses": {"<Mania course name>": {"missions": true | false,
                                          "theme": <Rumble course id>, "thumbnail": "mania" | <Rumble course id>,
                                          "brochure": <id>, "icon": <id> | 0, "title": <id> | 0,
-                                         "picture": "<file>", "big_picture": "<file>", "icon_picture": "<file>"}}}
+                                         "picture": "<file>", "big_picture": "<file>", "icon_picture": "<file>"}},
+     "postcards": {"<key>": {"title": "...", "text": "...", "category": <Tips_Category id>, "picture": "<file>",
+                             "off": true}}}
 
 Everything is optional. A course has the stage mission when "missions" says so, and without the key when one of
 its stages has a "gold". Keys of earlier versions ("time", "time_perfect", "bananas") are dropped when read. "theme" is the Rumble world whose graphics the course borrows (the picture beside
 the list in Select World, the world icon, the title card when a stage loads); "brochure", "icon" and "title" each
 name another world for one of them, and 0 leaves the icon or the title card out. "thumbnail" is the course's small
 picture in Select World: Banana Mania's own ("mania", the default where Mania has one) or a Rumble world's.
+
+"postcards" are loading screen tips of one's own (postcards.py): a title and a text (the same in every language),
+the category whose stamp and name they show, a picture, and "off" to keep one out of the game for now.
 
 Pictures of one's own go before all of that: "picture" of a stage is its thumbnail in Select Stage, "picture",
 "big_picture" and "icon_picture" of a course its small picture, the big picture beside the lists and the world
@@ -38,14 +43,17 @@ PICTURE_SHAPES = {'picture': (512, 512, False), 'big_picture': (804, 1004, False
 STAGE_KEYS = {'gold': str, 'picture': str, 'view': list}
 COURSE_KEYS = {'missions': bool, 'theme': int, 'thumbnail': (int, str), 'brochure': int, 'icon': int, 'title': int,
                'picture': str, 'big_picture': str, 'icon_picture': str}
+CARD_KEYS = {'title': str, 'text': str, 'category': int, 'picture': str, 'off': bool}
+SECTIONS = (('stages', STAGE_KEYS), ('courses', COURSE_KEYS), ('postcards', CARD_KEYS))
+TEXT_MAX = 2000                 # characters of a postcard's title or text
 
 
 def clean(data):
     """`data` with only the known keys of the right type; raises ValueError on a file of another shape."""
     if not isinstance(data, dict):
         raise ValueError('overrides: not an object')
-    out = {'stages': {}, 'courses': {}}
-    for section, keys in (('stages', STAGE_KEYS), ('courses', COURSE_KEYS)):
+    out = {section: {} for section, _ in SECTIONS}
+    for section, keys in SECTIONS:
         entries = data.get(section, {})
         if not isinstance(entries, dict):
             raise ValueError(f'overrides: "{section}" is not an object')
@@ -66,6 +74,8 @@ def clean(data):
                     raise ValueError(f'overrides: {section}/{name}/{k} has the wrong type')
                 if isinstance(v, (int, float)) and not isinstance(v, bool) and (v < 0 or v > 100000):
                     raise ValueError(f'overrides: {section}/{name}/{k} is out of range')
+                if isinstance(v, str) and len(v) > TEXT_MAX:
+                    raise ValueError(f'overrides: {section}/{name}/{k} is too long')
                 if k in PICTURE_SHAPES and not PICTURE_NAME.fullmatch(v):
                     raise ValueError(f'overrides: {section}/{name}/{k} is not the name of a PNG file')
                 kept[k] = v
@@ -77,7 +87,7 @@ def clean(data):
 def load(path=None):
     path = path or PATH
     if not os.path.exists(path):
-        return {'stages': {}, 'courses': {}}
+        return {section: {} for section, _ in SECTIONS}
     with open(path, encoding='utf-8') as f:
         return clean(json.load(f))
 
@@ -86,12 +96,12 @@ def save(data, path=None):
     """Write the file (keys sorted, one entry a line: changes read well in a diff)."""
     data = clean(data)
     lines = ['{']
-    for i, section in enumerate(('stages', 'courses')):
+    for i, (section, _) in enumerate(SECTIONS):
         lines.append(f' "{section}": {{')
         entries = sorted(data[section].items(), key=lambda kv: (0, int(kv[0])) if kv[0].isdigit() else (1, kv[0]))
         for k, (name, entry) in enumerate(entries):
             lines.append(f'  {json.dumps(name)}: {json.dumps(entry, sort_keys=True)}' + (',' if k + 1 < len(entries) else ''))
-        lines.append(' }' + (',' if i == 0 else ''))
+        lines.append(' }' + (',' if i + 1 < len(SECTIONS) else ''))
     lines.append('}')
     tmp = (path or PATH) + '.tmp'
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:

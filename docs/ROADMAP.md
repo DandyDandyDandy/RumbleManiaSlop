@@ -5,8 +5,8 @@ Notes on work that is planned but not started, so the reasons are not lost.
 ## The level editor: what it does not do yet
 
 The editor exists (`editor.cmd`; `docs\MANIA.md`, "Missions, menu pictures and the editor"): per stage the Golden
-Banana, the mission time and banana count; per world the missions switch and the Rumble world whose graphics it
-borrows; stage and world thumbnails come from Banana Mania by themselves. Still wished for:
+Banana; per world the missions switch and the Rumble world whose graphics it
+borrows; stage and world thumbnails come from Banana Mania by themselves; postcards (loading screen tips) of one's own. Still wished for:
 
 * **Placing a banana anywhere**, not only turning one of the stage's own into the golden one (every imported
   stage has at least one banana, so each can have a Golden Banana today).
