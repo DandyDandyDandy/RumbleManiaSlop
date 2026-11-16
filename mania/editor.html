@@ -372,7 +372,8 @@ function pickStage(s) {
   stage = s;
   try { localStorage.setItem('mania-editor', JSON.stringify({course: IDX.courses.indexOf(course), stage: s.id})); } catch (e) {}
   for (const r of $('stages').children) r.classList.toggle('on', +r.dataset.id === s.id);
-  const on = $('stages').querySelector('.on'); if (on) on.scrollIntoView({block: 'nearest'});
+  // '.stage.on', not '.on': a Golden Banana badge is '.badge.on' too, and scrolling to it jumped the list to its top
+  const on = $('stages').querySelector('.stage.on'); if (on) on.scrollIntoView({block: 'nearest'});
   const i = course.stages.indexOf(s);
   $('title').innerHTML = ''; $('title').append(el('b', null, s.name), ` · ${course.prefix}-${String(i + 1).padStart(2, '0')} · st${s.id}`);
   fillStagePanel(); drawMocks(); loadStage(s);
