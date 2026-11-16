@@ -173,6 +173,7 @@
 4690da0   Wonder.BattleStarter::OnRecvPrepareAdvGame   (test switch BR_START_STAGE)
 47042b0   Wonder.UI.MainMenu.Adventure.UIStateAdvMultiSetting_Offline::<setupInnerFSM>b__9_3   (test switch BR_START_STAGE)
 454d230   Wonder.UI.SceneChange.UIStateArgTransitionToMainGameScene::.ctor   (test switch BR_START_STAGE)
+4551e80   Wonder.UI.TitleLoop.UIStateTitle::exec   (test switch BR_BOOT_STAGE: straight from the title into a stage)
 45524c0   Wonder.UI.TitleLoop.UIStateTitle::onCancel_SelectPlayStyle   (asks "Quit the game?", pc_shell.c)
 3e31d50   TMPro.TMP_Text::set_text   (the title's version label gets the port's version, pc_shell.c)
 # port/runtime/title_call.c: no title call on the fork's title screen (the handle prepares, its Play is skipped)
@@ -181,6 +182,17 @@
 # port/runtime/gameplay.c: Spin Dash on or off, Ball Physics Rumble or Mania (Options rows for single player, room rows for multiplayer Adventure)
 42ed590   Wonder.PhysicsBall::BallCollision   (Ball Physics Mania: contact with Mania's values, no speed cap)
 42e57b0   Wonder.MainGamePlayerBall::BallMove   (Ball Physics Mania: gravity and tilt with Mania's values)
+4282940   Wonder.MgCharaManipulator::mdMovePhase2   (test log BR_ANIM_LOG)
+43029a0   Wonder.MgPlayer::updateOnGroundCore   (Ball Physics Mania: recent contacts count as touching, for the animation)
+4316a10   Wonder.PlayerStateMainGameBase::OnLateUpdate   (Ball Physics Mania: notes the player for the hook below)
+4317520   Wonder.PlayerStateMainGameBase::CalcBalanceVector   (Ball Physics Mania: no teetering at Rotation speed)
+42831e0   Wonder.MgCharaManipulator::mdRotation   (test log BR_ANIM_LOG)
+42833f0   Wonder.MgCharaManipulator::mdBalancePhase2   (test log BR_ANIM_LOG)
+4282ba0   Wonder.MgCharaManipulator::mdMove_Wait1   (test log BR_ANIM_LOG)
+4282f70   Wonder.MgCharaManipulator::mdMove_Wait2or3   (test log BR_ANIM_LOG)
+4283670   Wonder.MgCharaManipulator::mdCheckPlayEndPhase2   (test log BR_ANIM_LOG)
+4283a40   Wonder.MgCharaManipulator::mdKeepPlaying   (test log BR_ANIM_LOG)
+42838c0   Wonder.MgCharaManipulator::mdEmotePhase2   (test log BR_ANIM_LOG)
 4307c30   Wonder.MgPlayer+PlayerSpinActionModule::getMainActionInput
 43084a0   Wonder.MgPlayer+PlayerSpinActionModule::getMainActionDownInput
 45ca090   Wonder.UI.MainGame.UIMgPlayerViewCtrl_Base::SpinAction_OnUpdateIdle

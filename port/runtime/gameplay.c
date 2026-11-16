@@ -284,6 +284,19 @@ static void speed_log(Cpu *c, uint64_t ball) {
 
 // Run one of the two steps (`fn`, re-entered with the bypass flag set) for a player's ball, with Mania's values when
 // they apply. Only balls with m_IsEnableSpeedLimit are players' balls in a stage (PlayerStateMainGame sets it).
+// Physics steps since each player's ball last touched the stage (for the animation fix further down).
+static struct { uint64_t ball; int since; } g_touch[8];
+static int *touch_slot(uint64_t ball) {
+    for (int i = 0; i < 8; i++) if (g_touch[i].ball == ball) return &g_touch[i].since;
+    for (int i = 0; i < 8; i++) if (!g_touch[i].ball) { g_touch[i].ball = ball; g_touch[i].since = 1000; return &g_touch[i].since; }
+    g_touch[0].ball = ball; g_touch[0].since = 1000;
+    return &g_touch[0].since;
+}
+static void note_touch(uint64_t ball) {
+    uint64_t sp = sphere_of(ball);
+    int *t = touch_slot(ball);
+    *t = sp && (LD32(sp + 0x10) & 1) ? 0 : (*t < 1000 ? *t + 1 : 1000);
+}
 static int ball_step(Cpu *c, uint64_t fn, int *inside, int collision) {
     uint64_t ball = c->x[0], pp = 0;
     if (*inside || !ball || !LD8(ball + BALL_SPEED_LIMIT)) return 0;
@@ -301,7 +314,7 @@ static int ball_step(Cpu *c, uint64_t fn, int *inside, int collision) {
         swap_back(&s);
         if (collision) ST8(ball + BALL_SPEED_LIMIT, 1);
     }
-    if (collision && !c->eh_unwinding) speed_log(c, ball);
+    if (collision && !c->eh_unwinding) { note_touch(ball); speed_log(c, ball); }
     return 1;
 }
 int rt_hook_42ed590(Cpu *c) { static __thread int inside; return ball_step(c, F_BALL_COLLISION, &inside, 1); }
@@ -577,5 +590,120 @@ int rt_hook_4649c50(Cpu *c) {
     row_set(r, element_id(item, idx) == COLLISION_ON);
     uint64_t s = rt_tr_str(c, row_value(r));
     if (!c->eh_unwinding && view) rt_call(c, FN(F_SET_VALUE_TEXT), 3, view, s, 0ull);
+    return 1;
+}
+
+// BR_ANIM_LOG=1 (a test aid): what the character's animation sees. MgCharaManipulator gets the ball's speed (km/h,
+// +0xd0) every frame; its move state (mdMovePhase2) blends the run animation by speed / maximumSpeedOfMoveAnimation
+// (capped at 1) and its rotation state (mdRotation) speeds the curled-up spin up between minimum- and
+// maximumSpeedOfRotationAnimation (capped at maximumMultiplesOfRotationAnimation). Logged once a second: which state
+// ran how often, the fastest speed it was given, and the data's thresholds.
+#define ANIM_STATES 8
+static const char *const ANIM_NAMES[ANIM_STATES] = {"move", "rotation", "balance", "wait1", "wait2or3", "playEnd", "keepPlaying", "emote"};
+static void anim_log(uint64_t m, int state) {
+    static int log = -1, counts[ANIM_STATES], once;
+    static float peak;
+    static DWORD since;
+    if (log < 0) log = getenv("BR_ANIM_LOG") != NULL;
+    if (!log || !m) return;
+    uint64_t d = LD64(m + 0x90);
+    float kph = LDF(m + 0xd0);
+    if (d && !once) {
+        once = 1;
+        rt_log("anim: maximumSpeedOfMoveAnimation %g, rotation animation from %g to %g km/h, up to x%g, speedToJudgeMoving %g",
+               LDF(d + 0x1c), LDF(d + 0x24), LDF(d + 0x28), LDF(d + 0x2c), LDF(d + 0x44));
+    }
+    counts[state]++;
+    if (kph > peak) peak = kph;
+    DWORD now = GetTickCount();
+    if (now - since >= 1000) {
+        char line[256];
+        int n = snprintf(line, sizeof line, "anim: %.0f km/h at most;", peak);
+        for (int i = 0; i < ANIM_STATES; i++)
+            if (counts[i] && n < (int)sizeof line) n += snprintf(line + n, sizeof line - n, " %s %d", ANIM_NAMES[i], counts[i]);
+        rt_log("%s", line);
+        memset(counts, 0, sizeof counts); peak = 0; since = now;
+    }
+}
+int rt_hook_4282940(Cpu *c) { anim_log(c->x[0], 0); return 0; }      // MgCharaManipulator.mdMovePhase2
+int rt_hook_42831e0(Cpu *c) { anim_log(c->x[0], 1); return 0; }      // MgCharaManipulator.mdRotation
+int rt_hook_42833f0(Cpu *c) { anim_log(c->x[0], 2); return 0; }      // mdBalancePhase2
+int rt_hook_4282ba0(Cpu *c) { anim_log(c->x[0], 3); return 0; }      // mdMove_Wait1
+int rt_hook_4282f70(Cpu *c) { anim_log(c->x[0], 4); return 0; }      // mdMove_Wait2or3
+int rt_hook_4283670(Cpu *c) { anim_log(c->x[0], 5); return 0; }      // mdCheckPlayEndPhase2
+int rt_hook_4283a40(Cpu *c) { anim_log(c->x[0], 6); return 0; }      // mdKeepPlaying
+int rt_hook_42838c0(Cpu *c) { anim_log(c->x[0], 7); return 0; }      // mdEmotePhase2
+
+// Ball Physics Mania and the character's animation. The animation counts the ball as on the ground only after it has
+// touched the stage for 0.2 s without a break (MgPlayer.updateOnGroundCore: m_GroundingTimer grows while the ball
+// touches and its ground ray hits, and drops to 0 on any frame without a touch, m_FlyingTimer counting instead);
+// before that, PlayerStateMainGameBase.OnLateUpdate keeps the character in Fly / Fall. With Mania's bounce a fast ball
+// skims curved track and touches on only about one physics step in three; the player's per-frame check (and its
+// ground ray, cast along gravity, which misses when the ball rides a tube's wall) then saw no ground for seconds,
+// and the character kept restarting Fly (glitchy, as if trying to hold its pose) instead of curling up into the
+// Rotation animation (120 km/h and more) as in Mania, where the ball counts as on the ground while it keeps touching.
+// So with Mania's physics a player whose ball touched the stage in one of the last TOUCH_STEPS physics steps counts
+// as touching for these two timers.
+#define TOUCH_STEPS 10                      // about 0.17 s
+#define F_UPDATE_ON_GROUND_CORE 0x43029a0ull
+#define F_FIXED_DELTA 0x440d270ull          // Wonder.StepTime::get_fixedDeltaSec
+#define F_STEP_TIME 0x43abad0ull            // Wonder.GameManager::get_stepTime (static)
+#define PLAYER_BALL 0x198                   // MgPlayer.m_PhysicsBall
+#define PLAYER_TOUCH_GROUND 0xdd            // MgPlayer.m_IsTouchGround
+#define PLAYER_GROUNDING 0x130              // MgPlayer.m_GroundingTimer
+#define PLAYER_FLYING 0x134                 // MgPlayer.m_FlyingTimer
+int rt_hook_43029a0(Cpu *c) {
+    static __thread int inside;
+    if (inside) return 0;
+    uint64_t player = c->x[0];
+    int mania = 0;
+    float grounding = player ? LDF(player + PLAYER_GROUNDING) : 0.0f;
+    if (player && LD8(player + PLAYER_IS_LOCAL)) KEEP_ARGS(mania = mania_physics(c));
+    if (c->eh_unwinding) return 0;
+    inside = 1; c->pc = FN(F_UPDATE_ON_GROUND_CORE); rt_dispatch(c); inside = 0;
+    uint64_t ball = LD64(player + PLAYER_BALL);
+    if (!mania || c->eh_unwinding || !ball || LD8(player + PLAYER_TOUCH_GROUND) || *touch_slot(ball) > TOUCH_STEPS) return 1;
+    uint64_t st = rt_call(c, FN(F_STEP_TIME), 1, 0ull);
+    uint32_t u = st ? (uint32_t)(rt_call(c, FN(F_FIXED_DELTA), 2, st, 0ull), c->v[0]) : 0;
+    float dt;
+    memcpy(&dt, &u, 4);
+    if (!(dt > 0.0f && dt < 0.1f)) dt = 1.0f / 60.0f;
+    STF(player + PLAYER_GROUNDING, fminf(grounding + dt, 9999.0f));
+    STF(player + PLAYER_FLYING, 0.0f);
+    return 1;
+}
+
+// Ball Physics Mania: at speed the character curls up instead of teetering. In Mania a ball that touches the ground
+// faster than lostControlSpeed (130 km/h) puts the monkey into its lost-control motion, and faster than
+// compressSpeed (140 km/h) into the compressed roll (PlayerStateMainGame.updateCompress; GameParam
+// BalanceCommonParam 36.11 / 38.89 m/s); these come before the edge check (unbalance). Rumble's choice on the ground
+// (PlayerStateMainGameBase.OnLateUpdate) asks the edge check (CalcBalanceVector -> Balance, the arms-waving teeter)
+// before the speed (Rotation, the curled-up spin, from minimumSpeedOfRotationAnimation = 120 km/h), and on curved
+// track at speed the edge check almost always answers yes. With Mania's physics the edge check answers no while the
+// player's speed is at or above the Rotation threshold, so the Rotation animation plays as Mania's roll does.
+#define F_LATE_UPDATE 0x4316a10ull          // PlayerStateMainGameBase.OnLateUpdate(MgPlayer, float)
+#define PLAYER_MANIPULATOR 0x1d0            // MgPlayer.m_CharaManipulator
+#define MANIP_SPEED 0xd0                    // MgCharaManipulator: the speed it was given (km/h)
+#define MANIP_DATA 0x90                     // MgCharaManipulator: its MgCharaManipulationData
+#define DATA_ROTATION_MIN 0x24              // MgCharaManipulationData.m_MinimumSpeedOfRotationAnimation
+static __thread uint64_t t_late_player;
+int rt_hook_4316a10(Cpu *c) {
+    static __thread int inside;
+    if (inside) return 0;
+    uint64_t prev = t_late_player;
+    t_late_player = c->x[1];
+    inside = 1; c->pc = FN(F_LATE_UPDATE); rt_dispatch(c); inside = 0;
+    t_late_player = prev;
+    return 1;
+}
+int rt_hook_4317520(Cpu *c) {              // PlayerStateMainGameBase.CalcBalanceVector(out Vector3) -> bool
+    uint64_t player = t_late_player;
+    if (!player || !LD8(player + PLAYER_IS_LOCAL)) return 0;
+    uint64_t m = LD64(player + PLAYER_MANIPULATOR), d = m ? LD64(m + MANIP_DATA) : 0;
+    if (!d || LDF(m + MANIP_SPEED) < LDF(d + DATA_ROTATION_MIN)) return 0;
+    int mania = 0;
+    KEEP_ARGS(mania = mania_physics(c));
+    if (!mania || c->eh_unwinding) return 0;
+    c->x[0] = 0;
     return 1;
 }

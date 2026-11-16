@@ -1,7 +1,11 @@
-"""Start the built game, walk the menus into one imported stage and take pictures of it (a test aid).
+"""Start the built game, go into one imported stage and take pictures of it (a test aid).
 
     python try_stage.py <course number> <stage number> [--out DIR] [--hold MS] [--shots S,S,...] [--input "LINE;LINE"]
     python try_stage.py st<Mania stage number> ...
+
+By default the game goes straight from the title into the stage (the port's test switch BR_BOOT_STAGE: about 25 s
+from start to the stage's intro); --menus walks the title, main menu, Select World and Select Stage instead (about
+70 s), for tests of those menus.
 
 Course and stage numbers count from 0 in import order (game\\mania\\mania_courses.txt). The run uses the save
 profile "T" (game\\saveT, a copy of game\\save made on first use), so the real save is not touched. Buttons are
@@ -23,6 +27,8 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', '..', 'port'))
 import paths  # noqa: E402
+sys.path.insert(0, os.path.join(HERE, '..'))
+import thumbshot  # noqa: E402
 
 WORLDS_BEFORE = 0       # entries above the first imported course in the Mania tab of Select World
 
@@ -38,6 +44,7 @@ def main():
     ap.add_argument('--profile', default='T', help='save profile: the folder save<profile> in the game folder')
     ap.add_argument('--width', type=int, default=960, help='pictures are scaled down to this width')
     ap.add_argument('--input', help='live input lines sent once the stage has loaded, separated by ;')
+    ap.add_argument('--menus', action='store_true', help='walk the menus instead of starting from the title straight into the stage')
     a = ap.parse_args()
     game = str(paths.GAME)
     if a.course.startswith('st'):                        # looked up in the import's stage list
@@ -52,6 +59,7 @@ def main():
     a.course = int(a.course)
     if a.stage is None:
         sys.exit('stage number missing')
+    course_id = thumbshot.course_id(game, a.course)      # Course.eID, for BR_BOOT_STAGE
     exe = os.path.join(game, paths.NAME + '.exe')
     os.makedirs(a.out, exist_ok=True)
     if not os.path.isdir(os.path.join(game, 'saveT')) and os.path.isdir(os.path.join(game, 'save')):
@@ -66,6 +74,10 @@ def main():
         except OSError:
             pass
     env = dict(os.environ, BR_PROFILE=a.profile, BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_NO_REAL_INPUT='1', BR_MANIA_LOG='1')
+    if not a.menus:
+        if course_id is None:
+            sys.exit(f'course {a.course} is not in mania_courses.txt')
+        env['BR_BOOT_STAGE'] = f'{course_id} {a.stage}'
     p = subprocess.Popen([exe, '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720', '-logFile', 'player.log'],
                          cwd=game, env=env)
 
@@ -90,15 +102,24 @@ def main():
             os.replace(src, os.path.join(a.out, tag + '.png'))
 
     ok = True
-    time.sleep(28)                                       # the title
-    t0 = time.time()
-    while not logged('UIStateTopMenu requests state 20'):       # A until the main menu has opened Adventure
-        if time.time() - t0 > 90 or p.poll() is not None:
-            ok = False
-            break
-        press('A')
-        time.sleep(6)
-    if ok:
+    if not a.menus:                                      # the title hands over to the stage by itself
+        t0 = time.time()
+        while not logged('test: BR_BOOT_STAGE: course'):
+            if time.time() - t0 > 90 or p.poll() is not None:
+                ok = False
+                break
+            time.sleep(0.2)
+        tsel = time.time()
+    else:
+        time.sleep(28)                                   # the title
+        t0 = time.time()
+        while not logged('UIStateTopMenu requests state 20'):   # A until the main menu has opened Adventure
+            if time.time() - t0 > 90 or p.poll() is not None:
+                ok = False
+                break
+            press('A')
+            time.sleep(6)
+    if ok and a.menus:
         time.sleep(7)                                    # Select World
         press('L')                                       # one tab to the left of Story: the Mania tab
         time.sleep(2)
@@ -108,9 +129,10 @@ def main():
         press(*['DOWN'] * a.stage)
         press('A')
         tsel = time.time()
-
-        def play():
-            time.sleep(max(0.0, tsel + 21 - time.time()))
+    if ok:
+        def play():                                      # from GO (logged for imported stages), else 21 s after the choice
+            while not logged('stage motion at GO') and time.time() < tsel + 21:
+                time.sleep(0.1)
             for line in [f'LSU {a.hold}'] + [x.strip() for x in (a.input or '').split(';') if x.strip()]:
                 word = line.split()
                 ms = int(word[1]) if len(word) > 1 and word[1].isdigit() else 100

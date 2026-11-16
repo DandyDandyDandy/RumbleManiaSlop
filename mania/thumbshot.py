@@ -4,9 +4,9 @@ The editor's "From the view" keeps the point of view of its 3D view with the sta
 point looked at, vertical field of view of the square picture; stage coordinates). The import then lets the game
 draw the stage from there, with the game's lighting and the stage's background: for every such stage the built
 game is started on the test save (profile "T", a copy of the save made on first use; the real save is not touched),
-walked through the menus into the stage, told to show that view with nothing else on the screen
-(BR_THUMB_VIEW, port\\runtime\\thumb.c), and its window is photographed. One stage takes about a minute and a
-quarter; up to INSTANCES copies of the game run side by side, each with its own test save ("T", "T1", ...), log
+sent from its title straight into the stage (the test switch BR_BOOT_STAGE), told to show that view with nothing else on the screen
+(BR_THUMB_VIEW, port\\runtime\\thumb.c), and its window is photographed. One stage takes about half a minute
+(a minute and a quarter while the menus were walked); up to INSTANCES copies of the game run side by side, each with its own test save ("T", "T1", ...), log
 and input file. A picture is kept (build\\mania_views) and only taken again when the view changes or with build.py --retake.
 
     python thumbshot.py st<Mania stage number> <ex> <ey> <ez> <tx> <ty> <tz> [<fov>] [--out FILE]      one picture, as a test
@@ -129,6 +129,18 @@ def place(game, sid):
     return None
 
 
+def course_id(game, course):
+    """The Course.eID of the import's course number `course` (the 4th number of its line in mania_courses.txt)."""
+    k = 0
+    for line in open(os.path.join(game, 'mania', 'mania_courses.txt'), encoding='utf-8'):
+        f = line.split()
+        if len(f) >= 4 and f[0].isdigit():
+            if k == course:
+                return int(f[3])
+            k += 1
+    return None
+
+
 def take(sid, view, out, say=print, game=None, slot=0):
     """Start the game, go into the stage, take the picture of `view` and write it to `out`. Returns None, or what
     went wrong. The game must not be running, except other copies started by take() with another `slot`."""
@@ -137,6 +149,9 @@ def take(sid, view, out, say=print, game=None, slot=0):
     if where is None:
         return 'the stage is not in the game'
     course, stage = where
+    cid = course_id(game, course)
+    if cid is None:
+        return "the stage's world is not in mania_courses.txt"
     work = str(DIR)
     os.makedirs(work, exist_ok=True)
     tag = str(slot or '')                                    # slot 0 keeps the names of a single copy
@@ -151,15 +166,9 @@ def take(sid, view, out, say=print, game=None, slot=0):
         except OSError:
             pass
     env = dict(os.environ, BR_PROFILE=profile, BR_LOG=f'port{tag}.log', BR_INPUT_LIVE=live, BR_STATE_LOG='1', BR_NO_REAL_INPUT='1', BR_AUDIO='off',
-               BR_THUMB_VIEW=camera(view))
+               BR_THUMB_VIEW=camera(view), BR_BOOT_STAGE=f'{cid} {stage}')
     p = subprocess.Popen([os.path.join(game, EXE), '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720',
                           '-logFile', f'player{tag}.log'], cwd=game, env=env)
-
-    def press(*keys, gap=0.9):
-        for k in keys:
-            with open(live, 'a') as f:
-                f.write(k + '\n')
-            time.sleep(gap)
 
     def logged(*texts):
         try:
@@ -179,21 +188,8 @@ def take(sid, view, out, say=print, game=None, slot=0):
 
     error = None
     try:
-        time.sleep(28)                                       # the title
-        t0 = time.time()
-        while not logged('UIStateTopMenu requests state 20'):       # A until the main menu has opened Adventure
-            if time.time() - t0 > 90 or p.poll() is not None:
-                return 'the game did not reach its main menu'
-            press('A')
-            time.sleep(6)
-        time.sleep(7)                                        # Select World
-        press('L')                                           # one tab to the left of Story: the Mania tab
-        time.sleep(2)
-        press(*['DOWN'] * course)
-        press('A')
-        time.sleep(6)                                        # Select Stage
-        press(*['DOWN'] * stage)
-        press('A')
+        if wait(90, 'test: BR_BOOT_STAGE: course', 'FATAL') != 'test: BR_BOOT_STAGE: course':   # the title hands over
+            return 'the game closed' if p.poll() is not None else 'the game did not reach its title'
         hit = wait(90, 'thumb: ready', 'thumb: failed', 'FATAL')
         if hit != 'thumb: ready':
             return 'the game closed' if p.poll() is not None else 'the stage did not start' if hit is None else hit

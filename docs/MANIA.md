@@ -696,7 +696,22 @@ metadata with LibCpp2IL):
   Rumble, Ball Physics Rumble: 43, 71, 103, 133, 142, 144, then slowly slower. The first seconds stay ~10-30 % below
   Mania's (not found: tilt response or the camera's forward differ, or the hold started at another moment).
   W1-01 (st1001) in Mania mode: goal reached. Switched Rumble -> Mania in the pause menu mid-stage: past 144 at once.
-* Test aids: `BR_SPEED_LOG=1` logs the mode, the cap and the ball's values once, and each second the fastest a ball
+* **The character's animation at speed** (three hooks; all only with Mania's physics and for local players). Rumble
+  picks the character's animation in `PlayerStateMainGameBase.OnLateUpdate`: Fly / Fall until the ball has touched
+  the stage for 0.2 s without a break (`MgPlayer.m_GroundingTimer`), then Balance (the arms-waving teeter) when the
+  edge rays find a drop (`CalcBalanceVector`), else Rotation (curled up, dizzy, turning with the ball) from
+  `minimumSpeedOfRotationAnimation` = 120 km/h, else Move. Mania (`PlayerStateMainGame.updateCompress`) puts a ball
+  touching the ground above `lostControlSpeed` 130 km/h into its lost-control motion and above `compressSpeed`
+  140 km/h into the compressed roll, before any edge check. Two things went wrong with Mania's physics: the skimming
+  ball (touching on about one physics step in three) never kept the grounding timer, so the character kept
+  restarting Fly (glitchy, the user: "as if trying to stay in its position"); and on curved track the edge check
+  answered yes, so Balance would win over Rotation (it does in Rumble's own physics too, at 120 km/h on Coaster).
+  Now `updateOnGroundCore` (`43029a0`) counts a ball that touched in one of the last 10 physics steps as touching,
+  and `CalcBalanceVector` (`4317520`, with `OnLateUpdate` `4316a10` noting the player) answers no at Rotation speed.
+  Measured on Coaster (`BR_ANIM_LOG=1`, states per second): before, nothing above ~110 km/h but Fly; after, Rotation
+  on every frame from ~130 to ~300 km/h; pictures show the dizzy curled-up character turning with the ball. Rumble's
+  physics: unchanged (Balance at its 120 km/h).
+* Test aids: `BR_ANIM_LOG=1` logs once the animation thresholds and each second which animation state ran how often; `BR_SPEED_LOG=1` logs the mode, the cap and the ball's values once, and each second the fastest a ball
   went and in how many physics steps it touched the stage; `BR_SPEED_CAP_TEST=<km/h>` lowers the cap (measured with
   100: held 100 in Rumble mode). The Mania probe (`Main.cs`, built with the .NET Framework `csc` against Mania's
   `managed\` assemblies, a `mods\<name>\` folder with `mod.json` + `config.json`, listed in
@@ -801,7 +816,7 @@ its result).
   at, both in stage coordinates, and the vertical field of view of the square, 45.8 degrees for a view wider
   than high). The import (`mania\thumbshot.py`, called by `build.py`) then starts the built game for each new
   view on the test save (profile `T`; the real save is not touched; no sound, the real keyboard and controllers
-  ignored), walks the menus into the stage as `try_stage.py` does and sets `BR_THUMB_VIEW` (`port\runtime\thumb.c`):
+  ignored), goes from the title straight into the stage (`BR_BOOT_STAGE`; about 20 s a picture, 75 s while the menus were walked) and sets `BR_THUMB_VIEW` (`port\runtime\thumb.c`):
   once the stage has started, the port begins the game's own free camera, View Stage of the pause menu
   (`MgViewStageController.Begin`), without the menu; a hook on `MgViewStageCamera.updateTRS` sets its orbit
   values (point looked at, distance, pitch, turn: the editor's orbit is the same construction, mirrored in x)
@@ -981,6 +996,7 @@ the menus into that stage (it reads the UI state lines of `port.log` to know whe
 forward, sends further input lines (`--input "WAIT 2000;GOAL;A"`) and saves pictures of the window. It uses the
 save profile `T` (`--profile`), not the real save, and ignores the real keyboard, mouse and controllers
 (`BR_NO_REAL_INPUT`), so the PC can be used meanwhile; dragging the game's window still stalls it.
+By default it now starts the stage straight from the title (`BR_BOOT_STAGE`, a whole run in about 40 s) and starts holding the stick at GO (the log line `stage motion at GO`); `--menus` walks the menus as before.
 
 Live input commands that make checks possible without playing a stage (`port\runtime\test_aids.c`, see
 `docs\TECHNICAL.md`): `GOAL` (the local player's ball enters the goal: results, progress, what follows the last
