@@ -4,9 +4,9 @@
 
 What a person sets with it (saved at once into mania\\overrides.json, which mania\\build.py reads; overrides.py):
 
-    per stage   the Golden Banana (click one of the stage's bananas in the 3D view), the time of the time mission
-                and of its perfect mark, the number of bananas of the banana mission
-    per world   whether it has stage missions, and the Rumble world whose graphics it borrows in the menus
+    per stage   the Golden Banana (click one of the stage's bananas in the 3D view): the one stage mission of an
+                imported stage
+    per world   whether it has the stage mission, and the Rumble world whose graphics it borrows in the menus
     pictures    of one's own for a stage's thumbnail and a world's small picture, big picture and icon: uploaded
                 in the page (or, for a stage, taken from the 3D view), cut to the game's shape and kept as PNG
                 files in input\\pictures\\ (the user's folder, not part of the repo). A stage picture taken from

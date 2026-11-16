@@ -187,6 +187,7 @@ static struct { uint32_t id, prev; } g_own[MAX_OWN];      // the game's Adventur
 static int g_nown;
 static uint32_t g_first_id;                               // the lowest course id of the import
 static uint32_t g_tab;                                    // MainGame.Adventure.Type row of the "Mania" tab, 0 = none
+static uint32_t g_first_stage;                            // the lowest Stage row of the import
 
 static void load_courses(void) {
     char path[700], line[256];
@@ -212,6 +213,9 @@ static void load_courses(void) {
             if (g_nown < MAX_OWN) { g_own[g_nown].id = id; g_own[g_nown].prev = prev; g_nown++; }
         } else if (sscanf(line, "tab %u", &id) == 1) {
             g_tab = id;
+        } else if (sscanf(line, "anim %u", &id) == 1) {
+            // one line per imported stage; their rows are the last ones of the Stage table (mania\build.py)
+            if (id && (!g_first_stage || id < g_first_stage)) g_first_stage = id;
         } else if (g_ncourses < MAX_COURSES && sscanf(line, "%u %d %d %u", &list, &first, &count, &id) >= 3 && count > 0 && first >= 0) {
             g_courses[g_ncourses].list = list;
             g_courses[g_ncourses].first = first;
@@ -847,6 +851,127 @@ int rt_hook_43564b0(Cpu *c) {
     ST32(self + STAGELIST_ID, list);
     ST32(self + STAGELIST_INDEX, 0);
     if (count > 0) rt_call(c, FN(F_STAGELIST_SET_INDEX), 3, self, 0ull, 0ull);
+    c->x[30] = lr;
+    return 1;
+}
+
+// One stage mission on imported stages: the Golden Banana (user, 2026-11-15: a person cannot play-test fair times
+// and banana counts for the imported stages, so those two missions are left out; the Golden Banana is chosen in the
+// editor). Rumble's three missions are rows of Stage_Mission (1 time, 2 bananas, 3 Golden Banana) that every stage
+// shares, so the hooks below take the first two away wherever an imported stage is shown or played:
+//  * StageMissionData (what Select Stage and the Missions menu show of a stage) is built with only the Golden
+//    Banana in its list, so its "complete" and "perfect" marks follow that one mission;
+//  * the icons and rows of the other two are hidden: Select Stage, the Missions menu (list and detail), the HUD
+//    and pause menu during play, the result screen;
+//  * the two are never marked as done (SetStageMissionCondition, which only the result screen calls);
+//  * the count behind a world's mission percentage is one mission per stage.
+// The same objects show the game's own stages again (they are switched back on there).
+#define MISSION_GOLD 3                      // Stage.Mission.eID: 1 Time, 2 BananaNum, 3 GoldenBanana
+#define F_MISSION_STAGE 0x436c890ull        // MissionManager.get_stage (static) -> MissionManager.StageMission
+#define F_STAGE_MISSION_PARAM 0x436e610ull  // StageMission.GetStageMissionParam(course, stageIndex, mission) -> MissionParamItem
+#define F_GO_ACTIVE_SELF 0x3f0bd80ull       // GameObject.get_activeSelf
+#define MISSION_ITEM_RECORD 0x10            // UI.Mission.MissionItemData: its Stage.Mission.Record
+#define MISSION_DATA_STAGE 0x18             // UI.Mission.StageMissionData: Stage.Record, List<MissionItemData>
+#define MISSION_DATA_ITEMS 0x20
+#define PARAM_CONDITION 0x10                // MissionParamItem.m_ConditionID: 3 cleared, 4 perfect
+
+static int stage_imported(uint64_t stage_record) {
+    if (g_ncourses < 0) load_courses();
+    return stage_record && g_first_stage && LD32(stage_record + REC_ID) >= g_first_stage;
+}
+static int course_imported(uint32_t course) {
+    if (g_ncourses < 0) load_courses();
+    return g_first_id && course >= g_first_id;
+}
+static void view_shown(Cpu *c, uint64_t component, int on) {
+    uint64_t go = component ? rt_call(c, FN(F_GET_GAMEOBJECT), 2, component, 0ull) : 0;
+    if (go && (int)(rt_call(c, FN(F_GO_ACTIVE_SELF), 2, go, 0ull) & 1) != !!on)
+        rt_call(c, FN(F_SET_ACTIVE), 3, go, (uint64_t)!!on, 0ull);
+}
+#define KEEP_ARGS(n) uint64_t a_[8], lr_ = c->x[30]; for (int i_ = 0; i_ < (n); i_++) a_[i_] = c->x[i_]
+#define GIVE_ARGS(n) do { for (int i_ = 0; i_ < (n); i_++) c->x[i_] = a_[i_]; c->x[30] = lr_; } while (0)
+
+// UI.Mission.StageMissionData..ctor(this, stageIndex, Stage.Record, List<MissionItemData>): keeps the Golden Banana
+int rt_hook_462f3a0(Cpu *c) {
+    uint64_t list = c->x[3];
+    if (!list || !stage_imported(c->x[2])) return 0;
+    uint64_t items = LD64(list + LIST_ITEMS);
+    int n = list_n(list), kept = 0;
+    for (int i = 0; i < n; i++) {
+        uint64_t item = LD64(items + ARR_DATA + 8 * (uint64_t)i);
+        if (rec_id(item, MISSION_ITEM_RECORD) == MISSION_GOLD) ST64(items + ARR_DATA + 8 * (uint64_t)kept++, item);
+    }
+    if (kept == n) return 0;
+    for (int i = kept; i < n; i++) ST64(items + ARR_DATA + 8 * (uint64_t)i, 0);
+    ST32(list + LIST_SIZE, (uint32_t)kept);
+    ST32(list + LIST_VERSION, LD32(list + LIST_VERSION) + 1);
+    return 0;
+}
+
+// Util.Mission.CheckMissionIconsAnim(timer icon, banana icon, golden icon, StageMissionData, ...): the icons of a
+// stage in Select Stage and in the Missions menu's list. The callers switch the icons on before (or never off).
+int rt_hook_4452550(Cpu *c) {
+    KEEP_ARGS(8);
+    int imported = a_[3] && stage_imported(LD64(a_[3] + MISSION_DATA_STAGE));
+    view_shown(c, a_[0], !imported);
+    view_shown(c, a_[1], !imported);
+    GIVE_ARGS(8);
+    return 0;
+}
+
+// UIPartViewStageMissionDetailList.SetMissionDetailItemViews(this, item data, isMasterMode): the Missions menu's
+// detail fills one row per mission of the stage's list (+0x20: StageMissionData); rows past it are hidden.
+#define DETAIL_ROWS 0x48                    // List<UIPartViewStageMissionDetailItem>
+int rt_hook_46302c0(Cpu *c) {
+    KEEP_ARGS(8);
+    uint64_t data = a_[1] ? LD64(a_[1] + 0x20) : 0, rows = LD64(a_[0] + DETAIL_ROWS);
+    if (data && rows) {
+        int imported = stage_imported(LD64(data + MISSION_DATA_STAGE)), n = list_n(LD64(data + MISSION_DATA_ITEMS));
+        for (int i = 0; i < list_n(rows); i++) view_shown(c, list_at(rows, i), !imported || i < n);
+    }
+    GIVE_ARGS(8);
+    return 0;
+}
+
+// UIPartViewMainGameMissionStatus.Setup(this, category, option, Stage.Record, ...): the mission icons during play
+// (HUD, pause menu); Setup only plays their animations, it never switches them on or off
+int rt_hook_45f7540(Cpu *c) {
+    KEEP_ARGS(8);
+    int imported = stage_imported(a_[3]);
+    view_shown(c, LD64(a_[0] + 0x28), !imported);       // m_TimerMissionIconView
+    view_shown(c, LD64(a_[0] + 0x30), !imported);       // m_BananaCountMissionIconView
+    GIVE_ARGS(8);
+    return 0;
+}
+
+// UIPartViewMainGameResultStageMissionStatus.Setup(this, SaveParamStage): the result screen's mission rows
+int rt_hook_461a4a0(Cpu *c) {
+    KEEP_ARGS(8);
+    uint64_t sel = rt_call(c, FN(F_GET_SELECTOR), 1, 0ull);
+    int imported = sel && course_imported(LD32(sel + SELECTOR_COURSE));
+    view_shown(c, LD64(a_[0] + 0x28), !imported);       // m_ItemTimeView
+    view_shown(c, LD64(a_[0] + 0x30), !imported);       // m_ItemBananaNumView
+    GIVE_ARGS(8);
+    return 0;
+}
+
+// MissionManager.StageMission.SetStageMissionCondition(this, course, stageIndex, mission, condition, ...) -> bool
+int rt_hook_436e6c0(Cpu *c) {
+    if ((uint32_t)c->x[3] == MISSION_GOLD || !course_imported((uint32_t)c->x[1])) return 0;
+    c->x[0] = 0;
+    return 1;
+}
+
+// Util.Mission.GetStageMissionCompletedNum(course, stageIndex, isPerfectOnly) -> (missions, completed) in x0. On an
+// imported stage: one mission, done when the Golden Banana is (it has no perfect mark of its own: done is perfect).
+int rt_hook_44517a0(Cpu *c) {
+    uint32_t course = (uint32_t)c->x[0];
+    if (!course_imported(course)) return 0;
+    uint64_t lr = c->x[30], idx = (uint32_t)c->x[1];
+    uint64_t stage = rt_call(c, FN(F_MISSION_STAGE), 1, 0ull);
+    uint64_t p = stage ? rt_call(c, FN(F_STAGE_MISSION_PARAM), 5, stage, (uint64_t)course, idx, (uint64_t)MISSION_GOLD, 0ull) : 0;
+    uint32_t cond = p ? LD32(p + PARAM_CONDITION) : 0;
+    c->x[0] = 1ull | ((uint64_t)(cond == 3 || cond == 4) << 32);
     c->x[30] = lr;
     return 1;
 }

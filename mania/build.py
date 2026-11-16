@@ -471,12 +471,12 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
                       MiniThumbnailSpriteID=thumb, MissionPoint=0, MissionPointMaster=0, MissionBanana=0, CheckpointStageAnimationFrame=0,
                       CheckpointSwitchClass=-1, CheckpointSwitchAnimationSpeed=0, CheckpointSwitchAnimationFrame=0, AnimationType=0,
                       AnimationSpeedMultiplier=0.0)
-        # Rumble's three stage missions (clear within a time, collect so many bananas, take the Golden Banana), for
-        # the stages of a course that has them (overrides.json); the points are those of the game's own stages
+        # Rumble's stage missions for the stages of a course that has them (overrides.json): of the three only the
+        # Golden Banana; the port hides the time and banana missions on imported stages (mania.c), so they have no
+        # values. The points are those of the game's own stages.
+        fields.update(MissionTime=0.0, MissionTimeMaster=0.0)
         if sid in with_missions:
-            t, perfect, count = overrides.missions(ov, sid, mania.time_limit(sid), extras.get(sid, {}).get('banana_count', 0))
-            fields.update(MissionTime=t, MissionTimeMaster=perfect, MissionBanana=count, MissionPoint=model['MissionPoint'],
-                          MissionPointMaster=model['MissionPointMaster'])
+            fields.update(MissionPoint=model['MissionPoint'], MissionPointMaster=model['MissionPointMaster'])
         stage_t.use(rid, **fields)
         # no sponsor logo under the start: a row as the game's own stages without one have it (the game reads the
         # row without a check, so there must be one)

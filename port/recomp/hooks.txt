@@ -198,3 +198,11 @@
 4628a70   Wonder.UI.Pause.UIStatePauseMenu::onDecide
 45b0d40   Wonder.UI.MainGame.UIStateInBattleMenu::onInitSelectableButton
 45b0df0   Wonder.UI.MainGame.UIStateInBattleMenu::onDecide
+# port/runtime/mania.c: imported stages have one stage mission, the Golden Banana
+462f3a0   Wonder.UI.Mission.StageMissionData::.ctor   (only the Golden Banana in the list)
+4452550   Wonder.Util+Mission::CheckMissionIconsAnim   (time and banana icons hidden)
+46302c0   Wonder.UI.Mission.UIPartViewStageMissionDetailList::SetMissionDetailItemViews   (rows past the list hidden)
+45f7540   Wonder.UI.MainGame.UIPartViewMainGameMissionStatus::Setup   (time and banana icons hidden)
+461a4a0   Wonder.UI.MainGame.UIPartViewMainGameResultStageMissionStatus::Setup   (time and banana rows hidden)
+436e6c0   Wonder.MissionManager+StageMission::SetStageMissionCondition   (time and banana never done)
+44517a0   Wonder.Util+Mission::GetStageMissionCompletedNum   (one mission per imported stage)

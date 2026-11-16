@@ -1,21 +1,19 @@
 """What a person decided about the imported stages and worlds: mania\\overrides.json.
 
-Banana Mania's stages lack things Banana Rumble's have, and the import cannot derive them: the three stage missions
-(a challenge time, a banana count, a Golden Banana) and the look of a world in the menus. The editor
+Banana Mania's stages lack things Banana Rumble's have, and the import cannot derive them: the stage mission (a
+Golden Banana; Rumble's time and banana missions are left out on imported stages, port\\runtime\\mania.c) and the
+look of a world in the menus. The editor
 (mania\\editor.py) writes them into this file and mania\\build.py reads it:
 
     {"stages":  {"<Mania stage id>": {"gold": "<path of the banana that becomes the Golden Banana>",
-                                      "time": <seconds of the time mission>,
-                                      "time_perfect": <seconds for the mission's perfect mark; default: 45 % of time>,
-                                      "bananas": <bananas of the banana mission; default: 75 % of the stage's>,
                                       "picture": "<file>"}},
      "courses": {"<Mania course name>": {"missions": true | false,
                                          "theme": <Rumble course id>, "thumbnail": "mania" | <Rumble course id>,
                                          "brochure": <id>, "icon": <id> | 0, "title": <id> | 0,
                                          "picture": "<file>", "big_picture": "<file>", "icon_picture": "<file>"}}}
 
-Everything is optional. A course has stage missions when "missions" says so, and without the key when one of its
-stages has a "gold" or a "time". "theme" is the Rumble world whose graphics the course borrows (the picture beside
+Everything is optional. A course has the stage mission when "missions" says so, and without the key when one of
+its stages has a "gold". Keys of earlier versions ("time", "time_perfect", "bananas") are dropped when read. "theme" is the Rumble world whose graphics the course borrows (the picture beside
 the list in Select World, the world icon, the title card when a stage loads); "brochure", "icon" and "title" each
 name another world for one of them, and 0 leaves the icon or the title card out. "thumbnail" is the course's small
 picture in Select World: Banana Mania's own ("mania", the default where Mania has one) or a Rumble world's.
@@ -26,7 +24,6 @@ icon. Each names a PNG file in input\\pictures\\ (the editor puts uploads there,
 the folder is the user's and not part of the repository). A file that is missing is passed over.
 """
 import json
-import math
 import os
 import re
 
@@ -38,7 +35,7 @@ PICTURE_NAME = re.compile(r'[A-Za-z0-9_]{1,100}\.png')
 PICTURE_SHAPES = {'picture': (512, 512, False), 'big_picture': (804, 1004, False), 'icon_picture': (132, 132, True)}
 # 'view': where a stage's picture was taken from in the editor's 3D view, for the picture the import takes in the
 # game (thumbshot.py): eye x y z, point looked at x y z (stage coordinates), vertical field of view in degrees
-STAGE_KEYS = {'gold': str, 'time': (int, float), 'time_perfect': (int, float), 'bananas': int, 'picture': str, 'view': list}
+STAGE_KEYS = {'gold': str, 'picture': str, 'view': list}
 COURSE_KEYS = {'missions': bool, 'theme': int, 'thumbnail': (int, str), 'brochure': int, 'icon': int, 'title': int,
                'picture': str, 'big_picture': str, 'icon_picture': str}
 
@@ -135,38 +132,9 @@ def gold(data, stage_id):
 
 
 def has_missions(data, course_name, stage_ids):
-    """Whether the course shows Rumble's stage missions."""
+    """Whether the course shows the stage mission (the Golden Banana)."""
     c = data['courses'].get(course_name, {})
     if 'missions' in c:
         return c['missions']
-    return any(k in data['stages'].get(str(i), {}) for i in stage_ids for k in ('gold', 'time'))
+    return any('gold' in data['stages'].get(str(i), {}) for i in stage_ids)
 
-
-def default_time(time_limit):
-    """The time mission of a stage nobody set one for: half of the stage's time limit."""
-    return float(math.floor(time_limit / 2))
-
-
-# Rumble sets its mission values by hand per stage; there is no formula. Over its 200 Adventure and challenge
-# stages (game 2.20) the banana mission asks for a median 76 % of what the stage's bananas are worth (most often a
-# multiple of 5), and the time mission's perfect mark is a median 45 % of its challenge time (one decimal). The
-# defaults follow those medians. The perfect mark of the banana mission is always all of them (the game decides).
-BANANA_SHARE, PERFECT_SHARE = 0.75, 0.45
-
-
-def default_bananas(banana_count):
-    n = banana_count * BANANA_SHARE
-    return int(n // 5 * 5) if n >= 10 else max(1, int(math.ceil(n))) if banana_count else 0
-
-
-def default_perfect(time):
-    return max(0.1, round(time * PERFECT_SHARE, 1))
-
-
-def missions(data, stage_id, time_limit, banana_count):
-    """(time, perfect time, bananas) of the stage's missions. banana_count: what all its bananas are worth."""
-    s = data['stages'].get(str(stage_id), {})
-    t = float(s.get('time') or default_time(time_limit))
-    perfect = float(s.get('time_perfect') or default_perfect(t))
-    bananas = s['bananas'] if 'bananas' in s else default_bananas(banana_count)
-    return t, min(perfect, t), max(0, min(int(bananas), int(banana_count)))

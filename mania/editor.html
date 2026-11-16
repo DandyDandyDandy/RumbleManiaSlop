@@ -171,19 +171,11 @@ label { display: block; margin: 10px 0 4px; font-weight: 600; }
 
 <aside id="right">
   <section>
-    <h2>Stage missions</h2>
+    <h2>Stage mission</h2>
     <label>Golden Banana</label>
     <div id="goldbox"><span class="dot"></span><span class="t" id="goldtext"></span><button id="goldclear">Remove</button></div>
-    <label for="time">Challenge time (seconds)</label>
-    <input id="time" type="number" min="1" max="999" step="0.1">
-    <div class="note" id="timenote"></div>
-    <label for="perfect">Perfect time (seconds)</label>
-    <input id="perfect" type="number" min="1" max="999" step="0.1">
-    <div class="note">For the time mission's perfect mark. Empty: 45 % of the challenge time (Rumble's typical share). The banana
-      mission's perfect mark is always every banana; the game decides that.</div>
-    <label for="bananas">Bananas to collect</label>
-    <input id="bananas" type="number" min="0" max="9999" step="1">
-    <div class="note" id="banananote"></div>
+    <div class="note">An imported stage has one mission: "Clear and collect the Golden Banana". Rumble's time and banana
+      missions are left out.</div>
     <label>Picture in Select Stage</label>
     <div class="pic" id="pic-stage"></div>
     <div class="note">Without one of your own: Banana Mania's thumbnail. "From the view" takes the middle square of the stage view as it is now:
@@ -249,26 +241,8 @@ async function save() {
 const hasMissions = c => {
   const o = courseOv(c.name);
   if ('missions' in o) return o.missions;
-  return c.stages.some(s => 'gold' in stageOv(s.id) || 'time' in stageOv(s.id));
+  return c.stages.some(s => 'gold' in stageOv(s.id));
 };
-const defaultTime = s => Math.floor(s.limit / 2);
-// Rumble's typical values (no formula in the game; medians of its own stages, as mania\overrides.py)
-const defaultBananas = total => { const n = total * 0.75; return n >= 10 ? Math.floor(n / 5) * 5 : total ? Math.max(1, Math.ceil(n)) : 0; };
-const defaultPerfect = t => Math.max(0.1, Math.round(t * 4.5) / 10);
-// what the stage's bananas are worth without the golden one (as the import counts them)
-function bananaTotal(s) {
-  if (data && data.id === s.id) {
-    const g = stageOv(s.id).gold;
-    return data.bananas.reduce((n, b) => n + (b.path === g ? 0 : b.kind ? IDX.bunch : 1), 0);
-  }
-  return s.bananas;
-}
-function missionValues(s) {
-  const o = stageOv(s.id), total = bananaTotal(s);
-  const t = o.time || defaultTime(s);
-  const n = 'bananas' in o ? o.bananas : (total == null ? null : defaultBananas(total));
-  return {time: t, perfect: Math.min(o.time_perfect || defaultPerfect(t), t), bananas: n == null ? '?' : Math.min(n, total == null ? n : total), gold: !!o.gold};
-}
 const world = id => IDX.worlds.find(w => w.id === id);
 let picVer = 0;                // counted up with every upload, so the browser asks for the picture again
 const userUrl = file => `/img/user/${file}?v=${picVer}`;
@@ -292,8 +266,7 @@ function fillCourses() {
 function badges(s) {
   const o = stageOv(s.id), b = el('span', 'badges');
   const g = el('span', 'badge' + (o.gold ? ' on' : ''), '★'); g.title = o.gold ? 'Golden Banana chosen' : 'No Golden Banana yet';
-  const t = el('span', 'badge t' + (o.time ? ' on' : ''), 's'); t.title = o.time ? `Challenge time ${o.time} s` : 'Challenge time not set';
-  b.append(g, t); return b;
+  b.append(g); return b;
 }
 function fillStages() {
   const box = $('stages'); box.textContent = '';
@@ -329,17 +302,11 @@ function step(d) {
 
 // ------------------------------------------------------------------------------------------------ panels
 function fillStagePanel() {
-  const o = stageOv(stage.id), total = bananaTotal(stage);
+  const o = stageOv(stage.id);
   $('goldbox').classList.toggle('set', !!o.gold);
   $('goldtext').textContent = o.gold ? o.gold.split('/').pop() + ' is the Golden Banana. Click another banana to move it.'
                                      : 'None yet. Click a banana in the stage view.';
   $('goldclear').style.display = o.gold ? '' : 'none';
-  $('time').value = o.time ?? ''; $('time').placeholder = defaultTime(stage) + '  (default: half the time limit)';
-  $('timenote').textContent = `"Clear within ${missionValues(stage).time} seconds". The stage's time limit is ${stage.limit} s.`;
-  $('perfect').value = o.time_perfect ?? ''; $('perfect').placeholder = defaultPerfect(o.time || defaultTime(stage)) + '  (default: 45 % of the challenge time, as in Rumble)';
-  $('bananas').value = o.bananas ?? ''; $('bananas').placeholder = total == null ? '' : defaultBananas(total) + '  (default: 75 %, as in Rumble)';
-  $('banananote').textContent = total == null ? '' : `"Clear and collect ${missionValues(stage).bananas} bananas". The stage has ${total}` +
-    (o.gold ? ' besides the golden one' : '') + ' (a bunch counts 10).';
   fillPics();
 }
 // ---- pictures of one's own: [box, section of the overrides, key]
@@ -402,20 +369,13 @@ function fillWorldPanel() {
   const worlds = IDX.worlds.filter(w => w.brochure), named = w => [w.id, `${w.serial} · ${w.name}`];
   $('worldname').textContent = course.title;
   $('missions').value = 'missions' in o ? (o.missions ? 'on' : 'off') : '';
-  $('missionnote').textContent = 'missions' in o ? '' : `Automatic: on once a stage of the world has a Golden Banana or a challenge time (now ${hasMissions(course) ? 'on' : 'off'}).`;
+  $('missionnote').textContent = 'missions' in o ? '' : `Automatic: on once a stage of the world has a Golden Banana (now ${hasMissions(course) ? 'on' : 'off'}).`;
   options($('theme'), [['', `Default (${def.serial} · ${def.name})`], ...worlds.map(named)], o.theme ?? '');
   options($('thumbnail'), [['', course.thumb ? "Banana Mania's picture" : 'The theme\'s'], ...worlds.map(named)], typeof o.thumbnail === 'number' ? o.thumbnail : '');
   options($('brochure'), [['', 'The theme\'s'], ...worlds.map(named)], o.brochure ?? '');
   options($('titlecard'), [['', 'The theme\'s'], ['0', 'None'], ...worlds.filter(w => w.title).map(named)], o.title ?? '');
   options($('icon'), [['', 'None'], ...IDX.worlds.filter(w => w.icon).map(named)], o.icon || '');
   fillPics();
-}
-function numberField(id, field, integer) {
-  $(id).addEventListener('input', () => {
-    const v = $(id).value === '' ? undefined : (integer ? Math.round(+$(id).value) : Math.round(+$(id).value * 1000) / 1000);
-    setOv('stages', stage.id, field, v !== undefined && v <= 0 && !integer ? undefined : v);
-    refreshStage(false);
-  });
 }
 function worldField(id, field) {
   $(id).addEventListener('change', () => {
@@ -425,20 +385,14 @@ function worldField(id, field) {
     fillStages(); drawMocks();
   });
 }
-function refreshStage(inputs = true) {
-  if (inputs) fillStagePanel(); else {
-    $('timenote').textContent = `"Clear within ${missionValues(stage).time} seconds". The stage's time limit is ${stage.limit} s.`;
-    $('perfect').placeholder = String(stageOv(stage.id).time || defaultTime(stage));
-    const total = bananaTotal(stage);
-    if (total != null) $('banananote').textContent = `"Clear and collect ${missionValues(stage).bananas} bananas". The stage has ${total}` +
-      (stageOv(stage.id).gold ? ' besides the golden one' : '') + ' (a bunch counts 10).';
-  }
+function refreshStage() {
+  fillStagePanel();
   const row = [...$('stages').children].find(r => +r.dataset.id === stage.id);
   if (row) row.replaceChild(badges(stage), row.lastChild);
   const done = course.stages.filter(s => stageOv(s.id).gold).length;
   $('courseinfo').textContent = `${done} of ${course.stages.length} stages have a Golden Banana · missions ${hasMissions(course) ? 'on' : 'off'}`;
   if (!('missions' in courseOv(course.name))) $('missionnote').textContent =
-    `Automatic: on once a stage of the world has a Golden Banana or a challenge time (now ${hasMissions(course) ? 'on' : 'off'}).`;
+    `Automatic: on once a stage of the world has a Golden Banana (now ${hasMissions(course) ? 'on' : 'off'}).`;
   drawMocks(); placeMarks(true);
 }
 function setGold(path) {
@@ -455,11 +409,9 @@ function drawMocks() {
   const head = el('div', 'head', 'Select Stage');
   const card = el('div', 'card'); const big = el('img'); big.src = stagePic(stage); big.alt = ''; card.append(big);
   if (on) {
-    const v = missionValues(stage), st = el('div', 'stamps');
-    const a = el('div', 'stamp', '⏱'); a.append(el('small', null, String(+v.time.toFixed(1)))); a.title = `Clear within ${v.time} seconds`;
-    const c = el('div', 'stamp', '🍌'); c.append(el('small', null, String(v.bananas))); c.title = `Clear and collect ${v.bananas} bananas`;
-    const g = el('div', 'stamp' + (v.gold ? '' : ' off'), '✦'); g.title = v.gold ? 'Clear and collect the Golden Banana' : 'No Golden Banana chosen: this mission cannot be completed';
-    st.append(a, c, g); card.append(st);
+    const gold = !!stageOv(stage.id).gold, st = el('div', 'stamps');
+    const g = el('div', 'stamp' + (gold ? '' : ' off'), '✦'); g.title = gold ? 'Clear and collect the Golden Banana' : 'No Golden Banana chosen: this mission cannot be completed';
+    st.append(g); card.append(st);
   }
   const list = el('div', 'list');
   course.stages.forEach((s, i) => {
@@ -690,7 +642,6 @@ addEventListener('keydown', e => {
     const b = document.querySelector('#pic-stage .fromview'); if (b) { e.preventDefault(); b.click(); }
   }
 });
-numberField('time', 'time', false); numberField('perfect', 'time_perfect', false); numberField('bananas', 'bananas', true);
 worldField('missions', 'missions'); worldField('theme', 'theme'); worldField('thumbnail', 'thumbnail'); worldField('brochure', 'brochure');
 worldField('titlecard', 'title'); worldField('icon', 'icon');
 (async () => {
