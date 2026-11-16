@@ -626,7 +626,7 @@ clock (`battle.elapsedTime`) so it is at `shift` at the clock's GO, the same mom
 were measured on st1052. Rumble's own stages are untouched. Test: `BR_MOTION_TRACE=1` logs the motion's time every
 step ("inf" while held), `_slop_scratch\motion_check.py port.log` lists irregular steps.
 
-## Spin Dash on or off (`port\runtime\spindash.c`)
+## Spin Dash on or off (`port\runtime\gameplay.c`)
 
 Banana Mania's stages were made for a ball without the Spin Dash, so it can be turned off. The choice is not tied
 to imported stages: it holds for every Adventure stage of the mode it is set for. Kept in `port_gameplay.txt` next
@@ -638,7 +638,7 @@ to the saves (`spindash=`, `spindash_multi=`; both on when there is no file).
   screen (`UIViewCtrl_AdvMultiSetting_Offline`) and online (`UIViewCtrl_AdvMulti_GameSetting`). That screen is a
   fixed panel with one view per row, so the hook on `setupChoicesItemList` adds a row object (a copy of the Ball
   Collision row; the two functions the screen calls for such a row tell the copy apart) and, the first time, a
-  picker view and a heading (copies of Ball Collision's), and spreads the three groups between the World heading
+  picker view and a heading (copies of Ball Collision's), and spreads the groups between the World heading
   and the line over Confirm. The two panels differ (the online one has a picker and a heading this screen does
   not use), so headings are found by position, not by name.
 * **Online** the host's choice holds for the room. It travels in the "advanced settings" the host sends with every
@@ -654,6 +654,29 @@ to the saves (`spindash=`, `spindash_multi=`; both on when there is no file).
   is multiplayer Adventure; no BattleRoyale object = single player), the tutorial (it waits for a Spin Dash),
   replays (they play what was recorded).
 * `BR_SPIN_LOG=1` logs which mode applies and what a room was told.
+
+## Ball Speed: Capped (Rumble) or Uncapped (Mania) (`port\runtime\gameplay.c`)
+
+Rumble holds a player's ball at a top speed; the GameCube games have none. Same file, same modes, same rows as the
+Spin Dash (`uncapped=`, `uncapped_multi=`; Capped when there is no file): *Options > General > Ball Speed (Single
+Player)*, and a *Ball Speed* picker under *Spin Dash* on the multiplayer game settings screen (the panel now holds
+four groups). Online it travels as bit 2 of the same "advanced settings" number.
+
+* **The cap:** `PhysicsBall.BallCollision` cuts the velocity to `GameParam.physicsParam.generalMaxSpeed` (km/h,
+  converted by `Util.Math.KphToMpf`, /215.78) whenever the ball's `m_IsEnableSpeedLimit` (+0x8a) is set;
+  `PlayerStateMainGame.OnInitialize` sets it for every player ball (and `OnFinalize` clears it). The code default
+  is 300, **the game's data sets 500 km/h** (310 mph). Uncapped: the hook on `BallCollision` runs it with the flag
+  cleared and sets it back, so a change in the pause menu applies at once. Never in Battle, the tutorial, replays.
+* **What really limits speed on slopes is friction, not the cap.** Measured on Coaster (st2010, held forward):
+  top speed 144 km/h (89 mph) either way. Per physics step the move adds ~0.0103 m/step and the ground contact
+  takes ~1.5 % of the speed; they balance at ~0.69 m/step. Values in play: gravity 0.012 x `gravityMultiplier`
+  0.99, the character's `CharaParam.PhysicsParam.friction` 0.018 x `frictionScaleMultiplier` 0.725. The GameCube
+  rules (from the WebMonkeyBall re-implementation, `physics.ts` / `collision.ts`): gravity 0.0098, each contact
+  takes 1 % of the sliding velocity (SMB2 stages: only the frame's first contact), no air drag, no cap. That is a
+  separate option to build ("GameCube physics"), not part of this one.
+* Test aids: `BR_SPEED_LOG=1` logs the mode, the live limit and friction values, and each second the fastest a ball
+  went; `BR_SPEED_CAP_TEST=<km/h>` lowers the limit. Measured with 100: Capped held 100 exactly, Uncapped reached
+  144; switched from Capped to Uncapped in the pause menu mid-stage: 100 before, 134 after resuming.
 
 ## Skip Stage (`port\runtime\stage_skip.c`)
 

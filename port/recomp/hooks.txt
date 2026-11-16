@@ -178,7 +178,8 @@
 # port/runtime/title_call.c: no title call on the fork's title screen (the handle prepares, its Play is skipped)
 4393a50   Wonder.Sound+Handle::Prepare
 4393c10   Wonder.Sound+Handle::Play
-# port/runtime/spindash.c: Spin Dash on or off (Options row for single player, room row for multiplayer Adventure)
+# port/runtime/gameplay.c: Spin Dash on or off, Ball Speed capped or not (Options rows for single player, room rows for multiplayer Adventure)
+42ed590   Wonder.PhysicsBall::BallCollision   (Ball Speed: the speed cap lifted)
 4307c30   Wonder.MgPlayer+PlayerSpinActionModule::getMainActionInput
 43084a0   Wonder.MgPlayer+PlayerSpinActionModule::getMainActionDownInput
 45ca090   Wonder.UI.MainGame.UIMgPlayerViewCtrl_Base::SpinAction_OnUpdateIdle

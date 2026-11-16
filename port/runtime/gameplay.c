@@ -1,6 +1,7 @@
-// Spin Dash on or off (RumbleManiaSlop only).
+// Gameplay options for Banana Mania's stages (RumbleManiaSlop only): Spin Dash on or off, Ball Speed capped or not.
 //
-// Banana Mania's stages were made for a ball without the Spin Dash, so the player can turn it off:
+// Banana Mania's stages were made for a ball without the Spin Dash and without a top speed, so the player can turn
+// the Spin Dash off and lift Rumble's speed cap. Both options work the same way; for the Spin Dash:
 //
 //  * Single player: the row Options > General > Spin Dash (Single Player), kept as `spindash=` in
 //    <user dir>port_gameplay.txt. On by default.
@@ -13,7 +14,16 @@
 // Off means: the local player's charge button is not seen by the spin module (PlayerSpinActionModule's two input
 // questions answer "not pressed"), and the charge gauge of the HUD (the ring around the face) is not shown. Other
 // players' dashes online are played as their machines report them. BR_SPIN_LOG=1 logs each change of what applies.
+//
+// Ball Speed: Rumble clamps a player's ball to GameParam.physicsParam.generalMaxSpeed (300 km/h in the code) in
+// PhysicsBall.BallCollision whenever the ball's m_IsEnableSpeedLimit is set (PlayerStateMainGame sets it for the
+// whole stage). The GameCube games and Banana Mania have no such clamp. Capped (Rumble) is the default; Uncapped
+// (Mania) runs that function with the flag cleared. Rows: Options > General > Ball Speed (Single Player)
+// (`uncapped=`) and a Ball Speed picker on the multiplayer game settings screen (`uncapped_multi=`), sent to the
+// room's guests as bit 2 of the same number. Same modes as the Spin Dash: never in Battle, the tutorial or replays.
+// BR_SPEED_LOG=1 logs each second the fastest a ball went, in km/h and mph.
 #include <windows.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,7 +71,9 @@
 #define KLASS_RGCTX 0xc0                    // List<T> class: generic context data, +0x70 = AddWithResize
 
 static int g_single = 1, g_multi = 1, g_room = 1, g_loaded;
-static uint32_t g_row_h;                    // GC handle of the Spin Dash row of the game settings screen
+static int g_fast_single, g_fast_multi, g_fast_room;       // Ball Speed: 1 = Uncapped (Mania)
+#define NROWS 2                             // the rows added to the multiplayer game settings: Spin Dash, Ball Speed
+static uint32_t g_row_h[NROWS];             // GC handles of those row objects
 
 uint64_t rt_tr_str(Cpu *c, const char *english);      // port_text.c
 
@@ -76,42 +88,66 @@ static void load(void) {
     while (f && fgets(line, sizeof line, f)) {
         if (sscanf(line, "spindash=%d", &v) == 1) g_single = v != 0;
         else if (sscanf(line, "spindash_multi=%d", &v) == 1) g_multi = v != 0;
+        else if (sscanf(line, "uncapped=%d", &v) == 1) g_fast_single = v != 0;
+        else if (sscanf(line, "uncapped_multi=%d", &v) == 1) g_fast_multi = v != 0;
     }
     if (f) fclose(f);
     g_room = g_multi;
+    g_fast_room = g_fast_multi;
 }
 static void save(void) {
     char path[MAX_PATH + 32];
     cfg_path(path, sizeof path);
     FILE *f = fopen(path, "w");
-    if (f) { fprintf(f, "spindash=%d\nspindash_multi=%d\n", g_single, g_multi); fclose(f); }
+    if (!f) return;
+    fprintf(f, "spindash=%d\nspindash_multi=%d\nuncapped=%d\nuncapped_multi=%d\n", g_single, g_multi, g_fast_single, g_fast_multi);
+    fclose(f);
 }
-// For the Options row (display_opt.c).
+// For the Options rows (display_opt.c).
 int spindash_single(void) { load(); return g_single; }
 void spindash_set_single(int on) { load(); g_single = on != 0; save(); }
+int ballspeed_single(void) { load(); return g_fast_single; }
+void ballspeed_set_single(int uncapped) { load(); g_fast_single = uncapped != 0; save(); }
 
 static int list_n(uint64_t list) { return list ? (int32_t)LD32(list + LIST_SIZE) : 0; }
 static uint64_t list_at(uint64_t list, int i) { return LD64(LD64(list + LIST_ITEMS) + ARR_DATA + 8 * (uint64_t)i); }
 static const char *class_name(uint64_t obj) { return obj ? (const char *)(uintptr_t)LD64(LD64(obj) + KLASS_NAME) : ""; }
 
-// Whether the local players may Spin Dash in what is being played now.
-static int allowed(Cpu *c) {
-    load();
-    int v = 1, kind = 0;      // kind: 0 single player, 1 tutorial, 2 split screen Adventure, 3 online Adventure, 4 Battle
+// What is being played now: 0 single player, 1 tutorial, 2 split screen Adventure, 3 online Adventure, 4 Battle.
+static int play_kind(Cpu *c) {
     uint64_t mg = rt_call(c, FN(F_GET_MAIN_GAME), 1, 0ull);
     uint64_t tut = mg ? LD64(mg + MAINGAME_TUTORIAL) : 0;
     uint64_t battle = rt_call(c, FN(F_GET_BATTLE), 1, 0ull);
-    if (tut && LD8(tut + TUTORIAL_IS_TUTORIAL)) kind = 1;
-    else if (!battle || !(rt_call(c, FN(F_IS_BATTLE_MODE), 2, battle, 0ull) & 1)) { kind = 0; v = g_single; }
-    else if (strcmp(class_name(LD64(battle + BATTLE_GAME_MASTER)), "AdvGameMaster")) kind = 4;
-    else if (LD8(battle + BATTLE_IS_ONLINE)) { kind = 3; v = g_room; }
-    else { kind = 2; v = g_multi; }
+    if (tut && LD8(tut + TUTORIAL_IS_TUTORIAL)) return 1;
+    if (!battle || !(rt_call(c, FN(F_IS_BATTLE_MODE), 2, battle, 0ull) & 1)) return 0;
+    if (strcmp(class_name(LD64(battle + BATTLE_GAME_MASTER)), "AdvGameMaster")) return 4;
+    return LD8(battle + BATTLE_IS_ONLINE) ? 3 : 2;
+}
+static const char *const KIND_NAMES[] = {"single player", "tutorial", "split screen Adventure", "online Adventure", "Battle"};
+
+// Whether the local players may Spin Dash in what is being played now.
+static int allowed(Cpu *c) {
+    load();
+    int kind = play_kind(c), v = kind == 0 ? g_single : kind == 2 ? g_multi : kind == 3 ? g_room : 1;
     static int log = -1, last = -1;
     if (log < 0) log = getenv("BR_SPIN_LOG") != NULL;
     if (log && last != kind * 2 + v) {
-        static const char *const names[] = {"single player", "tutorial", "split screen Adventure", "online Adventure", "Battle"};
         last = kind * 2 + v;
-        rt_log("spindash: %s, Spin Dash %s", names[kind], v ? "on" : "off");
+        rt_log("spindash: %s, Spin Dash %s", KIND_NAMES[kind], v ? "on" : "off");
+    }
+    return v;
+}
+
+// Whether the balls run without Rumble's speed cap in what is being played now.
+static int uncapped(Cpu *c) {
+    load();
+    int kind = play_kind(c), v = kind == 0 ? g_fast_single : kind == 2 ? g_fast_multi : kind == 3 ? g_fast_room : 0;
+    if (v && (rt_call(c, FN(F_REPLAY_IS_PLAYING), 1, 0ull) & 1)) v = 0;
+    static int log = -1, last = -1;
+    if (log < 0) log = getenv("BR_SPEED_LOG") != NULL;
+    if (log && last != kind * 2 + v) {
+        last = kind * 2 + v;
+        rt_log("ballspeed: %s, %s", KIND_NAMES[kind], v ? "Uncapped (Mania)" : "Capped (Rumble)");
     }
     return v;
 }
@@ -132,6 +168,58 @@ static int input_hook(Cpu *c) {
 }
 int rt_hook_4307c30(Cpu *c) { return input_hook(c); }
 int rt_hook_43084a0(Cpu *c) { return input_hook(c); }
+
+// PhysicsBall.BallCollision(): after the ball has moved and hit the stage, its speed is cut down to generalMaxSpeed
+// when m_IsEnableSpeedLimit is set. Uncapped: the function runs with the flag cleared and the flag is put back, so
+// Capped holds again at once when the option is changed in the pause menu.
+#define F_BALL_COLLISION 0x42ed590ull
+#define BALL_VELOCITY 0x64                  // PhysicsBall.m_Velocity (metres per physics step)
+#define BALL_SPEED_LIMIT 0x8a               // PhysicsBall.m_IsEnableSpeedLimit
+#define MPF_TO_KPH 215.78f                  // Util.Math.KphToMpf divides by this
+#define F_GET_PHYSICS_PARAM 0x43abde0ull    // Wonder.GameParam.get_physicsParam (static)
+#define PP_GENERAL_MAX 0x54                 // GameParam.PhysicsParam.generalMaxSpeed (km/h; 500 in the game's data)
+#define BALL_CHARA_PHYSICS 0xf0             // MainGamePlayerBall.m_PhysicsParam (CharaParam.PhysicsParam; +0x18 friction)
+static float LDF(uint64_t a) { float f; memcpy(&f, (const void *)(uintptr_t)a, 4); return f; }
+static void speed_log(Cpu *c, uint64_t ball) {
+    static int log = -1, params;
+    static float peak;
+    static DWORD since;
+    if (log < 0) log = getenv("BR_SPEED_LOG") != NULL;
+    if (!log) return;
+    if (!params) {      // what limits the speed: the cap, and the ground friction against gravity
+        params = 1;
+        uint64_t pp = rt_call(c, FN(F_GET_PHYSICS_PARAM), 1, 0ull), cp = LD64(ball + BALL_CHARA_PHYSICS);
+        if (pp && !c->eh_unwinding) {
+            const char *test = getenv("BR_SPEED_CAP_TEST");      // test aid: a low cap (km/h) to see it held and lifted
+            if (test) { float t = (float)atof(test); memcpy((void *)(uintptr_t)(pp + PP_GENERAL_MAX), &t, 4); }
+            rt_log("ballspeed: generalMaxSpeed %.0f km/h, gravity %g x %g, frictionScaleMultiplier %g, the character's friction %g",
+                   LDF(pp + PP_GENERAL_MAX), LDF(pp + 0x14), LDF(pp + 0xb0), LDF(pp + 0xb8), cp ? LDF(cp + 0x18) : -1.0f);
+        }
+    }
+    float v[3];
+    memcpy(v, (const void *)(uintptr_t)(ball + BALL_VELOCITY), sizeof v);
+    float kph = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) * MPF_TO_KPH;
+    if (kph > peak) peak = kph;
+    DWORD now = GetTickCount();
+    if (now - since >= 1000) {
+        if (peak > 1.0f) rt_log("ballspeed: fastest %.0f km/h (%.0f mph)", peak, peak / 1.609344f);
+        peak = 0;
+        since = now;
+    }
+}
+int rt_hook_42ed590(Cpu *c) {
+    static __thread int inside;
+    uint64_t ball = c->x[0];
+    if (inside || !ball || !LD8(ball + BALL_SPEED_LIMIT)) return 0;
+    int lift = 0;
+    KEEP_ARGS(lift = uncapped(c));
+    if (c->eh_unwinding) return 0;
+    if (lift) ST8(ball + BALL_SPEED_LIMIT, 0);
+    inside = 1; c->pc = FN(F_BALL_COLLISION); rt_dispatch(c); inside = 0;
+    if (lift) ST8(ball + BALL_SPEED_LIMIT, 1);
+    if (!c->eh_unwinding) speed_log(c, ball);
+    return 1;
+}
 
 // UIMgPlayerViewCtrl_Base.SpinAction_OnUpdateIdle(): a player's HUD is told, every frame the spin module idles, to
 // show the charge gauge full. With the Spin Dash off the gauge (the ring around the character's face, with the
@@ -157,7 +245,11 @@ int rt_hook_2179830(Cpu *c) {
     uint64_t arr = c->x[0];
     if (c->eh_unwinding || !arr || (int32_t)LD32(arr + 0x18) < 2) return 1;
     g_room = g_multi;
-    if (!g_room) ST32(arr + ARR_DATA + 4, LD32(arr + ARR_DATA + 4) | 2);
+    g_fast_room = g_fast_multi;
+    uint32_t v = LD32(arr + ARR_DATA + 4);
+    if (!g_room) v |= 2;
+    if (g_fast_room) v |= 4;
+    ST32(arr + ARR_DATA + 4, v);
     return 1;
 }
 // AdvGameMaster.OnRecvAdvInit(int[]) / setAdvancedSettings(int[]): what a machine of the room is told.
@@ -167,8 +259,10 @@ static int recv_hook(Cpu *c) {
     uint32_t v = LD32(arr + ARR_DATA + 4);
     load();
     g_room = !(v & 2);
+    g_fast_room = (v & 4) != 0;
     ST32(arr + ARR_DATA + 4, v & 1);
     if (getenv("BR_SPIN_LOG")) rt_log("spindash: the room's settings say Spin Dash %s", g_room ? "on" : "off");
+    if (getenv("BR_SPEED_LOG")) rt_log("ballspeed: the room's settings say %s", g_fast_room ? "Uncapped (Mania)" : "Capped (Rumble)");
     return 0;
 }
 int rt_hook_2179930(Cpu *c) { return recv_hook(c); }
@@ -184,10 +278,10 @@ int rt_hook_2179a30(Cpu *c) { return recv_hook(c); }
 //     Bg_Line                      y -295     ui_PartView_Template_SelectableButton    y -356
 //
 // (split screen; the online panel has one more picker and heading that this screen does not use, and its line is
-// at -276). The Spin Dash row is a copy of the Ball Collision row object, so the screen treats it as the same kind
-// of picker with two choices; the two functions the screen calls for such a row tell the copy apart by its GC
-// handle. Its view and heading are copies of Ball Collision's, and the three groups are spread evenly over the room
-// the two had.
+// at -276). The Spin Dash and Ball Speed rows are copies of the Ball Collision row object, so the screen treats
+// them as the same kind of picker with two choices; the two functions the screen calls for such a row tell the
+// copies apart by their GC handles. Their views and headings are copies of Ball Collision's, and the four groups
+// are spread evenly over the room the two had.
 #define F_GET_TRANSFORM 0x3f07f60ull        // UnityEngine.Component.get_transform
 #define F_GET_GAMEOBJECT 0x3f07fb0ull       // UnityEngine.Component.get_gameObject
 #define F_OBJ_NAME 0x3f10820ull             // UnityEngine.Object.get_name
@@ -204,9 +298,23 @@ int rt_hook_2179a30(Cpu *c) { return recv_hook(c); }
 #define HEAD_TO_PICKER 88.0f                // a heading to its picker, a picker to the next heading, and the last picker
 #define PICKER_TO_HEAD 96.0f                // to the line: the shares of the room (scaled to the panel's)
 #define LINE_TO_PICKER 84.0f
-static uint32_t g_head_h;                   // GC handle of the Spin Dash heading's text component
+static uint32_t g_head_h[NROWS];            // GC handles of the added headings' text components
+static const char *const ROW_TITLE[NROWS] = {"Spin Dash", "Ball Speed"};
 
-static uint64_t my_row(Cpu *c) { return g_row_h ? rt_call(c, FN(F_GCHANDLE_TARGET), 1, (uint64_t)g_row_h) : 0; }
+// The added row `item` is (0 Spin Dash, 1 Ball Speed), or -1 for the game's own rows.
+static int my_row(Cpu *c, uint64_t item) {
+    for (int r = 0; r < NROWS; r++)
+        if (item && g_row_h[r] && rt_call(c, FN(F_GCHANDLE_TARGET), 1, (uint64_t)g_row_h[r]) == item) return r;
+    return -1;
+}
+// Whether row r shows its "on" choice (the Ball Collision element "Collision"): Spin Dash on, Ball Speed uncapped.
+static int row_on(int r) { return r == 0 ? g_multi : g_fast_multi; }
+static const char *row_value(int r) { return r == 0 ? (g_multi ? "On" : "Off") : g_fast_multi ? "Uncapped (Mania)" : "Capped (Rumble)"; }
+static void row_set(int r, int on) {
+    if (r == 0) g_multi = g_room = on;
+    else g_fast_multi = g_fast_room = on;
+    save();
+}
 static int element_id(uint64_t item, int i) {
     uint64_t list = LD64(item + ITEM_ELEMENTS), e = i >= 0 && i < list_n(list) ? list_at(list, i) : 0;
     uint64_t rec = e ? LD64(e + ELEMENT_RECORD) : 0, raw = rec ? LD64(rec + RECORD_RAW) : 0;
@@ -260,10 +368,10 @@ static void list_insert(Cpu *c, uint64_t list, int at, uint64_t obj) {      // o
     for (int i = n; i > at; i--) ST64(items + 8ull * i, LD64(items + 8ull * (i - 1)));
     ST64(items + 8ull * at, obj);
 }
-static void set_heading(Cpu *c) {
-    uint64_t text = g_head_h ? rt_call(c, FN(F_GCHANDLE_TARGET), 1, (uint64_t)g_head_h) : 0;
+static void set_heading(Cpu *c, int r) {
+    uint64_t text = g_head_h[r] ? rt_call(c, FN(F_GCHANDLE_TARGET), 1, (uint64_t)g_head_h[r]) : 0;
     if (!text || !LD64(text + 0x10)) return;      // +0x10: the engine object; 0 once the screen is gone
-    uint64_t s = rt_tr_str(c, "Spin Dash");
+    uint64_t s = rt_tr_str(c, ROW_TITLE[r]);
     if (!c->eh_unwinding) rt_call(c, FN(F_TMP_SET_TEXT), 4, text, s, 1ull, 0ull);
 }
 
@@ -283,34 +391,39 @@ static uint64_t heading_over(Cpu *c, uint64_t panel, uint64_t picker_tr) {
     return hit;
 }
 
-// The picker view and the heading for the row at index `at` + 1, made from those of the Ball Collision row `at`,
-// and the three groups spread between the World heading and the line over the Confirm button.
+// The picker views and the headings for the rows at index `at` + 1 .. `at` + NROWS, made from those of the Ball
+// Collision row `at`, and all the groups spread between the World heading and the line over the Confirm button.
 static void add_views(Cpu *c, uint64_t buttons, int at) {
     uint64_t picker = list_at(buttons, at), world = at > 0 ? list_at(buttons, at - 1) : 0;
     uint64_t ptr = picker ? rt_call(c, FN(F_GET_TRANSFORM), 2, picker, 0ull) : 0, wtr = world ? rt_call(c, FN(F_GET_TRANSFORM), 2, world, 0ull) : 0;
     uint64_t panel = ptr ? rt_call(c, FN(F_GET_PARENT), 2, ptr, 0ull) : 0;
     uint64_t head = panel ? heading_over(c, panel, ptr) : 0, world_head = panel && wtr ? heading_over(c, panel, wtr) : 0;
     uint64_t line = child_named(c, panel, "Bg_Line");
-    if (!head || !world_head || head == world_head || !line) { rt_log("spindash: the game settings panel is not as expected; no Spin Dash row"); return; }
-    uint64_t copy = rt_call(c, FN(F_INSTANTIATE), 3, picker, panel, 0ull);
-    uint64_t head2 = copy && !c->eh_unwinding ? rt_call(c, FN(F_INSTANTIATE), 3, head, panel, 0ull) : 0;
-    if (!copy || !head2 || c->eh_unwinding) return;
-    list_insert(c, buttons, at + 1, copy);
-    uint64_t label = (int)rt_call(c, FN(F_CHILD_COUNT), 2, head2, 0ull) > 0 ? rt_call(c, FN(F_GET_CHILD), 3, head2, 0ull, 0ull) : 0;
-    uint64_t text = label ? rt_call(c, FN(F_GO_GET_COMPONENT_NAME), 3, rt_call(c, FN(F_GET_GAMEOBJECT), 2, label, 0ull), str8(c, "TextMeshProUGUI"), 0ull) : 0;
-    keep(c, &g_head_h, text);
-    set_heading(c);
+    if (!head || !world_head || head == world_head || !line) { rt_log("gameplay: the game settings panel is not as expected; no added rows"); return; }
+    uint64_t heads[NROWS + 2] = {world_head, head}, pickers[NROWS + 2] = {wtr, ptr};
+    for (int r = 0; r < NROWS; r++) {
+        uint64_t copy = rt_call(c, FN(F_INSTANTIATE), 3, picker, panel, 0ull);
+        uint64_t head2 = copy && !c->eh_unwinding ? rt_call(c, FN(F_INSTANTIATE), 3, head, panel, 0ull) : 0;
+        if (!copy || !head2 || c->eh_unwinding) return;
+        list_insert(c, buttons, at + 1 + r, copy);
+        uint64_t label = (int)rt_call(c, FN(F_CHILD_COUNT), 2, head2, 0ull) > 0 ? rt_call(c, FN(F_GET_CHILD), 3, head2, 0ull, 0ull) : 0;
+        uint64_t text = label ? rt_call(c, FN(F_GO_GET_COMPONENT_NAME), 3, rt_call(c, FN(F_GET_GAMEOBJECT), 2, label, 0ull), str8(c, "TextMeshProUGUI"), 0ull) : 0;
+        keep(c, &g_head_h[r], text);
+        set_heading(c, r);
+        heads[2 + r] = head2;
+        pickers[2 + r] = rt_call(c, FN(F_GET_TRANSFORM), 2, copy, 0ull);
+    }
     float top[2] = {0, 0}, bottom[2] = {0, 0};
     get_floats(c, F_GET_ANCHORED_POS, world_head, top, 2);
     get_floats(c, F_GET_ANCHORED_POS, line, bottom, 2);
-    float k = (top[1] - bottom[1] - LINE_TO_PICKER) / (3 * HEAD_TO_PICKER + 2 * PICKER_TO_HEAD);
-    uint64_t heads[3] = {world_head, head, head2}, pickers[3] = {wtr, ptr, rt_call(c, FN(F_GET_TRANSFORM), 2, copy, 0ull)};
-    for (int i = 0; i < 3; i++) {
+    const int g = NROWS + 2;
+    float k = (top[1] - bottom[1] - LINE_TO_PICKER) / (g * HEAD_TO_PICKER + (g - 1) * PICKER_TO_HEAD);
+    for (int i = 0; i < g; i++) {
         float y = top[1] - k * (HEAD_TO_PICKER + PICKER_TO_HEAD) * (float)i;
         set_y(c, heads[i], y);
         set_y(c, pickers[i], y - k * HEAD_TO_PICKER);
     }
-    rt_log("spindash: the game settings screen has a Spin Dash row");
+    rt_log("gameplay: the game settings screen has Spin Dash and Ball Speed rows");
 }
 
 // setupChoicesItemList(...): returns the screen's List<UIChoicesItemData>. The game also calls it again for a screen
@@ -328,17 +441,18 @@ static int setup_list(Cpu *c, uint64_t fn, int view_off, int collision_off) {
     for (int i = 0; i < n; i++)
         if (list_at(list, i) == pattern) at = i;
     if (at < 1 || list_n(buttons) < n) return 1;      // no Ball Collision row on this screen: left as it is
-    rt_call(c, FN(F_GC_DISABLE), 0);      // the copy is only reachable from host locals until it is in the list
+    rt_call(c, FN(F_GC_DISABLE), 0);      // the copies are only reachable from host locals until they are in the list
     if (list_n(buttons) == n) add_views(c, buttons, at);
-    uint64_t obj = list_n(buttons) > n && !c->eh_unwinding ? rt_call(c, FN(F_OBJECT_NEW), 1, LD64(pattern)) : 0;
-    if (obj && !c->eh_unwinding) {
+    for (int r = 0; r < NROWS && list_n(buttons) >= n + NROWS && !c->eh_unwinding; r++) {
+        uint64_t obj = rt_call(c, FN(F_OBJECT_NEW), 1, LD64(pattern));
+        if (!obj || c->eh_unwinding) break;
         memcpy((void *)(uintptr_t)(obj + 0x10), (const void *)(uintptr_t)(pattern + 0x10), ITEM_SIZE - 0x10);
         int idx = 0;
         for (int i = 0; i < list_n(LD64(obj + ITEM_ELEMENTS)); i++)
-            if ((element_id(obj, i) == COLLISION_ON) == (g_multi != 0)) idx = i;
+            if ((element_id(obj, i) == COLLISION_ON) == (row_on(r) != 0)) idx = i;
         ST32(obj + ITEM_INDEX, idx); ST32(obj + ITEM_PREV_INDEX, idx);
-        list_insert(c, list, at + 1, obj);
-        keep(c, &g_row_h, obj);
+        list_insert(c, list, at + 1 + r, obj);
+        keep(c, &g_row_h[r], obj);
     }
     rt_call(c, FN(F_GC_ENABLE), 0);
     c->x[0] = list;
@@ -348,34 +462,34 @@ int rt_hook_464a040(Cpu *c) { return setup_list(c, F_SETUP_ITEM_LIST, 0x38, VIEW
 int rt_hook_4645c70(Cpu *c) { return setup_list(c, 0x4645c70ull, 0x28, 0x48); }                           // split screen
 
 // onInitSelectableButtonForBallCollision(item, view): a row is shown. The game writes the row's name and its choice
-// ("Collision" / "No Collision"); the copy gets its own.
+// ("Collision" / "No Collision"); the copies get their own.
 int rt_hook_4649b10(Cpu *c) {
     static __thread int inside;
     if (inside) return 0;
-    uint64_t item = c->x[0], view = c->x[1], mine = 0;
-    KEEP_ARGS(mine = my_row(c));
-    if (!item || item != mine) return 0;
+    uint64_t item = c->x[0], view = c->x[1];
+    int r = -1;
+    KEEP_ARGS(r = my_row(c, item));
+    if (r < 0) return 0;
     inside = 1; c->pc = FN(F_ROW_INIT); rt_dispatch(c); inside = 0;
     if (c->eh_unwinding || !view) return 1;
-    uint64_t s = rt_tr_str(c, "Spin Dash");
+    uint64_t s = rt_tr_str(c, ROW_TITLE[r]);
     if (!c->eh_unwinding) rt_call(c, FN(F_SET_TEXT), 3, view, s, 0ull);
-    s = rt_tr_str(c, g_multi ? "On" : "Off");
+    s = rt_tr_str(c, row_value(r));
     if (!c->eh_unwinding) rt_call(c, FN(F_SET_VALUE_TEXT), 3, view, s, 0ull);
-    if (!c->eh_unwinding) set_heading(c);      // again: the copied heading's own text component may have set its text since
+    if (!c->eh_unwinding) set_heading(c, r);      // again: the copied heading's own text component may have set its text since
     return 1;
 }
 
 // onChangePickerValueForBallCollision(item, pickerView): the player changed a picker. For the game's row this sets
-// ball collision; for the copy it sets the Spin Dash choice.
+// ball collision; for a copy it sets that row's choice.
 int rt_hook_4649c50(Cpu *c) {
-    uint64_t item = c->x[0], view = c->x[1], mine = 0;
-    KEEP_ARGS(mine = my_row(c));
-    if (!item || item != mine) return 0;
+    uint64_t item = c->x[0], view = c->x[1];
+    int r = -1;
+    KEEP_ARGS(r = my_row(c, item));
+    if (r < 0) return 0;
     int idx = (int32_t)LD32(item + ITEM_INDEX);
-    g_multi = element_id(item, idx) == COLLISION_ON;
-    g_room = g_multi;
-    save();
-    uint64_t s = rt_tr_str(c, g_multi ? "On" : "Off");
+    row_set(r, element_id(item, idx) == COLLISION_ON);
+    uint64_t s = rt_tr_str(c, row_value(r));
     if (!c->eh_unwinding && view) rt_call(c, FN(F_SET_VALUE_TEXT), 3, view, s, 0ull);
     return 1;
 }
