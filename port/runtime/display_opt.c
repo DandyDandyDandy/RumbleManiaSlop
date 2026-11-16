@@ -47,8 +47,8 @@
 enum { MODE_VALUE_WINDOW = 1, MAX_RES = 16, ROLE_MODE = 0, ROLE_RES = 1, ROLE_FPS = 2, ROLE_VSYNC = 3, ROLE_DOLE = 6, ROLE_MOUSE = 8, ROLE_MUSIC = 4, ROLE_SPIN = 7, ROLE_BANANA = 9, ROLE_SPEED = 5 };
 extern int spindash_single(void);                                         // gameplay.c
 extern void spindash_set_single(int on);
-extern int ballspeed_single(void);                                        // gameplay.c: 1 = Uncapped (Mania)
-extern void ballspeed_set_single(int uncapped);
+extern int ballspeed_single(void);                                        // gameplay.c: Ball Physics, 1 = Mania
+extern void ballspeed_set_single(int mania);
 extern int mania_has_classic_music(void), mania_classic_music(void);      // mania.c
 extern void mania_set_classic_music(int on);
 enum { M_WINDOWED, M_BORDERLESS, M_FULLSCREEN, M_COUNT };
@@ -718,7 +718,7 @@ int rt_hook_4575d40(Cpu *c) {
     } else if (role == ROLE_SPIN) {
         c->x[0] = new_str(c, spindash_single() ? "On" : "Off");
     } else if (role == ROLE_SPEED) {
-        c->x[0] = new_str(c, ballspeed_single() ? "Uncapped (Mania)" : "Capped (Rumble)");
+        c->x[0] = new_str(c, ballspeed_single() ? "Mania" : "Rumble");
     } else if (role == ROLE_MUSIC) {
         c->x[0] = new_str(c, mania_classic_music() ? "Classic Soundtrack" : "Banana Mania");
     } else if (g_mode == M_BORDERLESS) {
@@ -736,7 +736,7 @@ int rt_hook_4534720(Cpu *c) {
     int role = role_of(item);
     if (role == ROLE_MOUSE) { c->x[0] = new_str(c, "Mouse Sensitivity"); return 1; }
     if (role == ROLE_BANANA) { c->x[0] = new_str(c, "Bananas"); return 1; }
-    if (role == ROLE_SPEED) { c->x[0] = new_str(c, "Ball Speed (Single Player)"); return 1; }
+    if (role == ROLE_SPEED) { c->x[0] = new_str(c, "Ball Physics (Single Player)"); return 1; }
     if (role != ROLE_SPIN && role != ROLE_DOLE && role != ROLE_RES && role != ROLE_FPS && role != ROLE_VSYNC && role != ROLE_MUSIC) return 0;
     c->x[0] = new_str(c, role == ROLE_SPIN ? "Spin Dash (Single Player)" : role == ROLE_RES ? "Resolution" : role == ROLE_FPS ? "Frame Rate Limit" : role == ROLE_DOLE ? "Dole Collaboration" : role == ROLE_VSYNC ? "VSync" : "Imported Stage Music");
     return 1;
@@ -757,7 +757,7 @@ static const char *const ROLE_CAPTION[10] = {
     "Set the maximum frame rate!\nThe higher the number, the smoother the motion!",
     "Toggle syncing the picture to your monitor ON or OFF!\nWhen set to ON, screen tearing is prevented!",
     "Choose which soundtrack plays on imported Stages!",
-    "Choose whether the ball has a top speed when playing alone!\nUncapped plays like Banana Mania!",
+    "Choose how the ball moves when playing alone!\nMania rolls, bounces and speeds up like Banana Mania!",
     "Toggle the Dole collaboration look ON or OFF!\nWhen set to ON, Dole bananas and logos appear!",
     "Toggle Spin Dash ON or OFF when playing alone!",
     "Set how much the Stage tilts when dragging the mouse!\nThe higher the number, the more the Stage will tilt!",

@@ -31,10 +31,10 @@ room code, also over Steam with a Steam friend's code filled in), plus, when Ban
   (Single Player)* for single player, and a *Spin Dash* choice under *Ball Collision* on the game settings screen
   of multiplayer Adventure (split screen and online; online the host's choice holds for the room). Battle modes
   always have it.
-- **Ball Speed: Capped (Rumble) or Uncapped (Mania).** Rumble holds a player's ball at a top speed (500 km/h in
-  the game's data); Uncapped lifts that limit. Rows in the same places as Spin Dash (*Options > General > Ball Speed
-  (Single Player)*, a *Ball Speed* choice on the multiplayer game settings screen). Note: on ordinary slopes the
-  ball's top speed comes from Rumble's ground friction, not from this limit.
+- **Ball Physics: Rumble or Mania.** Mania gives the ball Banana Mania's gravity, bounce, friction and tilt values
+  and no top speed, so it rolls and speeds up as in Mania (Coaster: about 375 km/h before the ball leaves the track,
+  as in Mania; Rumble's physics stop at 144). Rows in the same places as Spin Dash (*Options > General > Ball Physics
+  (Single Player)*, a *Ball Physics* choice on the multiplayer game settings screen). Battle modes keep Rumble's.
 - Banana Mania's 18 bonus stages are left out: the imported worlds are about reaching the goal and clear times.
 - **The classic monkeys** of the Classic Character Pack as the "Classic Outfit" in *Style > Outfit*, for AiAi,
   MeeMee, Baby, GonGon, YanYan and Doctor (needs that pack in your Banana Mania).

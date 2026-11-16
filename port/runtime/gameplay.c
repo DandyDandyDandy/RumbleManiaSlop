@@ -1,7 +1,7 @@
-// Gameplay options for Banana Mania's stages (RumbleManiaSlop only): Spin Dash on or off, Ball Speed capped or not.
+// Gameplay options for Banana Mania's stages (RumbleManiaSlop only): Spin Dash on or off, Ball Physics Rumble or Mania.
 //
-// Banana Mania's stages were made for a ball without the Spin Dash and without a top speed, so the player can turn
-// the Spin Dash off and lift Rumble's speed cap. Both options work the same way; for the Spin Dash:
+// Banana Mania's stages were made for a ball without the Spin Dash and with Mania's physics, so the player can turn
+// the Spin Dash off and have the ball move as in Mania. Both options work the same way; for the Spin Dash:
 //
 //  * Single player: the row Options > General > Spin Dash (Single Player), kept as `spindash=` in
 //    <user dir>port_gameplay.txt. On by default.
@@ -15,13 +15,12 @@
 // questions answer "not pressed"), and the charge gauge of the HUD (the ring around the face) is not shown. Other
 // players' dashes online are played as their machines report them. BR_SPIN_LOG=1 logs each change of what applies.
 //
-// Ball Speed: Rumble clamps a player's ball to GameParam.physicsParam.generalMaxSpeed (300 km/h in the code) in
-// PhysicsBall.BallCollision whenever the ball's m_IsEnableSpeedLimit is set (PlayerStateMainGame sets it for the
-// whole stage). The GameCube games and Banana Mania have no such clamp. Capped (Rumble) is the default; Uncapped
-// (Mania) runs that function with the flag cleared. Rows: Options > General > Ball Speed (Single Player)
-// (`uncapped=`) and a Ball Speed picker on the multiplayer game settings screen (`uncapped_multi=`), sent to the
-// room's guests as bit 2 of the same number. Same modes as the Spin Dash: never in Battle, the tutorial or replays.
-// BR_SPEED_LOG=1 logs each second the fastest a ball went, in km/h and mph.
+// Ball Physics: Rumble (the default) or Mania: the players' balls with Banana Mania's gravity, bounce, friction and
+// tilt values and without Rumble's speed cap (see "Ball Physics: Mania" below). Rows: Options > General > Ball
+// Physics (Single Player) (`ballphysics=`, 1 = Mania) and a Ball Physics picker on the multiplayer game settings
+// screen (`ballphysics_multi=`), sent to the room's guests as bit 2 of the same number. Same modes as the Spin Dash:
+// never in Battle, the tutorial or replays. BR_SPEED_LOG=1 logs the mode and, each second, the fastest a ball went
+// and in how many physics steps it touched the stage.
 #include <windows.h>
 #include <math.h>
 #include <stdio.h>
@@ -71,8 +70,8 @@
 #define KLASS_RGCTX 0xc0                    // List<T> class: generic context data, +0x70 = AddWithResize
 
 static int g_single = 1, g_multi = 1, g_room = 1, g_loaded;
-static int g_fast_single, g_fast_multi, g_fast_room;       // Ball Speed: 1 = Uncapped (Mania)
-#define NROWS 2                             // the rows added to the multiplayer game settings: Spin Dash, Ball Speed
+static int g_fast_single, g_fast_multi, g_fast_room;       // Ball Physics: 1 = Mania
+#define NROWS 2                             // the rows added to the multiplayer game settings: Spin Dash, Ball Physics
 static uint32_t g_row_h[NROWS];             // GC handles of those row objects
 
 uint64_t rt_tr_str(Cpu *c, const char *english);      // port_text.c
@@ -88,8 +87,8 @@ static void load(void) {
     while (f && fgets(line, sizeof line, f)) {
         if (sscanf(line, "spindash=%d", &v) == 1) g_single = v != 0;
         else if (sscanf(line, "spindash_multi=%d", &v) == 1) g_multi = v != 0;
-        else if (sscanf(line, "uncapped=%d", &v) == 1) g_fast_single = v != 0;
-        else if (sscanf(line, "uncapped_multi=%d", &v) == 1) g_fast_multi = v != 0;
+        else if (sscanf(line, "ballphysics=%d", &v) == 1) g_fast_single = v != 0;
+        else if (sscanf(line, "ballphysics_multi=%d", &v) == 1) g_fast_multi = v != 0;
     }
     if (f) fclose(f);
     g_room = g_multi;
@@ -100,14 +99,14 @@ static void save(void) {
     cfg_path(path, sizeof path);
     FILE *f = fopen(path, "w");
     if (!f) return;
-    fprintf(f, "spindash=%d\nspindash_multi=%d\nuncapped=%d\nuncapped_multi=%d\n", g_single, g_multi, g_fast_single, g_fast_multi);
+    fprintf(f, "spindash=%d\nspindash_multi=%d\nballphysics=%d\nballphysics_multi=%d\n", g_single, g_multi, g_fast_single, g_fast_multi);
     fclose(f);
 }
 // For the Options rows (display_opt.c).
 int spindash_single(void) { load(); return g_single; }
 void spindash_set_single(int on) { load(); g_single = on != 0; save(); }
 int ballspeed_single(void) { load(); return g_fast_single; }
-void ballspeed_set_single(int uncapped) { load(); g_fast_single = uncapped != 0; save(); }
+void ballspeed_set_single(int mania) { load(); g_fast_single = mania != 0; save(); }
 
 static int list_n(uint64_t list) { return list ? (int32_t)LD32(list + LIST_SIZE) : 0; }
 static uint64_t list_at(uint64_t list, int i) { return LD64(LD64(list + LIST_ITEMS) + ARR_DATA + 8 * (uint64_t)i); }
@@ -138,8 +137,8 @@ static int allowed(Cpu *c) {
     return v;
 }
 
-// Whether the balls run without Rumble's speed cap in what is being played now.
-static int uncapped(Cpu *c) {
+// Whether the players' balls move by Banana Mania's physics (and without Rumble's speed cap) in what is being played now.
+static int mania_physics(Cpu *c) {
     load();
     int kind = play_kind(c), v = kind == 0 ? g_fast_single : kind == 2 ? g_fast_multi : kind == 3 ? g_fast_room : 0;
     if (v && (rt_call(c, FN(F_REPLAY_IS_PLAYING), 1, 0ull) & 1)) v = 0;
@@ -147,7 +146,7 @@ static int uncapped(Cpu *c) {
     if (log < 0) log = getenv("BR_SPEED_LOG") != NULL;
     if (log && last != kind * 2 + v) {
         last = kind * 2 + v;
-        rt_log("ballspeed: %s, %s", KIND_NAMES[kind], v ? "Uncapped (Mania)" : "Capped (Rumble)");
+        rt_log("ballspeed: %s, Ball Physics %s", KIND_NAMES[kind], v ? "Mania" : "Rumble");
     }
     return v;
 }
@@ -169,57 +168,144 @@ static int input_hook(Cpu *c) {
 int rt_hook_4307c30(Cpu *c) { return input_hook(c); }
 int rt_hook_43084a0(Cpu *c) { return input_hook(c); }
 
-// PhysicsBall.BallCollision(): after the ball has moved and hit the stage, its speed is cut down to generalMaxSpeed
-// when m_IsEnableSpeedLimit is set. Uncapped: the function runs with the flag cleared and the flag is put back, so
-// Capped holds again at once when the option is changed in the pause menu.
+// Ball Physics: Mania. A player's ball moves in two steps each physics frame: MainGamePlayerBall.BallMove (gravity,
+// rotated by the stage tilt, its sideways part scaled) and PhysicsBall.BallCollision (stage contact: bounce and
+// friction; then Rumble's speed cap). Values shared with other balls are swapped in for each of the two steps and
+// put back after it (the character tables are shared: CPUs and Battle stay untouched); the ball's own values stay set
+// while Mania applies (own_values). A change in the pause menu holds from the next step. Mania's values (its
+// GameParam.physicsParam, sharedassets0.assets):
+//
+//                              Mania      Rumble (AiAi)            where Rumble keeps it
+//   gravity                    0.0098     0.012 x 0.99             ball m_Gravity (+0x28); SPHERE.gravity (+0x40)
+//   restitution (bounce)       0.5        0.3                      SPHERE.restitution (+0x44)
+//   friction                   0.01       0.018 x 0.725            SPHERE.friction (+0x98)
+//   gravityXZGeneral           1.0        1.4                      the ball's CharaParam.PhysicsParam (+0x10)
+//   gravityXZDirectional       0.11       0                        same (+0x14)
+//   gravityBackwardsDamping    1.0        0.65                     GameParam.physicsParam (+0x18)
+//   slideVanish                (none)     0.001                    GameParam.physicsParam (+0x20); set to 0
+//   staticFrictionThreshold    (none)     0.001                    same (+0x24); set to 0
+//   speed cap                  none       500 km/h                 ball m_IsEnableSpeedLimit (+0x8a)
+//
+// The bounce matters most: on a curved track a fast ball's velocity points into the wall each frame, Mania bounces it
+// off (it touches on about 17 of 60 frames on Coaster), Rumble's keeps it pressed on (60 of 60), and friction only
+// acts on a touch. Measured on Coaster (st2010) holding forward: Mania itself (BananaModManager probe) up to 378 km/h
+// on the track, then the ball leaves it; Rumble 144 km/h at most; Rumble with these values up to 376 km/h, then the
+// ball leaves the track the same way (MANIA.md "Ball Physics").
 #define F_BALL_COLLISION 0x42ed590ull
+#define F_BALL_MOVE 0x42e57b0ull            // MainGamePlayerBall.BallMove
+#define BALL_GRAVITY 0x28                   // PhysicsBall.m_Gravity
+#define BALL_SPHERE_OWNER 0x38              // PhysicsBall.m_CollisionSphere; its +0x68 is the MonkeyPhysics.SPHERE
 #define BALL_VELOCITY 0x64                  // PhysicsBall.m_Velocity (metres per physics step)
 #define BALL_SPEED_LIMIT 0x8a               // PhysicsBall.m_IsEnableSpeedLimit
+#define BALL_CHARA_PHYSICS 0xf0             // MainGamePlayerBall.m_PhysicsParam (CharaParam.PhysicsParam)
 #define MPF_TO_KPH 215.78f                  // Util.Math.KphToMpf divides by this
 #define F_GET_PHYSICS_PARAM 0x43abde0ull    // Wonder.GameParam.get_physicsParam (static)
 #define PP_GENERAL_MAX 0x54                 // GameParam.PhysicsParam.generalMaxSpeed (km/h; 500 in the game's data)
-#define BALL_CHARA_PHYSICS 0xf0             // MainGamePlayerBall.m_PhysicsParam (CharaParam.PhysicsParam; +0x18 friction)
 static float LDF(uint64_t a) { float f; memcpy(&f, (const void *)(uintptr_t)a, 4); return f; }
+static void STF(uint64_t a, float f) { memcpy((void *)(uintptr_t)a, &f, 4); }
+static uint64_t sphere_of(uint64_t ball) { uint64_t cs = LD64(ball + BALL_SPHERE_OWNER); return cs ? LD64(cs + 0x68) : 0; }
+
+typedef struct { uint64_t at[8]; float old[8]; int n; } Swap;
+static void swap_in(Swap *s, uint64_t a, float mania) {
+    if (!a) return;
+    s->at[s->n] = a; s->old[s->n] = LDF(a); s->n++;
+    STF(a, mania);
+}
+static void swap_back(Swap *s) { while (s->n > 0) { s->n--; STF(s->at[s->n], s->old[s->n]); } }
+// The values shared with other balls (the character's table, the game's physics param) are swapped for each step.
+static void mania_values(Swap *s, uint64_t ball, uint64_t pp) {
+    uint64_t cp = LD64(ball + BALL_CHARA_PHYSICS);
+    s->n = 0;
+    if (cp) { swap_in(s, cp + 0x10, 1.0f); swap_in(s, cp + 0x14, 0.11f); }
+    if (pp) swap_in(s, pp + 0x18, 1.0f);
+    if (pp) { swap_in(s, pp + 0x20, 0.0f); swap_in(s, pp + 0x24, 0.0f); }      // Rumble-only: slideVanish, staticFrictionThreshold
+}
+// The ball's own values (its gravity, its SPHERE's gravity, bounce and friction) are also read outside the two steps
+// (ground checks), so they stay on the ball while Mania applies and are put back when it stops applying. The game
+// writes them anew when a stage (re)starts (SetBall), so a ball whose values look fresh is taken over again.
+#define OWN_N 4
+typedef struct { uint64_t ball, sp; float rumble[OWN_N]; } Own;
+static Own g_own[8];
+static uint64_t own_addr(const Own *o, int i) { return i == 0 ? o->ball + BALL_GRAVITY : o->sp + (i == 1 ? 0x40 : i == 2 ? 0x44 : 0x98); }
+static const float MANIA_OWN[OWN_N] = {0.0098f, 0.0098f, 0.5f, 0.01f};
+static void own_values(uint64_t ball, int mania) {
+    uint64_t sp = sphere_of(ball);
+    Own *o = NULL, *free_slot = NULL;
+    for (int i = 0; i < 8; i++) {
+        if (g_own[i].ball == ball) o = &g_own[i];
+        else if (!g_own[i].ball && !free_slot) free_slot = &g_own[i];
+    }
+    if (o && (o->sp != sp || LDF(own_addr(o, 0)) != MANIA_OWN[0] || LDF(own_addr(o, 3)) != MANIA_OWN[3])) {
+        o->ball = 0;      // reset by the game (or another sphere): Rumble's values are the ones there now
+        o = NULL;
+    }
+    if (mania && !o && sp) {
+        o = free_slot ? free_slot : &g_own[0];
+        o->ball = ball; o->sp = sp;
+        for (int i = 0; i < OWN_N; i++) { o->rumble[i] = LDF(own_addr(o, i)); STF(own_addr(o, i), MANIA_OWN[i]); }
+    } else if (!mania && o) {
+        for (int i = 0; i < OWN_N; i++) STF(own_addr(o, i), o->rumble[i]);
+        o->ball = 0;
+    }
+}
+
 static void speed_log(Cpu *c, uint64_t ball) {
-    static int log = -1, params;
+    static int log = -1, params, steps, contacts;
     static float peak;
     static DWORD since;
     if (log < 0) log = getenv("BR_SPEED_LOG") != NULL;
     if (!log) return;
-    if (!params) {      // what limits the speed: the cap, and the ground friction against gravity
+    if (!params) {      // the cap, and Rumble's own values for this ball
         params = 1;
-        uint64_t pp = rt_call(c, FN(F_GET_PHYSICS_PARAM), 1, 0ull), cp = LD64(ball + BALL_CHARA_PHYSICS);
+        uint64_t pp = rt_call(c, FN(F_GET_PHYSICS_PARAM), 1, 0ull), cp = LD64(ball + BALL_CHARA_PHYSICS), sp = sphere_of(ball);
         if (pp && !c->eh_unwinding) {
             const char *test = getenv("BR_SPEED_CAP_TEST");      // test aid: a low cap (km/h) to see it held and lifted
-            if (test) { float t = (float)atof(test); memcpy((void *)(uintptr_t)(pp + PP_GENERAL_MAX), &t, 4); }
-            rt_log("ballspeed: generalMaxSpeed %.0f km/h, gravity %g x %g, frictionScaleMultiplier %g, the character's friction %g",
-                   LDF(pp + PP_GENERAL_MAX), LDF(pp + 0x14), LDF(pp + 0xb0), LDF(pp + 0xb8), cp ? LDF(cp + 0x18) : -1.0f);
+            if (test) STF(pp + PP_GENERAL_MAX, (float)atof(test));
+            rt_log("ballspeed: generalMaxSpeed %.0f km/h; the ball's values now: gravity %g, restitution %g, friction %g, xz %g / %g, backwards %g",
+                   LDF(pp + PP_GENERAL_MAX), LDF(ball + BALL_GRAVITY), sp ? LDF(sp + 0x44) : -1.0f, sp ? LDF(sp + 0x98) : -1.0f,
+                   cp ? LDF(cp + 0x10) : -1.0f, cp ? LDF(cp + 0x14) : -1.0f, LDF(pp + 0x18));
         }
     }
     float v[3];
     memcpy(v, (const void *)(uintptr_t)(ball + BALL_VELOCITY), sizeof v);
     float kph = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) * MPF_TO_KPH;
     if (kph > peak) peak = kph;
+    uint64_t sp = sphere_of(ball);      // steps in which the ball touched the stage (SPHERE flag bit 0)
+    steps++;
+    if (sp && (LD32(sp + 0x10) & 1)) contacts++;
     DWORD now = GetTickCount();
     if (now - since >= 1000) {
-        if (peak > 1.0f) rt_log("ballspeed: fastest %.0f km/h (%.0f mph)", peak, peak / 1.609344f);
+        if (peak > 1.0f) rt_log("ballspeed: fastest %.0f km/h (%.0f mph), contact in %d of %d steps", peak, peak / 1.609344f, contacts, steps);
         peak = 0;
+        steps = contacts = 0;
         since = now;
     }
 }
-int rt_hook_42ed590(Cpu *c) {
-    static __thread int inside;
-    uint64_t ball = c->x[0];
-    if (inside || !ball || !LD8(ball + BALL_SPEED_LIMIT)) return 0;
-    int lift = 0;
-    KEEP_ARGS(lift = uncapped(c));
+
+// Run one of the two steps (`fn`, re-entered with the bypass flag set) for a player's ball, with Mania's values when
+// they apply. Only balls with m_IsEnableSpeedLimit are players' balls in a stage (PlayerStateMainGame sets it).
+static int ball_step(Cpu *c, uint64_t fn, int *inside, int collision) {
+    uint64_t ball = c->x[0], pp = 0;
+    if (*inside || !ball || !LD8(ball + BALL_SPEED_LIMIT)) return 0;
+    int mania = 0;
+    KEEP_ARGS(mania = mania_physics(c); if (mania) pp = rt_call(c, FN(F_GET_PHYSICS_PARAM), 1, 0ull));
     if (c->eh_unwinding) return 0;
-    if (lift) ST8(ball + BALL_SPEED_LIMIT, 0);
-    inside = 1; c->pc = FN(F_BALL_COLLISION); rt_dispatch(c); inside = 0;
-    if (lift) ST8(ball + BALL_SPEED_LIMIT, 1);
-    if (!c->eh_unwinding) speed_log(c, ball);
+    Swap s = {0};
+    own_values(ball, mania);
+    if (mania) {
+        mania_values(&s, ball, pp);
+        if (collision) ST8(ball + BALL_SPEED_LIMIT, 0);
+    }
+    *inside = 1; c->pc = FN(fn); rt_dispatch(c); *inside = 0;
+    if (mania) {
+        swap_back(&s);
+        if (collision) ST8(ball + BALL_SPEED_LIMIT, 1);
+    }
+    if (collision && !c->eh_unwinding) speed_log(c, ball);
     return 1;
 }
+int rt_hook_42ed590(Cpu *c) { static __thread int inside; return ball_step(c, F_BALL_COLLISION, &inside, 1); }
+int rt_hook_42e57b0(Cpu *c) { static __thread int inside; return ball_step(c, F_BALL_MOVE, &inside, 0); }
 
 // UIMgPlayerViewCtrl_Base.SpinAction_OnUpdateIdle(): a player's HUD is told, every frame the spin module idles, to
 // show the charge gauge full. With the Spin Dash off the gauge (the ring around the character's face, with the
@@ -262,7 +348,7 @@ static int recv_hook(Cpu *c) {
     g_fast_room = (v & 4) != 0;
     ST32(arr + ARR_DATA + 4, v & 1);
     if (getenv("BR_SPIN_LOG")) rt_log("spindash: the room's settings say Spin Dash %s", g_room ? "on" : "off");
-    if (getenv("BR_SPEED_LOG")) rt_log("ballspeed: the room's settings say %s", g_fast_room ? "Uncapped (Mania)" : "Capped (Rumble)");
+    if (getenv("BR_SPEED_LOG")) rt_log("ballspeed: the room's settings say Ball Physics %s", g_fast_room ? "Mania" : "Rumble");
     return 0;
 }
 int rt_hook_2179930(Cpu *c) { return recv_hook(c); }
@@ -278,7 +364,7 @@ int rt_hook_2179a30(Cpu *c) { return recv_hook(c); }
 //     Bg_Line                      y -295     ui_PartView_Template_SelectableButton    y -356
 //
 // (split screen; the online panel has one more picker and heading that this screen does not use, and its line is
-// at -276). The Spin Dash and Ball Speed rows are copies of the Ball Collision row object, so the screen treats
+// at -276). The Spin Dash and Ball Physics rows are copies of the Ball Collision row object, so the screen treats
 // them as the same kind of picker with two choices; the two functions the screen calls for such a row tell the
 // copies apart by their GC handles. Their views and headings are copies of Ball Collision's, and the four groups
 // are spread evenly over the room the two had.
@@ -299,17 +385,17 @@ int rt_hook_2179a30(Cpu *c) { return recv_hook(c); }
 #define PICKER_TO_HEAD 96.0f                // to the line: the shares of the room (scaled to the panel's)
 #define LINE_TO_PICKER 84.0f
 static uint32_t g_head_h[NROWS];            // GC handles of the added headings' text components
-static const char *const ROW_TITLE[NROWS] = {"Spin Dash", "Ball Speed"};
+static const char *const ROW_TITLE[NROWS] = {"Spin Dash", "Ball Physics"};
 
-// The added row `item` is (0 Spin Dash, 1 Ball Speed), or -1 for the game's own rows.
+// The added row `item` is (0 Spin Dash, 1 Ball Physics), or -1 for the game's own rows.
 static int my_row(Cpu *c, uint64_t item) {
     for (int r = 0; r < NROWS; r++)
         if (item && g_row_h[r] && rt_call(c, FN(F_GCHANDLE_TARGET), 1, (uint64_t)g_row_h[r]) == item) return r;
     return -1;
 }
-// Whether row r shows its "on" choice (the Ball Collision element "Collision"): Spin Dash on, Ball Speed uncapped.
+// Whether row r shows its "on" choice (the Ball Collision element "Collision"): Spin Dash on, Ball Physics Mania.
 static int row_on(int r) { return r == 0 ? g_multi : g_fast_multi; }
-static const char *row_value(int r) { return r == 0 ? (g_multi ? "On" : "Off") : g_fast_multi ? "Uncapped (Mania)" : "Capped (Rumble)"; }
+static const char *row_value(int r) { return r == 0 ? (g_multi ? "On" : "Off") : g_fast_multi ? "Mania" : "Rumble"; }
 static void row_set(int r, int on) {
     if (r == 0) g_multi = g_room = on;
     else g_fast_multi = g_fast_room = on;
@@ -423,7 +509,7 @@ static void add_views(Cpu *c, uint64_t buttons, int at) {
         set_y(c, heads[i], y);
         set_y(c, pickers[i], y - k * HEAD_TO_PICKER);
     }
-    rt_log("gameplay: the game settings screen has Spin Dash and Ball Speed rows");
+    rt_log("gameplay: the game settings screen has Spin Dash and Ball Physics rows");
 }
 
 // setupChoicesItemList(...): returns the screen's List<UIChoicesItemData>. The game also calls it again for a screen

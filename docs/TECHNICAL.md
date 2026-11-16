@@ -652,7 +652,7 @@ the keyboard and mouse behave as in a PC release, with the game's own default la
   General, 2 Controls, 3 Audio, 4 Display) and gives the rows on screen their picker positions (their GC
   handles are kept per page build). Seen: Display (Frame Rate Limit 120 and the then Smooth Motion row Off return to
   60 and On, and both step correctly afterwards), Controls (Mouse Sensitivity), and in the fork General (Dole
-  Collaboration, Spin Dash; Ball Speed also from the pause menu's Options, 2026-11-16) and Audio (Imported Stage
+  Collaboration, Spin Dash; Ball Physics also from the pause menu's Options, 2026-11-16) and Audio (Imported Stage
   Music). Not tried: Reset from the pause menu's Options for the other rows,
   Resolution changed before a Reset, a Steam Deck.
 * **Lists: wheel, scroll bar, hover.** Every list is a `UnityEngine.UI.ScrollRect` whose content the game moves

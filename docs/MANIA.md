@@ -655,28 +655,53 @@ to the saves (`spindash=`, `spindash_multi=`; both on when there is no file).
   replays (they play what was recorded).
 * `BR_SPIN_LOG=1` logs which mode applies and what a room was told.
 
-## Ball Speed: Capped (Rumble) or Uncapped (Mania) (`port\runtime\gameplay.c`)
+## Ball Physics: Rumble or Mania (`port\runtime\gameplay.c`)
 
-Rumble holds a player's ball at a top speed; the GameCube games have none. Same file, same modes, same rows as the
-Spin Dash (`uncapped=`, `uncapped_multi=`; Capped when there is no file): *Options > General > Ball Speed (Single
-Player)*, and a *Ball Speed* picker under *Spin Dash* on the multiplayer game settings screen (the panel now holds
-four groups). Online it travels as bit 2 of the same "advanced settings" number.
+The players' balls can move by Banana Mania's physics instead of Rumble's. Same file, same modes, same rows as the
+Spin Dash (`ballphysics=`, `ballphysics_multi=`, 1 = Mania; Rumble when there is no file): *Options > General > Ball
+Physics (Single Player)*, and a *Ball Physics* picker under *Spin Dash* on the multiplayer game settings screen (the
+panel now holds four groups). Online it travels as bit 2 of the same "advanced settings" number. Never in Battle,
+the tutorial or replays.
 
-* **The cap:** `PhysicsBall.BallCollision` cuts the velocity to `GameParam.physicsParam.generalMaxSpeed` (km/h,
-  converted by `Util.Math.KphToMpf`, /215.78) whenever the ball's `m_IsEnableSpeedLimit` (+0x8a) is set;
-  `PlayerStateMainGame.OnInitialize` sets it for every player ball (and `OnFinalize` clears it). The code default
-  is 300, **the game's data sets 500 km/h** (310 mph). Uncapped: the hook on `BallCollision` runs it with the flag
-  cleared and sets it back, so a change in the pause menu applies at once. Never in Battle, the tutorial, replays.
-* **What really limits speed on slopes is friction, not the cap.** Measured on Coaster (st2010, held forward):
-  top speed 144 km/h (89 mph) either way. Per physics step the move adds ~0.0103 m/step and the ground contact
-  takes ~1.5 % of the speed; they balance at ~0.69 m/step. Values in play: gravity 0.012 x `gravityMultiplier`
-  0.99, the character's `CharaParam.PhysicsParam.friction` 0.018 x `frictionScaleMultiplier` 0.725. The GameCube
-  rules (from the WebMonkeyBall re-implementation, `physics.ts` / `collision.ts`): gravity 0.0098, each contact
-  takes 1 % of the sliding velocity (SMB2 stages: only the frame's first contact), no air drag, no cap. That is a
-  separate option to build ("GameCube physics"), not part of this one.
-* Test aids: `BR_SPEED_LOG=1` logs the mode, the live limit and friction values, and each second the fastest a ball
-  went; `BR_SPEED_CAP_TEST=<km/h>` lowers the limit. Measured with 100: Capped held 100 exactly, Uncapped reached
-  144; switched from Capped to Uncapped in the pause menu mid-stage: 100 before, 134 after resuming.
+Rumble's ball code descends from Mania's (Mania's namespace `Flash2` has the same `PhysicsBall`, `CollisionSphere`,
+`MonkeyPhysics`-style `stcoli_smkb2` and `GameParam.PhysicsParam`); what differs is mostly values, read from Mania's
+`GameParam` in `sharedassets0.assets` (PhysicsParam at +0x2a8 of the MonoBehaviour's data; layout from Mania's
+metadata with LibCpp2IL):
+
+| | Mania | Rumble (AiAi) | where Rumble keeps it |
+|---|---|---|---|
+| gravity | 0.0098 | 0.012 x 0.99 | ball `m_Gravity` (+0x28), `SPHERE.gravity` (+0x40) |
+| restitution (bounce) | 0.5 | 0.3 | `SPHERE.restitution` (+0x44) |
+| friction | 0.01 | 0.018 x 0.725 | `SPHERE.friction` (+0x98) |
+| gravityXZGeneralMultiplier | 1.0 | 1.4 | the ball's `CharaParam.PhysicsParam` (+0x10) |
+| gravityXZDirectionalMultiplier | 0.11 | 0 | same (+0x14) |
+| gravityBackwardsDamping | 1.0 | 0.65 | `GameParam.physicsParam` (+0x18) |
+| slideVanish, staticFrictionThreshold | (none) | 0.001, 0.001 | same (+0x20, +0x24); 0 in Mania mode |
+| speed cap | none | 500 km/h | ball `m_IsEnableSpeedLimit` (+0x8a) |
+
+* **How it is applied:** a ball moves in two steps per physics frame, `MainGamePlayerBall.BallMove` (`42e57b0`:
+  gravity rotated by the tilt, its sideways part scaled) and `PhysicsBall.BallCollision` (`42ed590`: stage contact,
+  then the cap). The ball's own values (gravity, its SPHERE's gravity, bounce, friction) are set on the ball while
+  Mania applies and put back when it stops (`own_values`; the game writes them anew in `SetBall`, which is noticed).
+  The shared ones (the character's table, the game's physics param) are swapped in for each of the two steps and put
+  back after it, so CPUs, Battle and the tables are untouched. The cap: the limit flag is cleared during
+  `BallCollision`. A change in the pause menu holds from the next step. Only balls with `m_IsEnableSpeedLimit` are
+  touched (`PlayerStateMainGame.OnInitialize` sets it for the players' balls).
+* **Why Coaster was slow:** not the cap. On a curved track a fast ball's velocity points into the wall every frame;
+  Mania's bounce (0.5) throws it off, so it touches on about 17 of 60 frames, while Rumble's (0.3) keeps it pressed on
+  (60 of 60), and friction only acts on a touch. With more friction too, Rumble's ball tops out at 144 km/h.
+* **Measured on Coaster (st2010), forward held, km/h each second:** Mania itself (a BananaModManager probe mod in
+  Mania, SMB2 Practice Mode): 49, 63, 91, 149, 167, 237, 280, 319, 338, 378, then off the track (~480-570).
+  Rumble, Ball Physics Mania: 30, 60, 83, 131, 159, 193, 250, 292, 327, 354, 376, then off the track (~450-540).
+  Rumble, Ball Physics Rumble: 43, 71, 103, 133, 142, 144, then slowly slower. The first seconds stay ~10-30 % below
+  Mania's (not found: tilt response or the camera's forward differ, or the hold started at another moment).
+  W1-01 (st1001) in Mania mode: goal reached. Switched Rumble -> Mania in the pause menu mid-stage: past 144 at once.
+* Test aids: `BR_SPEED_LOG=1` logs the mode, the cap and the ball's values once, and each second the fastest a ball
+  went and in how many physics steps it touched the stage; `BR_SPEED_CAP_TEST=<km/h>` lowers the cap (measured with
+  100: held 100 in Rumble mode). The Mania probe (`Main.cs`, built with the .NET Framework `csc` against Mania's
+  `managed\` assemblies, a `mods\<name>\` folder with `mod.json` + `config.json`, listed in
+  `mods\BananaModManager.json`) and `mdrive.py` (keyboard + window pictures for Mania's menus) are kept in
+  `D:\Repos\_slop_scratch\mania\speedprobe\`.
 
 ## Skip Stage (`port\runtime\stage_skip.c`)
 
