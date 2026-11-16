@@ -762,7 +762,7 @@ int rt_hook_42b09f0(Cpu *c) {
         if (bars[k] != self) { bars[k] = self; steps[k] = 0; }
         if (ng) {
             static int said;
-            ST64(self + JAMABAR_GRAVITY, g[steps[k]++ % (uint32_t)ng]);
+            rt_set_ref(c, self + JAMABAR_GRAVITY, g[steps[k]++ % (uint32_t)ng]);
             if (!said++ && getenv("BR_MANIA_LOG")) rt_log("mania: jamabars follow the local players' gravity (%d)", ng);
         } else if (LD64(self + JAMABAR_GRAVITY)) ST64(self + JAMABAR_GRAVITY, 0);
     }
