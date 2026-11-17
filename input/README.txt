@@ -9,6 +9,9 @@ Put your own files here, then run setup.cmd (one folder up).
 File names do not matter; the setup looks inside the files. Compressed dumps (.nsz, .xcz) are not supported.
 After the setup has finished, nothing in this folder is needed any more (but pictures\, see below).
 
+Add-on content bought later: put its .nsp files here together with prod.keys and run  setup.cmd --only dlc
+(the base game and the update are not needed for that).
+
 Banana Mania (optional)
   When Super Monkey Ball Banana Mania (the Steam version) is installed on this PC, the setup finds it by itself and
   imports its stages, their music and the classic characters into the built game. To say where it is, or to leave

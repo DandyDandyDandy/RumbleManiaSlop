@@ -3,6 +3,18 @@
 Super Monkey Ball Banana Rumble as a native Windows game, built on your PC from your own Switch copy, with the
 stages, music and classic characters of Super Monkey Ball Banana Mania imported from your own Steam copy.
 
+**What it adds to [RumbleSlop](https://github.com/DandyDandyDandy/RumbleSlop)** (which already brings the PC
+features: any resolution, high frame rates, keyboard and mouse, controllers, online play, your DLC)
+
+- Banana Mania's 392 goal stages as 22 extra Adventure worlds (SMB1, SMB2 story and challenge, Deluxe, Reverse
+  and more), all open from the start
+- Banana Mania's stage music, or the original games' music with the Classic Soundtrack add-on
+- The classic monkeys as a "Classic Outfit" for AiAi, MeeMee, Baby, GonGon, YanYan and Doctor
+- Ball physics switchable between Rumble and Mania; Spin Dash can be turned off
+- Skip Stage in Adventure, also in split screen and online
+- Co-op and online play on the imported worlds
+- A level editor (`editor.cmd`) to set Golden Bananas, mission times and world pictures for imported stages
+
 This is a fork of RumbleSlop, which is the PC port on its own. It is called Slop because it is vibecoded slop: the
 port and the importer were written by an AI coding agent. Expect rough edges.
 
@@ -13,7 +25,7 @@ port and the importer were written by an AI coding agent. Expect rough edges.
 >
 > Not affiliated with or endorsed by SEGA, Nintendo, Valve, Unity or CRI Middleware.
 
-## What the fork adds
+## The additions in detail
 
 Everything RumbleSlop does (display options, wide screens, keyboard and mouse, controller glyphs, online play by
 room code, also over Steam with a Steam friend's code filled in), plus, when Banana Mania is installed:
@@ -48,20 +60,25 @@ RumbleSlop.
 
 - Everything RumbleSlop needs: Windows 10 or 11 (64-bit), a CPU with AVX2, a GPU with Vulkan,
   [Python](https://www.python.org/downloads/windows/) 3.10 or newer, about 25 GB free while the setup runs, and
-  your own `prod.keys`, base game (`.xci` or `.nsp`) and 2.2.0 update (`.nsp`).
+  your own `prod.keys`, base game (`.xci` or `.nsp`) and 2.2.0 update (`.nsp`), and optionally your add-on
+  content (DLC) as `.nsp` files.
 - Super Monkey Ball Banana Mania installed through Steam (about 1 GB more disk space for the import). The setup
   finds it by itself; if it does not, name its folder in `input\mania.txt`.
 
 ## Setup (once)
 
 1. Download or clone this repository.
-2. Put your Banana Rumble files into the `input` folder.
+2. Put your Banana Rumble files into the `input` folder: `prod.keys`, the base game, the 2.2.0 update and any
+   add-on content `.nsp` files. The file names do not matter.
 3. Double-click `setup.cmd`. It builds the game (30 to 60 minutes) and then imports Banana Mania (a few minutes).
 4. Start `game\RumbleManiaSlop.exe`.
 
 Afterwards `build` and the files in `input` are not needed (`setup.cmd --clean`). Banana Mania can be uninstalled
 too: the imported stages are in `game\mania`. Deleting that folder turns the game back into plain Banana Rumble;
 `setup.cmd --only mania` makes it again.
+
+Add-on content bought later: put its `.nsp` files and `prod.keys` into `input` and run `setup.cmd --only dlc`
+(the base game and update are not needed for this).
 
 ## The level editor
 
