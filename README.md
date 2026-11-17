@@ -11,6 +11,7 @@ features: any resolution, high frame rates, keyboard and mouse, controllers, onl
 - Banana Mania's stage music, or the original games' music with the Classic Soundtrack add-on
 - The classic monkeys as a "Classic Outfit" for AiAi, MeeMee, Baby, GonGon, YanYan and Doctor
 - Ball physics switchable between Rumble and Mania; Spin Dash can be turned off
+- Every world and stage open from the start, Banana Rumble's own too
 - Skip Stage in Adventure, also in split screen and online
 - Co-op and online play on the imported worlds
 - A level editor (`editor.cmd`) to set Golden Bananas, mission times and world pictures for imported stages

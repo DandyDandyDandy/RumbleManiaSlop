@@ -247,25 +247,42 @@ void mania_tick(Cpu *c) {
 }
 
 // Wonder.SaveUserParam.AdventureParam.GetAdvModeHighestUnlockID(): the last world, in display order, whose previous
-// world is cleared. An imported course has no previous world, which counts as cleared, so with an import the answer
-// was always the last imported course; the world pickers and the value sent to other players in a room then
-// treated every one of the game's worlds as open. The answer is worked out over the game's own worlds instead.
-#define F_IS_COURSE_CLEARED 0x43f2500ull    // AdventureParam.IsCourseCleared(Course.eID)
+// world is cleared; the world pickers of co-op and online rooms list the chain of worlds up to it. Every world is
+// open in the fork (below), so the answer is the last of the game's own worlds (`own` lines of mania_courses.txt).
+// Not the game's answer: an imported course has no previous world, which counts as cleared, so the game would name
+// the last imported course.
 int rt_hook_43f27a0(Cpu *c) {
+    if (g_ncourses < 0) load_courses();
+    if (!g_nown) return 0;
+    c->x[0] = g_own[g_nown - 1].id;
+    return 1;
+}
+
+// Every world and stage open from the start (the fork; the user's wish, 2026-11-16).
+// AdventureParam.IsCourseUnlocked(course) is what Select World (FlowCourseSelect.SetupCourseSelect) and
+// Util.Adventure.IsDisplayLockedCourse ask: always yes. A stage is locked when its save entry (SaveParamStage,
+// SaveParamAdventureBase.m_ConditionID at +0x10) says Locked; AdventureParam.GetCourseParam(course) makes or
+// returns a course's entry (SaveParamCourse.m_StageList at +0x10), and every Locked stage in it becomes NotCleared:
+// open, not cleared, no "new" mark. It goes into the save with the game's next save, so existing saves open too.
+#define COND_LOCKED 1u
+#define COND_NOT_CLEARED 3u
+int rt_hook_43f2740(Cpu *c) { c->x[0] = 1; return 1; }
+int rt_hook_43f1d30(Cpu *c) {
     static __thread int inside;
     if (inside) return 0;
-    if (g_ncourses < 0) load_courses();
-    if (!g_ncourses || !g_first_id || !g_nown) return 0;
-    uint64_t lr = c->x[30], self = c->x[0], x1 = c->x[1];
+    uint64_t lr = c->x[30], course = c->x[1];
     inside = 1;
-    uint32_t best = (uint32_t)rt_call(c, FN(0x43f27a0ull), 2, self, x1);
+    uint64_t cp = rt_call(c, FN(0x43f1d30ull), 3, c->x[0], course, c->x[2]);
     inside = 0;
-    if (best >= g_first_id) {
-        best = g_own[0].id;
-        for (int i = 0; i < g_nown; i++)
-            if (!g_own[i].prev || (rt_call(c, FN(F_IS_COURSE_CLEARED), 3, self, (uint64_t)g_own[i].prev, 0ull) & 1)) best = g_own[i].id;
+    uint64_t list = cp ? LD64(cp + 0x10) : 0, items = list ? LD64(list + 0x10) : 0;
+    int n = items ? (int)LD32(list + 0x18) : 0, opened = 0;
+    for (int i = 0; i < n; i++) {
+        uint64_t st = LD64(items + 0x20 + 8 * (uint64_t)i);
+        if (st && LD32(st + 0x10) == COND_LOCKED) { ST32(st + 0x10, COND_NOT_CLEARED); opened++; }
     }
-    c->x[0] = best;
+    static int logged;
+    if (opened && logged++ < 40) rt_log("mania: course %u: %d locked stage(s) opened", (unsigned)course, opened);
+    c->x[0] = cp;
     c->x[30] = lr;
     return 1;
 }

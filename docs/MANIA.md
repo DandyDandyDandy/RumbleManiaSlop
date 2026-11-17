@@ -478,7 +478,15 @@ that chain from the first world to the "highest unlocked" one, so the imported c
 (course 26); linking them after the table's last row, as the first version did, put them on no chain and the
 picker never offered them.
 
-**The highest unlocked world.** `SaveUserParam.AdventureParam.GetAdvModeHighestUnlockID` (0x43c37d0) answers
+**Everything open (2026-11-16, the user's wish).** `AdventureParam.IsCourseUnlocked` (0x43f2740; asked by Select
+World and `Util.Adventure.IsDisplayLockedCourse`) answers yes for every world, and `AdventureParam.GetCourseParam`
+(0x43f1d30), which makes or returns a world's save entry, turns every stage whose condition is `Locked` (1) into
+`NotCleared` (3): open, not cleared, no "new" mark; the game's next save keeps it, so saves made before open too.
+`GetAdvModeHighestUnlockID` answers the last of the game's own worlds (all of them are open). Seen on save T: the
+locked stages of every world opened (1..10, 11, 12..21, 22, 24, 25, 26), Select World lists the EX worlds, Select
+Stage of World 1 lists its later stages as playable.
+
+**The highest unlocked world** (before everything was opened). `SaveUserParam.AdventureParam.GetAdvModeHighestUnlockID` (0x43c37d0) answers
 with the last course in display order whose previous course is cleared. An imported course has no previous
 course, which counts as cleared, so with an import the answer was always the last imported course: every world
 of the game was offered in the pickers and reported to the other players of a room as open. The port answers

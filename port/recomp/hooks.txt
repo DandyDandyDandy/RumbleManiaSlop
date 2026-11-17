@@ -37,6 +37,8 @@
 4298340   Wonder.MainGameBg::Awake   (stages that move their background)
 45a6ea0   Wonder.UI.Choices.UIChoicesItemData_Factory::getUnlockedCourseList
 43f27a0   Wonder.SaveUserParam+AdventureParam::GetAdvModeHighestUnlockID
+43f2740   Wonder.SaveUserParam+AdventureParam::IsCourseUnlocked   (every world open)
+43f1d30   Wonder.SaveUserParam+AdventureParam::GetCourseParam   (every stage open)
 449c690   Wonder.CRM.AdventureUtil::UpdateMissionStatus   (play statistics: no slot for an imported course)
 449c770   Wonder.CRM.AdventureUtil::UpdateBestTimeStatus
 449c8b0   Wonder.CRM.AdventureUtil::StartTimeAttack
