@@ -338,7 +338,27 @@
   "9954": {"gold": "Collision/bananaset/banana_26", "picture": "st9954.png", "view": [66.3591, 169.44, -194.4057, 1.9481, -26.3455, -6.7667, 45.8366]}
  },
  "courses": {
-  "Smb1Org_Shokyu": {"theme": 1, "title": 0}
+  "Smb1Org_Chukyu": {"title": 0},
+  "Smb1Org_Jyokyu": {"title": 0},
+  "Smb1Org_JyokyuEx2": {"title": 0},
+  "Smb1Org_Shokyu": {"theme": 1, "title": 0},
+  "Smb2Org_Chukyu": {"title": 0},
+  "Smb2Org_Jyokyu": {"title": 0},
+  "Smb2Org_Master": {"title": 0},
+  "Smb2Org_Shokyu": {"title": 0},
+  "Smb2_StoryWorld01": {"title": 0},
+  "Smb2_StoryWorld02": {"title": 0},
+  "Smb2_StoryWorld03": {"title": 0},
+  "Smb2_StoryWorld04": {"title": 0},
+  "Smb2_StoryWorld05": {"title": 0},
+  "Smb2_StoryWorld06": {"title": 0},
+  "Smb2_StoryWorld07": {"title": 0},
+  "Smb2_StoryWorld08": {"title": 0},
+  "Smb2_StoryWorld09": {"title": 0},
+  "Smb2_StoryWorld10": {"title": 0},
+  "SmbDx": {"title": 0},
+  "SpecialOriginal": {"title": 0},
+  "SpecialReverse": {"title": 0}
  },
  "postcards": {
  }
