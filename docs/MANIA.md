@@ -408,7 +408,7 @@ With `BR_MANIA_LOG` set the port logs each press (`mania: switch pressed: type, 
 The template's own stage geometry, checkpoint and guide arrows are removed; its goal, start, intro-camera bounds
 and initializer stay. Objects of the shared file that nothing refers to any more are dropped.
 
-Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9 GB for the 392 that are imported).
+Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.8 GB for the 365 that are imported).
 
 ### Courses, tables, catalog (`mania\build.py`)
 
@@ -429,15 +429,16 @@ Each stage keeps its own copies of the textures it uses (about 2 MB a stage, 0.9
 | `mania_stages.txt` | course number, stage number, Mania stage, course name, stage name (for people and `try_stage.py`) |
 | `import_report.txt` | per stage: counts, and the Mania components that were not converted |
 
-22 courses are made (`COURSES`): Super Monkey Ball 1 Beginner, Advanced, Expert and Master; the ten worlds of
-Super Monkey Ball 2's story; its four challenge difficulties; Deluxe; Original Stage Mode; Reverse Mode; and "More
-Stages" with every stage that is in none of them, so every imported stage is reachable. Mania's Extra courses are
+21 courses are made (`COURSES`): Super Monkey Ball 1 Beginner, Advanced, Expert and Master; the ten worlds of
+Super Monkey Ball 2's story; its four challenge difficulties; Deluxe; Original Stage Mode; Reverse Mode. Stages in
+none of them are not imported (27 goal stages: leftover and reused ones; until 2026-11-16 they were a "More
+Stages" course, dropped at the user's wish). Mania's Extra courses are
 not worlds of their own: their stages come after the stages of their difficulty (`EXTRAS`; SMB1 Beginner = its 9
 stages, then Beginner Extra's 3). `--only` takes an Extra course's name as its difficulty's.
 
 **Bonus stages are not imported.** 18 of Mania's 410 stages are bonus stages (stage kind `Bonus`): bananas
 against the clock, and for five of them no goal. They do not fit worlds that are about reaching the goal and
-clear times, so `plan_courses` leaves them out of every course, which leaves 392 stages. An earlier version
+clear times, so `plan_courses` leaves them out of every course, which leaves 392 stages, 365 of them in the courses. An earlier version
 imported them with rules of its own (a clear by taking every banana, by falling out or by the clock, through
 hooks on `MainGameSequence.setState` and `updateHurryUp`); that code is gone. A re-import deletes the stage and
 background bundles an earlier import left behind.
@@ -1013,7 +1014,7 @@ What was checked in the running game (2.00, one PC):
 
 * stages: SMB1 Beginner 1 played to the goal; Diamond, Wide Bridge, Steps, Blocks (moving parts), Switches (both
   switches, the bridge is crossed), Conveyers (the belt pushes the ball), Linear Seesaws (the plank tilts);
-  a 12-stage sample across courses loaded without a crash. Most of the 392 stages have never been started;
+  a 12-stage sample across courses loaded without a crash. Most of the 365 stages have never been started;
 * the last stage of an imported world returns to the stage select of the next world;
 * online, two instances: the imported worlds are in the host's world picker, a locked Rumble world is not;
   SMB1 Beginner stages 1 to 4 cleared in sequence by both players;

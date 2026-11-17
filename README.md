@@ -6,7 +6,7 @@ stages, music and classic characters of Super Monkey Ball Banana Mania imported 
 **What it adds to [RumbleSlop](https://github.com/DandyDandyDandy/RumbleSlop)** (which already brings the PC
 features: any resolution, high frame rates, keyboard and mouse, controllers, online play, your DLC)
 
-- Banana Mania's 392 goal stages as 22 extra Adventure worlds (SMB1, SMB2 story and challenge, Deluxe, Reverse
+- Banana Mania's 365 goal stages as 21 extra Adventure worlds (SMB1, SMB2 story and challenge, Deluxe, Reverse
   and more), all open from the start
 - Banana Mania's stage music, or the original games' music with the Classic Soundtrack add-on
 - The classic monkeys as a "Classic Outfit" for AiAi, MeeMee, Baby, GonGon, YanYan and Doctor
@@ -30,10 +30,9 @@ port and the importer were written by an AI coding agent. Expect rough edges.
 Everything RumbleSlop does (display options, wide screens, keyboard and mouse, controller glyphs, online play by
 room code, also over Steam's relay network), plus, when Banana Mania is installed:
 
-- **Banana Mania's 392 goal stages in Adventure mode**, as 22 extra worlds under a *Mania* tab of *Select World*:
+- **Banana Mania's 365 goal stages in Adventure mode**, as 21 extra worlds under a *Mania* tab of *Select World*:
   Super Monkey Ball 1 (Beginner, Advanced, Expert, each followed by its Extra floors, Master), the ten story worlds of Super
-  Monkey Ball 2, its challenge difficulties, Deluxe, Original Stage Mode, Reverse Mode and the remaining special
-  stages. They are played with Rumble's ball, physics, goal, camera and rules; every stage is open from the start.
+  Monkey Ball 2, its challenge difficulties, Deluxe, Original Stage Mode and Reverse Mode. They are played with Rumble's ball, physics, goal, camera and rules; every stage is open from the start.
 - **Banana Mania's stage music** on those stages, and the original games' music when your Banana Mania has the
   Classic Soundtrack add-on (*Options > Audio > Imported Stage Music*).
 - **Skip Stage.** In Adventure the pause menu can leave a stage for the next one: *Help Menu > Skip Stage* in
@@ -109,7 +108,7 @@ Those of RumbleSlop, and for the imported stages:
   colouring is lost.
 - No rankings for the imported worlds. Stage pictures, missions and world pictures come from Banana Mania and
   the level editor (above); the intro camera is Banana Mania's, computed from each stage.
-- Only a sample of the 392 stages has been started in the game; see `docs\MANIA.md` for what was checked.
+- Only a sample of the 365 stages has been started in the game; see `docs\MANIA.md` for what was checked.
 - The Classic Outfit's face does not blink, and other body items do not show while it is worn.
 
 ## For developers

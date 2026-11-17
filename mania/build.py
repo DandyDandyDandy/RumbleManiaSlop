@@ -90,8 +90,9 @@ COURSES = [
     ('Smb2Org_Shokyu', 'SMB2 B', 'SMB2 Beginner'), ('Smb2Org_Chukyu', 'SMB2 A', 'SMB2 Advanced'),
     ('Smb2Org_Jyokyu', 'SMB2 E', 'SMB2 Expert'), ('Smb2Org_Master', 'SMB2 M', 'SMB2 Master'),
     ('SmbDx', 'DX', None), ('SpecialOriginal', 'ORG', None), ('SpecialReverse', 'REV', None),
-    ('*', 'ETC', 'More Stages'),            # every stage that is in none of the courses above
 ]
+# Stages in none of these courses are not imported: they were a "More Stages" course of leftover and reused stages
+# until 2026-11-16 (the user's wish to drop it)
 # Mania's Extra courses are not worlds of their own: their stages follow the stages of the course they belong to
 # (the user's wish, 2026-11-15)
 EXTRAS = {'Smb1Org_Shokyu': 'Smb1Org_ShokyuEx', 'Smb1Org_Chukyu': 'Smb1Org_ChukyuEx', 'Smb1Org_Jyokyu': 'Smb1Org_JyokyuEx',
@@ -183,22 +184,18 @@ def plan_courses(mania, only=None):
         return i in mania.stages and i in mania.bundles and mania.stages[i]['kind'] != 'Bonus'
 
     for name, prefix, title in COURSES:
-        if name == '*':
-            ids = sorted(i for i in mania.stages if i not in used and wanted(i))
-        else:
-            c = mania.courses.get(name)
-            if c is None:
-                continue
-            ids = [i for i in c['stages'] if wanted(i)]
-            ex = mania.courses.get(EXTRAS.get(name))
-            if ex is not None:
-                ids += [i for i in ex['stages'] if wanted(i) and i not in ids]
-            title = title or mania.texts('en', 'maingame').get(c['text_key']) or name
-            if name.startswith('Smb2_StoryWorld'):
-                title = f'SMB2 {title}'
+        c = mania.courses.get(name)
+        if c is None:
+            continue
+        ids = [i for i in c['stages'] if wanted(i)]
+        ex = mania.courses.get(EXTRAS.get(name))
+        if ex is not None:
+            ids += [i for i in ex['stages'] if wanted(i) and i not in ids]
+        title = title or mania.texts('en', 'maingame').get(c['text_key']) or name
+        if name.startswith('Smb2_StoryWorld'):
+            title = f'SMB2 {title}'
         if only and name not in only:
-            if name != '*':
-                used.update(ids)
+            used.update(ids)
             continue
         used.update(ids)
         if ids:
