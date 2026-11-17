@@ -23,7 +23,7 @@ SIZES = (256, 64, 48, 32, 24, 16)
 
 
 def picture():
-    # The fork: a title picture of one's own (mania\title, input\title) that replaces this texture on the title screen
+    # The fork: a title picture of the fork's own (mania\title) that replaces this texture on the title screen
     # is the icon too, so the icon shows what the title shows. A fully transparent one (the fork hides the title's
     # monkeys) does not count: the icon is then the game's own picture.
     sys.path.insert(0, str(paths.ROOT / 'mania'))

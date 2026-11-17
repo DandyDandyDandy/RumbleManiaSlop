@@ -485,7 +485,7 @@ Testing
 * **Icon and version.** `port\launcher\build_launcher.py` builds the exe with `launcher.rc`: icon resource 103
   (`build\obj\icon.ico`, made by `make_icon.py` at build time from the title-screen texture `paths.ICON_TEXTURE`
   of the user's dump, `ui_view_titleloop_title.prefab.bundle`; Aiai in RumbleSlop, Gongon in the fork, where the
-  fork's own title picture for that texture wins: `mania\title` or `input\title`, the classic AiAi) and a version
+  fork's own title picture for that texture wins: `mania\title`, the classic AiAi) and a version
   block with the game version.
   `window.c` gives the window the same icon. `build_launcher.py --copy` replaces the exe in the game folder.
 * **Errors.** A FATAL shows a message box that names `port.log`, unless the run is scripted

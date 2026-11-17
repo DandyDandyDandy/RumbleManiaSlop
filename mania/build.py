@@ -25,7 +25,7 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\mania_stages.txt                  course number, stage number, Mania stage, course name, stage name
     mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are), and
                                             its title music as mania_adv.acb / .awb (the title screen plays it)
-    mania\\Switch\\ui_assets_ui\\...           the title screen's bundles with the pictures of mania\\title\\ and input\\title\\ (title.py)
+    mania\\Switch\\ui_assets_ui\\...           the title screen's bundles with the pictures of mania\\title\\ (title.py)
     mania\\Switch\\scene_mainmenu3d_night..., db_assets_db\\mainmenu_environment...
                                             the main menu always at night, under the starry sky of mania\\menu_sky\\
                                             (menu_sky.py)
@@ -363,7 +363,7 @@ def main():
         sprites.write_table(out_switch, os.path.join(out_switch, TABLE_REL.replace('/', os.sep)) if classic else None)
     cat.save(os.path.join(out, 'catalog.json'))
 
-    # ---- the fork's title screen (mania\title, overridden by input\title; title.py)
+    # ---- the fork's title screen (mania\title; title.py)
     import title
     title.apply(aa, out)
     # ---- the main menu at night under the stars (mania\menu_sky, overridden by input\menu_sky; menu_sky.py)
@@ -399,14 +399,28 @@ def main():
 
 
 def own_picture(entry, key):
-    """(name for the sprite, picture) of the user's picture an entry of the overrides names, or None. The name
+    """(name for the sprite, picture) of the mod's picture an entry of the overrides names, or None. The name
     holds a hash of the picture and its use, so another picture is another asset to the game."""
     img = overrides.picture(entry, key)
     if img is None:
         if entry.get(key):
-            print(f'  picture {entry[key]} is not in input\\pictures: passed over', flush=True)
+            print(f'  picture {entry[key]} is not in mania\\pictures: passed over', flush=True)
         return None
     return 'user_' + hashlib.md5(img.tobytes() + f'{img.size} {key}'.encode()).hexdigest()[:12], overrides.fit_picture(img, key)
+
+
+def keep_render(entry, img):
+    """The game's render of a stage's view becomes the mod's picture of the stage (the file its entry names), when it
+    differs from it: the picture committed with the fork follows what the editor's author sees in the game."""
+    name = entry.get('picture')
+    if not name or not overrides.PICTURE_NAME.fullmatch(name):
+        return
+    old = overrides.picture(entry, 'picture')
+    from PIL import ImageChops, ImageStat
+    if old is not None and old.size == img.size:
+        if sum(ImageStat.Stat(ImageChops.difference(old.convert('RGB'), img.convert('RGB'))).mean) / 3 < 4:
+            return                                      # the same picture (a JPEG copy of it differs by about 3)
+    overrides.save_picture(img, name)
 
 
 def view_picture(sid, entry):
@@ -454,11 +468,14 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
         fields.update(scenery[WORLD_OF_BG.get(st['bg'], 1)])
         if st['bg'] in backgrounds:
             fields.update(stage_fields(backgrounds[st['bg']]))
-        # the picture in Select Stage: the game's own of the user's view, else the user's (overrides.json), else
-        # Banana Mania's thumbnail of the stage
-        # (0 = "no image")
+        # the picture in Select Stage: the game's own render of the editor's view, else the mod's picture
+        # (mania\pictures, overrides.json), else Banana Mania's thumbnail of the stage (0 = "no image"). A render is
+        # copied over the mod's picture, so the committed picture is what this game shows and every copy gets it.
         entry = ov['stages'].get(str(sid), {})
-        picture = view_picture(sid, entry) or own_picture(entry, 'picture')
+        picture = view_picture(sid, entry)
+        if picture:
+            keep_render(entry, picture[1])
+        picture = picture or own_picture(entry, 'picture')
         if picture:
             thumb = sprites.add(*picture, out)
         else:

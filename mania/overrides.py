@@ -23,10 +23,11 @@ picture in Select World: Banana Mania's own ("mania", the default where Mania ha
 "postcards" are loading screen tips of one's own (postcards.py): a title and a text (the same in every language),
 the category whose stamp and name they show, a picture, and "off" to keep one out of the game for now.
 
-Pictures of one's own go before all of that: "picture" of a stage is its thumbnail in Select Stage, "picture",
+The mod's own pictures go before all of that: "picture" of a stage is its thumbnail in Select Stage, "picture",
 "big_picture" and "icon_picture" of a course its small picture, the big picture beside the lists and the world
-icon. Each names a PNG file in input\\pictures\\ (the editor puts uploads there, cut to the shape the game shows;
-the folder is the user's and not part of the repository). A file that is missing is passed over.
+icon. Each names a PNG or JPEG file in mania\\pictures\\, which is part of the fork (committed, like a mod's files,
+so every copy shows them; the editor puts uploads there, cut to the shape the game shows). A file that is missing is
+passed over.
 """
 import json
 import os
@@ -34,8 +35,8 @@ import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PATH = os.path.join(HERE, 'overrides.json')
-PICTURES = os.path.join(os.path.dirname(HERE), 'input', 'pictures')
-PICTURE_NAME = re.compile(r'[A-Za-z0-9_]{1,100}\.png')
+PICTURES = os.path.join(HERE, 'pictures')
+PICTURE_NAME = re.compile(r'[A-Za-z0-9_]{1,100}\.(png|jpg)')
 # the shapes the game shows them in: (width, height, with transparency)
 PICTURE_SHAPES = {'picture': (512, 512, False), 'big_picture': (804, 1004, False), 'icon_picture': (132, 132, True)}
 # 'view': where a stage's picture was taken from in the editor's 3D view, for the picture the import takes in the
@@ -110,7 +111,7 @@ def save(data, path=None):
 
 
 def picture(entry, key):
-    """The user's picture an entry names under `key` as an image, or None (no such key, or the file is missing)."""
+    """The mod's picture an entry names under `key` as an image, or None (no such key, or the file is missing)."""
     name = entry.get(key)
     path = os.path.join(PICTURES, name) if name and PICTURE_NAME.fullmatch(name) else None
     if not path or not os.path.exists(path):
@@ -118,6 +119,17 @@ def picture(entry, key):
     from PIL import Image
     with Image.open(path) as img:
         return img.convert('RGBA')
+
+
+def save_picture(img, name):
+    """Write a picture into PICTURES as `name`: JPEG (quality 90) for .jpg, else PNG."""
+    os.makedirs(PICTURES, exist_ok=True)
+    path = os.path.join(PICTURES, name)
+    if name.endswith('.jpg'):
+        img.convert('RGB').save(path + '.tmp', 'JPEG', quality=90, optimize=True, subsampling=0)
+    else:
+        img.save(path + '.tmp', 'PNG')
+    os.replace(path + '.tmp', path)
 
 
 def fit_picture(img, key):

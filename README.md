@@ -85,8 +85,9 @@ Add-on content bought later: put its `.nsp` files and `prod.keys` into `input` a
 Banana Mania's stages have no Golden Banana and no mission times, and its worlds none of Banana Rumble's menu
 graphics. `editor.cmd` opens a page in your browser where you set them: pick a stage, click one of its bananas to
 make it the Golden Banana, type the challenge time, choose which Rumble world an imported world borrows its
-pictures from, and look at a preview of Select World and Select Stage. You can also upload pictures of your own
-for a stage's thumbnail and a world's pictures (they are kept in `input\pictures`, which is never committed). Your
+pictures from, and look at a preview of Select World and Select Stage. You can also upload pictures
+for a stage's thumbnail and a world's pictures, or have the game render a stage's picture from the view you chose;
+they are kept in `mania\pictures` and are part of the mod, so every copy shows them. Your
 choices are kept in `mania\overrides.json`; "Apply to game" puts them into the game (close the game first).
 
 ## Logs

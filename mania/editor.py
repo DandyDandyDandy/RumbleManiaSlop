@@ -9,11 +9,11 @@ What a person sets with it (saved at once into mania\\overrides.json, which mani
     per world   whether it has the stage mission, and the Rumble world whose graphics it borrows in the menus
     postcards   loading screen tips of one's own (title, text, category, picture), previewed on a mock-up of the
                 loading screen beside the game's own tips (postcards.py)
-    pictures   of one's own for a stage's thumbnail, a world's small picture, big picture and icon and a postcard: uploaded
-                in the page (or, for a stage, taken from the 3D view), cut to the game's shape and kept as PNG
-                files in input\\pictures\\ (the user's folder, not part of the repo). A stage picture taken from
+    pictures   the mod's own for a stage's thumbnail, a world's small picture, big picture and icon and a postcard:
+                uploaded in the page (or, for a stage, taken from the 3D view), cut to the game's shape and kept in
+                mania\\pictures\\ (part of the fork, committed: every copy shows them). A stage picture taken from
                 the 3D view is a preview: its point of view is kept too ("view"), and the import lets the game
-                itself draw the stage from there (thumbshot.py)
+                itself draw the stage from there (thumbshot.py) and keeps that render as the stage's picture
 
 The page shows the stage as Banana Mania has it (the drawn meshes at rest, read from the Mania install with
 maniastage.py; nothing is copied into the repo) and a mock-up of Select World and Select Stage with the pictures
@@ -146,7 +146,7 @@ class Game:
             return f.read()
 
     def user_picture(self, name):
-        """PNG bytes of one of the user's pictures (input\\pictures), or None."""
+        """The bytes of one of the mod's pictures (mania\\pictures), or None."""
         if not overrides.PICTURE_NAME.fullmatch(name):
             return None
         try:
@@ -177,9 +177,10 @@ class Game:
             img.load()
         except Exception:
             raise ValueError('this file is not a picture the editor can read (PNG, JPEG, WebP, BMP, GIF)')
-        os.makedirs(overrides.PICTURES, exist_ok=True)
-        overrides.fit_picture(img, key).save(path + '.tmp', 'PNG')
-        os.replace(path + '.tmp', path)
+        overrides.save_picture(overrides.fit_picture(img, key), file)
+        other = path[:-4] + '.jpg'                       # the stage's earlier picture under the other name
+        if os.path.exists(other):
+            os.remove(other)
         return file
 
     # ---- a stage --------------------------------------------------------------------------------------------

@@ -5,8 +5,8 @@
     python title.py --export DIR    write the game's own title pictures to DIR as PNG files: the names to use, and
                                     the starting point for new ones
 
-The pictures come from two folders: mania\\title\\ (part of the fork, committed: RumbleMania's title screen, like a
-mod's files) and input\\title\\ (one's own, not committed), whose files win over the fork's of the same name.
+The pictures come from mania\\title\\ (part of the fork, committed: RumbleMania's title screen, like a mod's
+files).
 A picture is a PNG file named like the texture it replaces (letter case does not matter):
 
     ui_View_TitleLoop_Title_<Aiai|Meemee|Baby|Gongon|Yanyan|Doctor|Palette>.png   the monkeys, 760 x 760
@@ -19,7 +19,7 @@ A picture is a PNG file named like the texture it replaces (letter case does not
 
 A picture of another size is scaled to the texture's size. A fully transparent picture removes that monkey.
 
-title.txt in the same folders (input\\title\\'s lines win) holds settings, one "key=value" per line:
+title.txt in the same folder holds settings, one "key=value" per line:
 
     background=#6b5cb1      the colour of the title screen's ground behind the icon pattern (the game's is yellow,
                             #ffdc00 behind the logo, #ffe600 in the opening)
@@ -40,7 +40,7 @@ LANGS = ('de', 'en', 'es', 'es419', 'fr', 'it', 'ja', 'ko', 'ptbr', 'zh', 'zhs')
 LOOP_BUNDLE = 'ui_assets_ui/scenetitleloop/ui_view_titleloop_title.prefab.bundle'
 BG_BUNDLE = 'ui_assets_ui/scenetitleloop/ui_view_titleloop_titlebackground.prefab.bundle'
 BUNDLES = [LOOP_BUNDLE, BG_BUNDLE] + [f'ui_assets_ui/localizedsprite/{l}/ui_view_title_titlelogo_{l}.tga.bundle' for l in LANGS]
-PICTURES = (os.path.join(HERE, 'title'), str(paths.INPUT / 'title'))     # the fork's, then one's own (wins)
+PICTURES = (os.path.join(HERE, 'title'),)      # the fork's title pictures
 ALL_LANGS_LOGO = 'ui_view_title_titlelogo'
 SKIP = {'ui_Empty', 'TMP_DefaultSprite'}
 GROUND = 'ImageBackGround'      # the full-screen plain Image under the root of the title views (yellow in the game)
@@ -223,7 +223,7 @@ def export(aa, folder):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--game', default=str(paths.GAME))
-    ap.add_argument('--pictures', help='take the pictures from this folder only (default: mania\\title, then input\\title)')
+    ap.add_argument('--pictures', help='take the pictures from this folder instead of mania\\title (for trying new ones)')
     ap.add_argument('--export', metavar='DIR', help='write the game\'s own title pictures to DIR instead')
     a = ap.parse_args()
     aa = os.path.join(a.game, f'{paths.NAME}_Data', 'StreamingAssets', 'aa')

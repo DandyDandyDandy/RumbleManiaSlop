@@ -811,9 +811,10 @@ its result).
   it is the world that stands in for the first stage's background (`WORLD_OF_BG`), as before. A course without a
   title card (an empty `BeginningTitle`, as the game's World Tour has) loads and plays.
 
-* Pictures of one's own go before all of these (`overrides.json`: `picture` of a stage; `picture`, `big_picture`,
-  `icon_picture` of a course). They are PNG files in `input\pictures\`, the user's folder, which is not part of
-  the repository; the editor writes them there in the shape the game shows (512 x 512 for the small pictures,
+* The mod's own pictures go before all of these (`overrides.json`: `picture` of a stage; `picture`, `big_picture`,
+  `icon_picture` of a course). They are PNG or JPEG files in `mania\pictures\`, committed with the fork (the user's
+  decision, 2026-11-16: the pictures are part of the mod and go out with every release; until then they
+  were in the user's `input\pictures\`); the editor writes them there in the shape the game shows (512 x 512 for the small pictures,
   804 x 1004 for the big one, both filled from the middle of the upload; 132 x 132 with transparency for the
   icon, fitted whole). The big picture and the icon are copies of World 1's sprites with another image
   (`Sprites.add(..., template=)`), which gives them size and texture format; the sprite's name holds a hash of
@@ -905,7 +906,7 @@ In the editor the tab **Postcards** lists the game's 208 tips and the user's (fi
 chosen one on a mock-up of the loading screen; game markup in a text (`<TextTag=..>`, `<InputActionBtnIcon=..>`,
 the button glyphs) is drawn as a plain mark. The game's tips are read only; "Make a copy of your own" starts a
 postcard from one. A postcard of one's own has a title, a text (a new line is a new line), a category, a picture
-(uploaded, cut to the 512 x 512 square, `input\pictures\card_<n>.png`), "Show it in the game" and Delete.
+(uploaded, cut to the 512 x 512 square, `mania\pictures\card_<n>.png`), "Show it in the game" and Delete.
 
 What the game draws (seen 2026-11-16): an airmail postcard on black, the title in a dark red banner at the top
 left, the text below it, a "TIPS" postmark and the category's stamp at the top right, the picture below them, the
@@ -920,7 +921,7 @@ Gallery's documents with a postcard, other languages, a postcard without a pictu
 
 PNG files replace the title screen's textures: `mania\title\` holds RumbleMania's own title (committed, like a
 mod's files; since 2026-11-16 it holds no artwork of either game, only transparent pictures and `title.txt`),
-and `input\title\` (not committed) can override any of them per file. The names, sizes and the `--export`
+and nothing else: `input\title\` no longer overrides them (2026-11-16). The names, sizes and the `--export`
 command that writes the game's own pictures as a starting point are in the header of `title.py`. `build.py`
 runs the step at the end of every import; `python mania\title.py` alone redoes it in seconds.
 
