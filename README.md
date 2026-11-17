@@ -14,7 +14,6 @@ features: any resolution, high frame rates, keyboard and mouse, controllers, onl
 - Every world and stage open from the start, Banana Rumble's own too
 - Skip Stage in Adventure, also in split screen and online
 - Co-op and online play on the imported worlds
-- A level editor (`editor.cmd`) to set Golden Bananas, mission times and world pictures for imported stages
 
 This is a fork of RumbleSlop, which is the PC port on its own. It is called Slop because it is vibecoded slop: the
 port and the importer were written by an AI coding agent. Expect rough edges.
@@ -47,7 +46,6 @@ room code, also over Steam's relay network), plus, when Banana Mania is installe
   and no top speed, so it rolls and speeds up as in Mania (Coaster: about 375 km/h before the ball leaves the track,
   as in Mania; Rumble's physics stop at 144). Rows in the same places as Spin Dash (*Options > General > Ball Physics
   (Single Player)*, a *Ball Physics* choice on the multiplayer game settings screen). Battle modes keep Rumble's.
-- Banana Mania's 18 bonus stages are left out: the imported worlds are about reaching the goal and clear times.
 - **The classic monkeys** of the Classic Character Pack as the "Classic Outfit" in *Style > Outfit*, for AiAi,
   MeeMee, Baby, GonGon, YanYan and Doctor (needs that pack in your Banana Mania).
 - Co-op with the imported worlds. Online, a room only accepts players whose game has the same imported worlds:
@@ -80,16 +78,6 @@ too: the imported stages are in `game\mania`. Deleting that folder turns the gam
 Add-on content bought later: put its `.nsp` files and `prod.keys` into `input` and run `setup.cmd --only dlc`
 (the base game and update are not needed for this).
 
-## The level editor
-
-Banana Mania's stages have no Golden Banana and no mission times, and its worlds none of Banana Rumble's menu
-graphics. `editor.cmd` opens a page in your browser where you set them: pick a stage, click one of its bananas to
-make it the Golden Banana, type the challenge time, choose which Rumble world an imported world borrows its
-pictures from, and look at a preview of Select World and Select Stage. You can also upload pictures
-for a stage's thumbnail and a world's pictures, or have the game render a stage's picture from the view you chose;
-they are kept in `mania\pictures` and are part of the mod, so every copy shows them. Your
-choices are kept in `mania\overrides.json`; "Apply to game" puts them into the game (close the game first).
-
 ## Logs
 
 The game writes no log files when playing. If it does not start or misbehaves, run `RumbleManiaSlop.exe --log`
@@ -101,6 +89,8 @@ with a report.
 - [docs/TECHNICAL.md](docs/TECHNICAL.md): how the port works (shared with RumbleSlop).
 - [docs/MANIA.md](docs/MANIA.md): both games' stage data, the conversion, the hooks, the test tool.
 - [docs/COSTUMES.md](docs/COSTUMES.md): characters and costumes, the Classic Outfit.
+- `editor.cmd`: the level editor the mod's Golden Bananas, world looks and stage pictures were made with
+  (`mania\overrides.json`, `mania\pictures`); see docs/MANIA.md, "Missions, menu pictures and the editor".
 
 `upstream` in this clone is RumbleSlop; port fixes belong there and are merged here.
 
