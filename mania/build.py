@@ -51,7 +51,9 @@ converted again even with --no-stages.
 
 A stage whose picture was taken "From the view" in the editor gets its picture from the game itself: the import
 starts the game and photographs the stage from that point of view (thumbshot.py; about a minute and a quarter per
-new view, three copies of the game at a time, --no-views leaves it out, --retake takes all of them again). With --no-stages and an import already in
+new view, three copies of the game at a time, --no-views leaves it out, --retake takes all of them again). Only a
+stage whose picture is not rendered yet is photographed: a rendered picture is a .jpg in mania\\pictures (shipped
+with the fork, so a copy made from a release never starts the game here); the editor's preview is a .png. With --no-stages and an import already in
 the game this happens first; otherwise after the import, which then runs its table part once more.
 """
 import argparse
@@ -253,7 +255,12 @@ def main():
                 and e.get('gold') == overrides.gold(ov, sid))
 
     # ---- stage pictures from the game, of the stages that are in the game as this import would make them
-    views = {sid: ov['stages'][str(sid)]['view'] for sid in stage_ids if ov['stages'].get(str(sid), {}).get('view')}
+    def rendered(entry):                # the mod's picture of the stage is the game's render (.jpg) and is there
+        name = entry.get('picture') or ''
+        return name.endswith('.jpg') and overrides.picture(entry, 'picture') is not None
+
+    views = {sid: ov['stages'][str(sid)]['view'] for sid in stage_ids if ov['stages'].get(str(sid), {}).get('view')
+             and (a.retake or not rendered(ov['stages'][str(sid)]))}
     if a.retake:
         for sid, v in views.items():
             if os.path.exists(thumbshot.kept(sid, v)):
@@ -284,6 +291,7 @@ def main():
                     reports[bundle] = stats
                 if done % 25 == 0 or done == len(jobs):
                     print(f'  {done}/{len(jobs)} stages converted', flush=True)
+                    print(f'progress: importing Banana Mania: {done} of {len(jobs)} stages converted', flush=True)
     # files of an earlier import that are not part of this one (the bonus stages and their two backgrounds, which
     # older versions imported)
     if not a.only and not a.no_levels:
@@ -319,7 +327,8 @@ def main():
                 tunables[k] = v
         names = sorted({mania.stages[i]['bg'] for i in stage_ids})
         with ProcessPoolExecutor(min(a.jobs, len(names))) as pool:
-            for name, info, err in pool.map(_convert_bg, [(a.mania, aa_switch, n, out, tunables) for n in names]):
+            for k, (name, info, err) in enumerate(pool.map(_convert_bg, [(a.mania, aa_switch, n, out, tunables) for n in names])):
+                print(f'progress: importing Banana Mania: {k + 1} of {len(names)} backgrounds converted', flush=True)
                 if err:
                     bg_failed[name] = err
                     print(f'  FAILED background {name}: {err}', flush=True)
@@ -409,11 +418,22 @@ def own_picture(entry, key):
     return 'user_' + hashlib.md5(img.tobytes() + f'{img.size} {key}'.encode()).hexdigest()[:12], overrides.fit_picture(img, key)
 
 
-def keep_render(entry, img):
-    """The game's render of a stage's view becomes the mod's picture of the stage (the file its entry names), when it
-    differs from it: the picture committed with the fork follows what the editor's author sees in the game."""
-    name = entry.get('picture')
-    if not name or not overrides.PICTURE_NAME.fullmatch(name):
+def keep_render(sid, entry, img):
+    """The game's render of a stage's view becomes the mod's picture of the stage, when it differs from it: the
+    picture committed with the fork follows what the editor's author sees in the game. A render is kept as
+    st<id>.jpg; an editor preview (.png) it replaces is deleted and the overrides name the .jpg."""
+    name = entry.get('picture') or ''
+    if name and not overrides.PICTURE_NAME.fullmatch(name):
+        return
+    if not name.endswith('.jpg'):
+        jpg = (name[:-4] if name else f'st{sid}') + '.jpg'
+        overrides.save_picture(img, jpg)
+        data = overrides.load()
+        data['stages'].setdefault(str(sid), {})['picture'] = jpg
+        overrides.save(data)
+        if name and os.path.exists(os.path.join(overrides.PICTURES, name)):
+            os.remove(os.path.join(overrides.PICTURES, name))
+        entry['picture'] = jpg
         return
     old = overrides.picture(entry, 'picture')
     from PIL import ImageChops, ImageStat
@@ -474,7 +494,7 @@ def import_tables(a, mania, courses, stage_ids, aa, out, out_switch, backgrounds
         entry = ov['stages'].get(str(sid), {})
         picture = view_picture(sid, entry)
         if picture:
-            keep_render(entry, picture[1])
+            keep_render(sid, entry, picture[1])
         picture = picture or own_picture(entry, 'picture')
         if picture:
             thumb = sprites.add(*picture, out)

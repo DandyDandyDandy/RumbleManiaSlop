@@ -234,7 +234,7 @@ def finger_chains(root, side):
 
 def finger_pose(root, spec):
     """-> {bone name: 4x4 transform, in the classic root space, to apply to that bone's rest matrix}.
-    The same arithmetic is in port\tools\hand_poser.html (function poseMatrices): keep the two in step."""
+    The same arithmetic is in port\\tools\\hand_poser.html (function poseMatrices): keep the two in step."""
     pose = {}
     for side in ('l', 'r'):
         wrist, chains = finger_chains(root, side)

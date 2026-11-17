@@ -942,7 +942,7 @@ class Converter:
         """Convert Mania's `stage_bundle` and write the Rumble bundle to out_path.
 
         gold: the path below the stage root of the banana that becomes the stage's Golden Banana (the one of
-        Rumble's third stage mission; mania\overrides.json), or None for a stage without one.
+        Rumble's third stage mission; mania\\overrides.json), or None for a stage without one.
 
         identity: None to keep the template's names (the result replaces World 1 Stage 1: a test aid), or
         (bundle name, scene path, internal file name) for a new stage. Returns a dict of facts about the stage."""
