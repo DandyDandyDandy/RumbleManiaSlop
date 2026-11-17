@@ -338,7 +338,7 @@
   "9954": {"gold": "Collision/bananaset/banana_26", "picture": "st9954.png", "view": [66.3591, 169.44, -194.4057, 1.9481, -26.3455, -6.7667, 45.8366]}
  },
  "courses": {
-  "Smb1Org_Shokyu": {"theme": 2, "title": 0}
+  "Smb1Org_Shokyu": {"theme": 1, "title": 0}
  },
  "postcards": {
  }
