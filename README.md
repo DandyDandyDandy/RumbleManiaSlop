@@ -59,7 +59,7 @@ RumbleSlop.
 ## What you need
 
 - Everything RumbleSlop needs: Windows 10 or 11 (64-bit), a CPU with AVX2, a GPU with Vulkan,
-  [Python](https://www.python.org/downloads/windows/) 3.10 or newer, about 25 GB free while the setup runs, and
+  [Python](https://www.python.org/downloads/windows/) 3.10 or newer, about 15 GB free besides your game files (6 GB after `setup.cmd --clean`), and
   your own `prod.keys`, base game (`.xci` or `.nsp`) and 2.2.0 update (`.nsp`), and optionally your add-on
   content (DLC) as `.nsp` files.
 - Super Monkey Ball Banana Mania installed through Steam (about 1 GB more disk space for the import). The setup
