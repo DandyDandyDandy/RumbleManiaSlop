@@ -68,7 +68,7 @@ RumbleSlop.
 1. Download or clone this repository.
 2. Put your Banana Rumble files into the `input` folder: `prod.keys`, the base game, the 2.2.0 update and any
    add-on content `.nsp` files. The file names do not matter.
-3. Double-click `setup.cmd`. It builds the game (30 to 60 minutes) and then imports Banana Mania (a few minutes).
+3. Double-click `setup.cmd`. It builds the game (15 to 30 minutes) and then imports Banana Mania (a few minutes).
 4. Start `game\RumbleManiaSlop.exe`.
 
 Afterwards `build` and the files in `input` are not needed (`setup.cmd --clean`). Banana Mania can be uninstalled
