@@ -89,29 +89,12 @@ pictures from, and look at a preview of Select World and Select Stage. You can a
 for a stage's thumbnail and a world's pictures (they are kept in `input\pictures`, which is never committed). Your
 choices are kept in `mania\overrides.json`; "Apply to game" puts them into the game (close the game first).
 
-## Known problems
+## Logs
 
-The game writes no log files when playing; `RumbleManiaSlop.exe --log` writes `game\port.log` and
-`game\player.log` (an error that stops the game always leaves `port.log`).
-
-Those of RumbleSlop, and for the imported stages:
-
-- Switches, bumpers, seesaws, conveyors, wormholes, sliding bars ("jamabars") and moving parts work. A wormhole
-  is Rumble's own gate, not Banana Mania's model. With several players the sliding bars move by each machine's
-  own player.
-- Imported stages have Banana Mania's goal (gate, party ball and tape, in blue, green or red); every goal ends the
-  stage: green and red warp goals do not skip stages.
-- Stages have Banana Mania's backgrounds, sky and lighting, with their particle effects (waterfall spray, fires,
-  lightning) and animated signs, but without the camera weather, mirror images on the scenery and Mania's colour
-  grading; the light on the scenery is baked into it (no shadows cast on it). Brightness, colour and fog are still
-  being tuned against Banana Mania, and not every background has been compared by eye yet. The stages
-  themselves are drawn with Rumble's stage shaders: colours and materials differ from the original, vertex
-  colouring is lost.
-- No rankings for the imported worlds. Stage pictures, missions and world pictures come from Banana Mania and
-  the level editor (above); the intro camera is Banana Mania's, computed from each stage.
-- Only a sample of the 365 stages has been started in the game; see `docs\MANIA.md` for what was checked.
-- The Classic Outfit's face does not blink, and other body items do not show while it is worn.
-
+The game writes no log files when playing. If it does not start or misbehaves, run `RumbleManiaSlop.exe --log`
+(from a command prompt in the `game` folder, or add `--log` to a shortcut's launch options): it then writes
+`game\port.log` and `game\player.log`. If the game stops with an error or freezes, it always leaves `port.log`
+with a report.
 ## For developers
 
 - [docs/TECHNICAL.md](docs/TECHNICAL.md): how the port works (shared with RumbleSlop).
