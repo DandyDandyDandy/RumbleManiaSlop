@@ -909,16 +909,17 @@ Gallery's documents with a postcard, other languages, a postcard without a pictu
 
 ## The fork's title screen (`mania\title.py`, pictures in `mania\title\`)
 
-PNG files replace the title screen's textures: `mania\title\` holds RumbleMania's own title (committed on
-purpose, like a mod's files: the user's decision, 2026-11-15, an exception to "no game content in the repo"),
+PNG files replace the title screen's textures: `mania\title\` holds RumbleMania's own title (committed, like a
+mod's files; since 2026-11-16 it holds no artwork of either game, only transparent pictures and `title.txt`),
 and `input\title\` (not committed) can override any of them per file. The names, sizes and the `--export`
 command that writes the game's own pictures as a starting point are in the header of `title.py`. `build.py`
 runs the step at the end of every import; `python mania\title.py` alone redoes it in seconds.
 
-The fork's set: AiAi (classic artwork, cut to the style of the game's ball pictures) in Gongon's place; Baby,
-Doctor, MeeMee, Palette and YanYan as fully transparent pictures (not shown); one logo
-(`ui_View_Title_titlelogo.png`, all languages) reading "Banana Rumble Mania"; `title.txt` with
-`background=#6b5cb1` (purple instead of yellow).
+The fork's set (2026-11-16, the user's wish): all seven monkeys (Aiai, Meemee, Baby, Gongon, Yanyan, Doctor,
+Palette) as fully transparent pictures (not shown); the game's own logo (no logo file); `title.txt` with
+`background=#6b5cb1` (purple instead of yellow). The program icon is the game's own Gongon picture: make_icon.py
+passes over a fully transparent title picture. (Until 2026-11-16 the set had a classic AiAi in Gongon's place and a
+"Banana Rumble Mania" logo; the postcards in overrides.json were removed the same day.)
 
 The ground colour: the yellow is not a picture but a plain Image called `ImageBackGround` directly under the
 root of two views, the opening (`ui_view_titleloop_title`, #ffe600) and the logo screen's background

@@ -341,12 +341,5 @@
   "Smb1Org_Shokyu": {"theme": 2, "title": 0}
  },
  "postcards": {
-  "1": {"category": 4, "picture": "card_1.png", "text": "AiAi is a monkey!", "title": "Epic Gamer Fact 1"},
-  "2": {"category": 4, "picture": "card_2.png", "text": "AiAi has over 15 speeding violations and should no longer be allowed to drive.", "title": "Epic Gamer Fact 2"},
-  "3": {"category": 10, "picture": "card_3.png", "text": "The SEGA LOGO stage is a reference to the video game publisher SEGA.", "title": "Epic Gamer Fact 3"},
-  "4": {"category": 10, "picture": "card_4.png", "text": "Crime exists in the Super Monkey Ball universe.", "title": "Epic Gamer Fact 4"},
-  "5": {"category": 4, "picture": "card_5.png", "text": "Super Monke- wait. \n\nIs that Hatsune Miku? \n\nomg hi mikuuuu", "title": "Epic Gamer Fact 5"},
-  "6": {"category": 10, "picture": "card_6.png", "text": "Every golden banana in this mod replaces an original banana or banana bunch from Super Monkey Ball Banana Mania.", "title": "Epic Gamer Fact 6"},
-  "7": {"category": 10, "picture": "card_7.png", "text": "Super Monkey Ball released over 25 years ago!\n\nThe passage of time doesn't stop!", "title": "Epic Gamer Fact 7"}
  }
 }
