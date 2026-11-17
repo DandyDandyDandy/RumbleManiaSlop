@@ -91,6 +91,9 @@ choices are kept in `mania\overrides.json`; "Apply to game" puts them into the g
 
 ## Known problems
 
+The game writes no log files when playing; `RumbleManiaSlop.exe --log` writes `game\port.log` and
+`game\player.log` (an error that stops the game always leaves `port.log`).
+
 Those of RumbleSlop, and for the imported stages:
 
 - Switches, bumpers, seesaws, conveyors, wormholes, sliding bars ("jamabars") and moving parts work. A wormhole
