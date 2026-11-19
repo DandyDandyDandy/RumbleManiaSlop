@@ -719,5 +719,19 @@ def add_scenes(cat, stage_ids, out, extras):
         cat.add_entry(f'Assets/Mania/{name}.unity', tmpl['prov'], depkey, -1, name, tmpl['rt'], [name])
 
 
+def run():
+    """The import reads the game's bundles by their own names: the short names (port/assets/shorten.py) are taken
+    back for its work and given again afterwards. BR_LONG_NAMES=1 (the editor) leaves the own names."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'port', 'assets'))
+    import shorten
+    game = sys.argv[sys.argv.index('--game') + 1] if '--game' in sys.argv[:-1] else str(paths.GAME)
+    shorten.restore(game)
+    try:
+        return main()
+    finally:
+        if not os.environ.get('BR_LONG_NAMES'):
+            shorten.apply(game)
+
+
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(run())

@@ -78,6 +78,15 @@ too: the imported stages are in `game\mania`. Deleting that folder turns the gam
 Add-on content bought later: put its `.nsp` files and `prod.keys` into `input` and run `setup.cmd --only dlc`
 (the base game and update are not needed for this).
 
+Updating to a newer version of the port: get the new version of this folder (`git pull`, or unpack the new release
+over it, keeping `build` and `game`) and run `setup.cmd` again. It rebuilds only the port's own part and puts the
+game folder together again, which takes a minute or two; saves and settings are untouched. This needs the `build`
+folder of the first setup; without it the setup starts from the game dump.
+
+Copying the game folder to another PC or to a Steam Deck: the folder's own path should stay under about 100
+characters. Windows tools leave out files whose full path is longer than 260 characters, and the longest file here
+is 150 characters below the game folder (the setup's last step shortens the longest names for this reason).
+
 ## Logs
 
 The game writes no log files when playing. If it does not start or misbehaves, run `RumbleManiaSlop.exe --log`

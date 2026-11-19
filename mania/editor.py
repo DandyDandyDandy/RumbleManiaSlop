@@ -556,6 +556,12 @@ def main():
         mania_dir = str(found)
     if not os.path.exists(os.path.join(str(paths.GAME), f'{paths.NAME}_Data', 'StreamingAssets', 'aa', 'catalog.json')):
         sys.exit('The game is not built yet: run setup.cmd first.')
+    # the editor and the import it runs read the game's bundles by their own names: the short names of the setup's
+    # last step are taken back and stay away (setup.cmd, or portssets\shorten.py apply, gives them again)
+    sys.path.insert(0, os.path.join(REPO, 'port', 'assets'))
+    import shorten
+    shorten.restore(str(paths.GAME))
+    os.environ['BR_LONG_NAMES'] = '1'
     game, server, apply, render = Game(mania_dir), None, Apply(mania_dir), Render()
     apply.render = render
     for port in range(a.port, a.port + 20):
