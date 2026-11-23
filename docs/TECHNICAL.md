@@ -508,7 +508,7 @@ that is exactly "Ver. " and digits and dots. RumbleSlop is "RS", RumbleManiaSlop
 
 **Every major release needs a version number agreed for it, and `PORT_LABEL` in `port\paths.py` changed to it
 before the release is built** (both repos keep their own prefix; `build_runtime.py` passes it in as a define and
-recompiles the runtime when `paths.py` changes). The number started at 0.1 on 2026-11-15; 0.2 on 2026-11-19 (short bundle names, no MSAA on Qualcomm GPUs).
+recompiles the runtime when `paths.py` changes). The number started at 0.1 on 2026-11-15; 0.2 on 2026-11-19 (short bundle names, no MSAA on Qualcomm GPUs); 0.3 on 2026-11-23 (moving bumpers and scaled collision on imported stages, the import redone on update, the game's own main menu).
 
 ### Language (`imports_plat.c`, `port_text.c`)
 
