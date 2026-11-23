@@ -80,7 +80,9 @@ Add-on content bought later: put its `.nsp` files and `prod.keys` into `input` a
 
 Updating to a newer version of the port: get the new version of this folder (`git pull`, or unpack the new release
 over it, keeping `build` and `game`) and run `setup.cmd` again. It rebuilds only the port's own part and puts the
-game folder together again, which takes a minute or two; saves and settings are untouched.
+game folder together again, which takes a minute or two; saves and settings are untouched. When the new version
+changes how Banana Mania is imported (fixed stages, for example), the setup says so and imports it again as well,
+which needs Banana Mania still installed and takes a few minutes more.
 
 If you deleted `build` and `input` and kept only the game: put the `game` folder into the new version's folder
 (next to `setup.cmd`) and run `setup.cmd`. It then rebuilds the port's code from the game folder itself: the

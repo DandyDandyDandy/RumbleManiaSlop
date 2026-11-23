@@ -322,6 +322,20 @@ def step_mania():
             say('    ' + line.strip())
 
 
+def mania_code():
+    """A fingerprint of what the Banana Mania import is made of: every file under mania\\ (code, stage pictures,
+    overrides, title and sky pictures) but the editor, the test tools and Python's caches. A new version of the
+    port whose import differs imports again, so fixes to converted stages reach an updated game."""
+    import hashlib
+    h, root = hashlib.sha1(), paths.ROOT / 'mania'
+    for p in sorted(root.rglob('*')):
+        rel = p.relative_to(root).as_posix()
+        if not p.is_file() or '__pycache__' in rel.split('/') or rel.startswith(('tools/', 'editor.')):
+            continue
+        h.update(rel.encode() + b'\0' + p.read_bytes())
+    return h.hexdigest()
+
+
 def step_shorten():
     # always the last step, and done again on every run: the steps before it put bundles back under their
     # own names (port/assets/shorten.py says why the names are shortened)
@@ -402,6 +416,10 @@ def main():
         st['game_only'] = recover = True
         st['done'] = [n for n in NAMES if n in st['done'] or n in DATA_STEPS]
     GAME_ONLY = bool(st.get('game_only'))
+    if 'mania' in st['done'] and st.get('mania_code') != mania_code():
+        # this version imports Banana Mania differently (or the build predates the fingerprint): import again
+        say('The Banana Mania import changed in this version: its stages are imported again.')
+        st['done'].remove('mania')
     if 'shorten' not in todo:
         todo = todo + ['shorten']
     say(f'{paths.NAME} setup: building the game in {paths.GAME}')
@@ -441,6 +459,8 @@ def main():
             say(f'[{i}/{len(STEPS)}] {title} ...')
             t = time.time()
             fn()
+            if name == 'mania':
+                st['mania_code'] = mania_code()     # taken after the import: it may add pictures under mania\
             st['done'].append(name)
             save_state(st)
             say(f'    done in {int(time.time() - t)} s')
