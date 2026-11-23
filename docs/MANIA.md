@@ -254,6 +254,7 @@ What is built:
 | `StageMovObjManager.m_info` (moving node -> its drawn twin), `MgTRSSync` (source -> targets) | Mania copies transforms every frame; here each target is hung **under** its source, keeping its place, so the one Animator moves the drawn parts and whatever rides on a moving part |
 | nothing (Mania moves every collision part it finds under an animated node) | the tag `StgMot` on every object the clips move and on everything below it (below) |
 | `CollisionBumper` (+ the model under the root's `bumpers`) | Rumble's `CollisionBumper` (same sphere, same push) and `MgBumper` |
+| `Bumper {m_Source}` on that model (Mania copies the collision node's place to it every frame) | the model hung under `m_Source`, like the twins above, so a bumper on a moving node (Speedy Jam, st1076) carries its model along |
 | `MgStageSwitchManager`, `MgStageSwitch`, `CollisionSwitchUpper` | `MgStageSwitchController` on the `Collision` copy, `MgSwitch` and `CollisionSwitchUpper` on each switch (below) |
 | `MgSeesaw {momentFactor, frictionFactor, restoreFactor, seeSawModel}` on a node above the seesaw's collision parts | `MgSeesaw` (same three factors), one merged `CollisionStagePart` and a `ReplayTracker` on that node (below) |
 | `MgConveyer {m_StaticSpeed}` next to a `CollisionStagePart` | `MgConveyer` with the same speed vector next to the converted part |
@@ -273,6 +274,15 @@ are taken at load and never again, so the drawn part moves and the ball keeps hi
 place where the part was. `isDynamic` on the shape has the same effect and is what scripted movers use. The
 converter hashes every object path under the `Collision` copy (CRC-32 of the path, as clip bindings store it),
 and tags the objects the carried-over clips are bound to, with their subtrees (`moving_objects` in the report).
+
+**Collision has no scale in Rumble.** `STAGE_PART.Restart` and `Renew` (the latter every step for a moving part)
+build a part's matrix with `Util.Math.UnscaledLocalToWorldMatrix(position, rotation)`; Mania applies the node's
+whole transform, and its part data is the unscaled mesh. 65 parts in 15 stages sit on scaled nodes (up to 50x;
+none mirrored or skewed, no clip animates scale). Taken over as they were, such a part collided at the wrong size
+and place: on Spiky (st1038) each spike row was twice as long and wide and half as high as drawn, off to one
+side, and moved with the bars, so the ball was hit by spikes nobody could see. `add_part` now carries the scale
+into the triangles and the grid (`unscaled_frame`, `scaled_part`; `scaled_parts` in the report). Checked with
+`_slop_scratch\coli_vs_mania.py`: every part of those 15 stages lies where Mania places it.
 
 **Seesaws.** Rumble's `MgSeesaw` turns its own object (`Move`, 0x4306810) and learns about a ball from
 `OnPostCollide(GameObject)` (0x4305d30), which goes through the ball's hit list and takes only hits whose

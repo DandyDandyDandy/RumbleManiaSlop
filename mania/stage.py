@@ -825,6 +825,47 @@ def merged_part(pieces):
             'gridSizeX': 1, 'gridSizeY': 1, 'gridSizeZ': 1}
 
 
+def unscaled_frame(node, stop=None):
+    """(the frame Rumble puts a collision part in, the 4x4 that takes the node's own frame into it). Rumble builds a
+    part's matrix from its transform's world position and rotation only (STAGE_PART.Restart / Renew call
+    Util.Math.UnscaledLocalToWorldMatrix), Mania from the whole transform, scale included, so a scaled node's
+    triangles must carry the scale themselves. The second matrix is the identity for a node without scale."""
+    w = world_matrix(node, stop)
+    u = trs_matrix(w[:3, 3], world_rotation(node, stop), (1.0, 1.0, 1.0))
+    return u, np.linalg.inv(u) @ w
+
+
+def scaled_part(part, mat):
+    """A Mania collision part carried through mat (from unscaled_frame: a scale along the node's own axes). The
+    triangles keep their order and edge ids, so the grid's lists stay valid; the grid is scaled with them. A
+    matrix that also turns or mirrors (none of Mania's stages has one) gets a grid of one cell (merged_part)."""
+    s = np.diag(mat)[:3].astype(np.float64)
+    if np.abs(mat[:3, :3] - np.diag(s)).max() > 1e-6 or (s <= 0).any():
+        return merged_part([(part, mat)])
+    tris = []
+    for t in part['triangle']:
+        p = np.array([t['pos']['x'], t['pos']['y'], t['pos']['z']], dtype=np.float64)
+        rot = (t['rot']['x'], t['rot']['y'], t['rot']['z'], t['rot']['w'])
+        a = p + qrot(rot, (t['lpos'][0]['x'], t['lpos'][0]['y'], 0.0))
+        b = p + qrot(rot, (t['lpos'][1]['x'], t['lpos'][1]['y'], 0.0))
+        p, a, b = p * s, a * s, b * s
+        e1, e2 = a - p, b - p
+        n = np.cross(e1, e2)
+        ln, l1 = np.linalg.norm(n), np.linalg.norm(e1)
+        new = copy.deepcopy(t)
+        new['pos'] = v3(p)
+        if ln >= 1e-12 and l1 >= 1e-9:             # a degenerate one keeps its frame (collision_part does the same)
+            n, x = n / ln, e1 / l1
+            new['rot'] = q4(quat_from_axes(x, np.cross(n, x), n))
+            new['lpos'] = [v2((float(l1), 0.0)), v2((float(np.dot(e2, x)), float(np.dot(e2, np.cross(n, x)))))]
+        tris.append(new)
+    out = dict(part, triangle=tris)
+    g = part['gridMin']
+    out['gridMin'] = v3(np.array([g['x'], g['y'], g['z']], dtype=np.float64) * s)
+    out['intervalX'], out['intervalY'], out['intervalZ'] = (float(part[k] * f) for k, f in zip(('intervalX', 'intervalY', 'intervalZ'), s))
+    return out
+
+
 def triangles_part(corners):
     """A Mania collision part from triangles (an array [n, 3 corners, xyz]): the shape collision_part() takes.
 
@@ -1134,6 +1175,10 @@ class Converter:
         def add_part(go, n, data, flags, script='CollisionStagePart', **more):
             """Rumble's CollisionStagePart on go, from the Mania part data `data` (in node n's frame); its id."""
             nonlocal lo, hi
+            w, bake = unscaled_frame(n, m.root)
+            if np.abs(bake - np.eye(4)).max() > 1e-6:      # a scaled node: Rumble's part frame has no scale
+                data = scaled_part(data, bake)
+                stats['scaled_parts'] = stats.get('scaled_parts', 0) + 1
             conv, plo, phi = collision_part(data, sh.template('MonoBehaviour', 'CollisionStageData')['part'])
             d = sh.template('MonoBehaviour', 'CollisionStageData')
             d['m_Name'], d['part'] = 'mania_' + n.name, conv
@@ -1146,7 +1191,6 @@ class Converter:
             has_part.add(go)
             stats['collision_parts'] += 1
             stats['triangles'] += len(conv['triangle'])
-            w = world_matrix(n, m.root)
             for cx in (plo[0], phi[0]):
                 for cy in (plo[1], phi[1]):
                     for cz in (plo[2], phi[2]):
@@ -1405,6 +1449,10 @@ class Converter:
             model = bar and (m.nodes.get(bar[2]['JamabarModel']['m_PathID']) or m.by_transform.get(bar[2]['JamabarModel']['m_PathID']))
             if model is not None:
                 pairs.append((n.transform_id, model.transform_id))
+            bump = n.component('Bumper')                     # a bumper's model (under the root's `bumpers`) copies
+            src = bump and node_of(bump[2].get('m_Source', NULL))   # the place of its collision node every frame
+            if src is not None:
+                pairs.append((src.transform_id, n.transform_id))
         attached = set()
         for src_tr, dst_tr in pairs:
             a, b = m.by_transform.get(src_tr), m.by_transform.get(dst_tr)
