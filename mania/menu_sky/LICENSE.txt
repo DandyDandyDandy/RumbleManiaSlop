@@ -1,7 +1,0 @@
-sky.jpg is made from "Rogland Clear Night" by Greg Zaal, Poly Haven (https://polyhaven.com/a/rogland_clear_night),
-released under CC0 1.0 (public domain): https://polyhaven.com/license
-
-Made with: python mania\menu_sky.py --prepare rogland_clear_night_4k.hdr
-(the 4k .hdr from https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/4k/rogland_clear_night_4k.hdr,
-md5 24f1045ef4a6402adc3ab1454a11dd42). The photo's hills are taken out and the sky is graded night blue;
-see menu_sky.py.

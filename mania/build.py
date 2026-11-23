@@ -26,9 +26,6 @@ What it writes (the game's own files are never changed; deleting game\\mania\\ u
     mania\\Sound\\*.acb, *.awb               Banana Mania's stage music (CRIWARE cue sheets, copied as they are), and
                                             its title music as mania_adv.acb / .awb (the title screen plays it)
     mania\\Switch\\ui_assets_ui\\...           the title screen's bundles with the pictures of mania\\title\\ (title.py)
-    mania\\Switch\\scene_mainmenu3d_night..., db_assets_db\\mainmenu_environment...
-                                            the main menu always at night, under the starry sky of mania\\menu_sky\\
-                                            (menu_sky.py)
     mania\\mania_music.txt                   the BGM cue of each imported stage
 
 How the stages become courses (docs/MANIA.md has the reasons):
@@ -375,9 +372,12 @@ def main():
     # ---- the fork's title screen (mania\title; title.py)
     import title
     title.apply(aa, out)
-    # ---- the main menu at night under the stars (mania\menu_sky, overridden by input\menu_sky; menu_sky.py)
-    import menu_sky
-    menu_sky.apply(aa, out)
+    # earlier versions kept the main menu at night under a starry sky with two override bundles: take them away, so
+    # an updated game has the game's own main menu again
+    for rel in ('scene_mainmenu3d_night_scenes_all.bundle', 'db_assets_db/mainmenu_environment.asset.bundle'):
+        stale = os.path.join(out, 'Switch', rel.replace('/', os.sep))
+        if os.path.exists(stale):
+            os.remove(stale)
 
     # what each stage has and what was left out, for whoever looks into a stage that plays wrong
     skipped = {}
